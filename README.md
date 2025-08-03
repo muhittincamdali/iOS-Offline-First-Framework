@@ -145,11 +145,11 @@ swift test
 
 ## 📚 Documentation
 
-- [API Documentation](Documentation/API/)
-- [Architecture Guide](Documentation/Architecture/)
-- [Integration Guide](Documentation/Guides/)
+- [API Documentation](Documentation/API/README.md)
+- [Architecture Guide](Documentation/Architecture/README.md)
+- [Integration Guide](Documentation/Guides/README.md)
 
-## �� Contributing
+## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
@@ -157,11 +157,11 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Support
+## �� Support
 
 - [Issues](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
 - [Discussions](https://github.com/muhittincamdali/iOS-Offline-First-Framework/discussions)
-- [Wiki](https://github.com/muhittincamdali/iOS-Offline-First-Framework/wiki)
+- [Releases](https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases)
 
 ## 📈 Roadmap
 
