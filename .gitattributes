@@ -1,0 +1,5 @@
+*.swift linguist-language=Swift
+*.md linguist-documentation
+*.yml linguist-documentation
+*.yaml linguist-documentation
+*.json linguist-documentation
