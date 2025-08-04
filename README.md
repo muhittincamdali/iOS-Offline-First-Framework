@@ -157,12 +157,6 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## �� Support
-
-- [Issues](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
-- [Discussions](https://github.com/muhittincamdali/iOS-Offline-First-Framework/discussions)
-- [Releases](https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases)
-
 ## 📈 Roadmap
 
 - [ ] Background sync improvements
@@ -170,6 +164,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Multi-device sync support
 - [ ] Cloud storage integration
 - [ ] Performance optimizations
+
+## 📊 Project Statistics
+
+<div align="center">
+
+[![GitHub stars](https://img.shields.io/github/stars/muhittincamdali/iOS-Offline-First-Framework?style=social)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/muhittincamdali/iOS-Offline-First-Framework?style=social)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/network)
+[![GitHub issues](https://img.shields.io/github/issues/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/pulls)
+
+</div>
+
+## 🌟 Stargazers
+
+[![Stargazers repo roster for @muhittincamdali/iOS-Offline-First-Framework](https://reporoster.com/stars/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
 
 ## 🙏 Acknowledgments
 
@@ -179,4 +188,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-Made with ❤️ by [Muhittin Camdali](https://github.com/muhittincamdali)
+Built with ❤️ for the iOS community
