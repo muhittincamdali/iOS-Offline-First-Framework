@@ -1,1 +1,1 @@
-# OfflineFirstManagerAPI
+# 🔧 OfflineFirstManager API
