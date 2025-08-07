@@ -690,12 +690,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-[![GitHub stars](https://img.shields.io/github/stars/muhittincamdali/iOS-Offline-First-Framework?style=social)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/muhittincamdali/iOS-Offline-First-Framework?style=social)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/network)
-[![GitHub issues](https://img.shields.io/github/issues/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/pulls)
-[![GitHub contributors](https://img.shields.io/github/contributors/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/graphs/contributors)
-[![GitHub last commit](https://img.shields.io/github/last-commit/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/commits/master)
+[![GitHub stars](https://img.shields.io/github/stars/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/network)
+[![GitHub issues](https://img.shields.io/github/issues/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
+[![GitHub pull requests](https://img.shields.io/github/issues-pr/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/pulls)
+[![GitHub contributors](https://img.shields.io/github/contributors/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/graphs/contributors)
+[![GitHub last commit](https://img.shields.io/github/last-commit/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/commits/master)
 
 </div>
 
