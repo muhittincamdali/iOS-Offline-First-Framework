@@ -310,7 +310,6 @@ let conflictConfig = ConflictResolutionConfiguration()
 conflictConfig.enableAutomaticResolution = true
 conflictConfig.resolutionStrategy = .lastWriteWins
 conflictConfig.enableManualResolution = true
-conflictConfig.enableConflictLogging = true
 
 // Setup conflict resolution
 conflictResolver.configure(conflictConfig)
@@ -478,7 +477,6 @@ offlineOperations.deleteUser(userId: "123") { result in
 
 ```bash
 # Clone the repository
-git clone https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 
 # Navigate to project directory
 cd iOS-Offline-First-Framework
@@ -496,7 +494,6 @@ Add the framework to your project:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "1.0.0")
 ]
 ```
 
@@ -596,7 +593,6 @@ offlineConfig.enableBackgroundSync = true
 // Set conflict resolution settings
 offlineConfig.conflictResolutionStrategy = .lastWriteWins
 offlineConfig.enableManualResolution = true
-offlineConfig.enableConflictLogging = true
 
 // Apply configuration
 offlineFirstManager.configure(offlineConfig)
@@ -690,15 +686,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-[![GitHub stars](https://img.shields.io/github/stars/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/network)
-[![GitHub issues](https://img.shields.io/github/issues/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues)
-[![GitHub pull requests](https://img.shields.io/github/issues-pr/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/pulls)
-[![GitHub contributors](https://img.shields.io/github/contributors/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/graphs/contributors)
-[![GitHub last commit](https://img.shields.io/github/last-commit/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/commits/master)
 
 </div>
 
 ## 🌟 Stargazers
 
-[![Stargazers repo roster for @muhittincamdali/iOS-Offline-First-Framework](https://reporoster.com/stars/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
