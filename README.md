@@ -1,3 +1,10 @@
+<!-- BADGES:START -->
+[![CI](https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/codeql.yml/badge.svg)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/codeql.yml)
+[![License](https://img.shields.io/github/license/muhittincamdali/iOS-Offline-First-Framework)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/muhittincamdali/iOS-Offline-First-Framework?style=flat-square&logo=github)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
+<!-- BADGES:END -->
+
 # 📱 iOS Offline-First Framework
 
 <div align="center">
