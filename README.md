@@ -708,7 +708,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🌟 Stargazers
 
-[![Stargazers repo roster for @muhittincamdali/iOS-Offline-First-Framework](https://reporoster.com/stars/muhittincamdali/iOS-Offline-First-Framework)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
+[![Stargazers repo roster for @muhittincamdali/iOS-Offline-First-Framework](https://starchart.cc/muhittincamdali/iOS-Offline-First-Framework.svg)](https://github.com/muhittincamdali/iOS-Offline-First-Framework/stargazers)
 
 ## QuickStart
 
