@@ -1,5 +1,35 @@
 # 🌐 Network Adaptation Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [🌐 Network Adaptation Guide](#-network-adaptation-guide)
+- [Overview](#overview)
+- [Network Monitoring](#network-monitoring)
+  - [Basic Network Monitoring](#basic-network-monitoring)
+  - [Network Status Monitoring](#network-status-monitoring)
+- [Adaptive Synchronization](#adaptive-synchronization)
+  - [Network-Aware Sync](#network-aware-sync)
+  - [Quality-Based Adaptation](#quality-based-adaptation)
+- [Bandwidth Management](#bandwidth-management)
+  - [Bandwidth Optimization](#bandwidth-optimization)
+  - [Bandwidth Throttling](#bandwidth-throttling)
+- [Connection Management](#connection-management)
+  - [Connection Pooling](#connection-pooling)
+  - [Connection Retry](#connection-retry)
+- [Network Analytics](#network-analytics)
+  - [Network Performance Analytics](#network-performance-analytics)
+- [Error Handling](#error-handling)
+  - [Network Error Handling](#network-error-handling)
+- [Integration Example](#integration-example)
+- [Best Practices](#best-practices)
+  - [1. Quality-Based Adaptation](#1-quality-based-adaptation)
+  - [2. Bandwidth Optimization](#2-bandwidth-optimization)
+  - [3. Connection Management](#3-connection-management)
+  - [4. Error Recovery](#4-error-recovery)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide covers network adaptation implementation with the iOS Offline-First Framework, including network monitoring, adaptive synchronization, and bandwidth optimization.

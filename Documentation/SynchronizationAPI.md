@@ -1,5 +1,39 @@
 # 🔄 Synchronization API
 
+<!-- TOC START -->
+## Table of Contents
+- [🔄 Synchronization API](#-synchronization-api)
+- [Overview](#overview)
+- [DataSyncManager](#datasyncmanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`performSync(force: Bool = false) -> Observable<SyncResult>`](#performsyncforce-bool-false-observablesyncresult)
+    - [`syncIncremental(since: Date) -> Observable<IncrementalSyncResult>`](#syncincrementalsince-date-observableincrementalsyncresult)
+    - [`syncBidirectional() -> Observable<BidirectionalSyncResult>`](#syncbidirectional-observablebidirectionalsyncresult)
+- [SyncConfiguration](#syncconfiguration)
+  - [Basic Configuration](#basic-configuration)
+  - [Advanced Configuration](#advanced-configuration)
+- [SyncStrategies](#syncstrategies)
+  - [Strategy Types](#strategy-types)
+  - [Strategy Implementation](#strategy-implementation)
+- [SyncQueue](#syncqueue)
+  - [Queue Management](#queue-management)
+  - [Priority Levels](#priority-levels)
+- [ConflictResolution](#conflictresolution)
+  - [Conflict Detection](#conflict-detection)
+  - [Resolution Strategies](#resolution-strategies)
+- [SyncMonitoring](#syncmonitoring)
+  - [Real-time Monitoring](#real-time-monitoring)
+- [SyncAnalytics](#syncanalytics)
+  - [Analytics Collection](#analytics-collection)
+- [Error Handling](#error-handling)
+  - [SyncError Types](#syncerror-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Synchronization API provides comprehensive data synchronization capabilities for the iOS Offline-First Framework, including bidirectional sync, conflict resolution, and intelligent sync strategies.

@@ -1,5 +1,31 @@
 # Architecture Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [Architecture Guide](#architecture-guide)
+- [Overview](#overview)
+- [Architecture Layers](#architecture-layers)
+  - [1. Presentation Layer](#1-presentation-layer)
+  - [2. Business Logic Layer](#2-business-logic-layer)
+  - [3. Data Layer](#3-data-layer)
+- [Data Flow](#data-flow)
+- [Design Principles](#design-principles)
+  - [Clean Architecture](#clean-architecture)
+  - [SOLID Principles](#solid-principles)
+- [Component Interactions](#component-interactions)
+  - [Network State Management](#network-state-management)
+  - [Data Synchronization](#data-synchronization)
+  - [Storage Operations](#storage-operations)
+- [Error Handling](#error-handling)
+  - [Error Types](#error-types)
+  - [Error Recovery](#error-recovery)
+- [Performance Considerations](#performance-considerations)
+  - [Memory Management](#memory-management)
+  - [Battery Optimization](#battery-optimization)
+  - [Storage Optimization](#storage-optimization)
+<!-- TOC END -->
+
+
 ## Overview
 
 The iOS Offline First Framework follows a clean architecture pattern with clear separation of concerns and modular design.

@@ -1,5 +1,38 @@
 # 📦 Data Persistence API
 
+<!-- TOC START -->
+## Table of Contents
+- [📦 Data Persistence API](#-data-persistence-api)
+- [Overview](#overview)
+- [OfflineStorageManager](#offlinestoragemanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`save<T: Codable>(_ data: T) -> Observable<SaveResult>`](#savet-codable-data-t-observablesaveresult)
+    - [`load<T: Codable>(_ type: T.Type) -> Observable<[T]>`](#loadt-codable-type-ttype-observablet)
+    - [`delete<T: Codable>(_ data: T) -> Observable<DeleteResult>`](#deletet-codable-data-t-observabledeleteresult)
+- [StorageConfiguration](#storageconfiguration)
+  - [Basic Configuration](#basic-configuration)
+  - [Advanced Configuration](#advanced-configuration)
+- [EncryptionManager](#encryptionmanager)
+  - [Encryption Types](#encryption-types)
+  - [Encryption Operations](#encryption-operations)
+- [CompressionManager](#compressionmanager)
+  - [Compression Levels](#compression-levels)
+  - [Compression Operations](#compression-operations)
+- [StorageMonitoring](#storagemonitoring)
+  - [Usage Monitoring](#usage-monitoring)
+- [DataMigration](#datamigration)
+  - [Migration Manager](#migration-manager)
+- [BackupManager](#backupmanager)
+  - [Backup Operations](#backup-operations)
+- [Error Handling](#error-handling)
+  - [StorageError Types](#storageerror-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Data Persistence API provides comprehensive local data storage capabilities for the iOS Offline-First Framework, including encryption, compression, and intelligent data management.

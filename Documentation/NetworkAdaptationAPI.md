@@ -1,5 +1,35 @@
 # 🔄 Network Adaptation API
 
+<!-- TOC START -->
+## Table of Contents
+- [🔄 Network Adaptation API](#-network-adaptation-api)
+- [Overview](#overview)
+- [NetworkStateManager](#networkstatemanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`checkConnectivity() -> Observable<NetworkStatus>`](#checkconnectivity-observablenetworkstatus)
+    - [`testConnection(url: URL) -> Observable<ConnectionTestResult>`](#testconnectionurl-url-observableconnectiontestresult)
+    - [`monitorNetworkChanges() -> Observable<NetworkChangeEvent>`](#monitornetworkchanges-observablenetworkchangeevent)
+- [AdaptiveSyncManager](#adaptivesyncmanager)
+  - [Configuration](#configuration)
+  - [Methods](#methods)
+    - [`syncWithAdaptation(config: AdaptiveSyncConfiguration) -> Observable<AdaptiveSyncResult>`](#syncwithadaptationconfig-adaptivesyncconfiguration-observableadaptivesyncresult)
+- [NetworkQueueManager](#networkqueuemanager)
+  - [Queue Management](#queue-management)
+  - [Priority Levels](#priority-levels)
+- [BandwidthOptimizer](#bandwidthoptimizer)
+  - [Optimization Strategies](#optimization-strategies)
+- [ConnectionManager](#connectionmanager)
+  - [Connection Types](#connection-types)
+  - [Quality Levels](#quality-levels)
+- [Error Handling](#error-handling)
+  - [NetworkError Types](#networkerror-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Network Adaptation API provides intelligent network connectivity management, adaptive synchronization, and network-aware operations for the iOS Offline-First Framework.

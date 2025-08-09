@@ -1,5 +1,37 @@
 # 🎯 Best Practices Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [🎯 Best Practices Guide](#-best-practices-guide)
+- [Overview](#overview)
+- [Architecture Best Practices](#architecture-best-practices)
+  - [1. Clean Architecture](#1-clean-architecture)
+  - [2. Dependency Injection](#2-dependency-injection)
+- [Data Management Best Practices](#data-management-best-practices)
+  - [1. Model Design](#1-model-design)
+  - [2. Data Validation](#2-data-validation)
+  - [3. Error Handling](#3-error-handling)
+- [Performance Best Practices](#performance-best-practices)
+  - [1. Efficient Data Loading](#1-efficient-data-loading)
+  - [2. Memory Management](#2-memory-management)
+  - [3. Background Processing](#3-background-processing)
+- [User Experience Best Practices](#user-experience-best-practices)
+  - [1. Offline Indicators](#1-offline-indicators)
+  - [2. Progress Indicators](#2-progress-indicators)
+  - [3. Error Recovery](#3-error-recovery)
+- [Security Best Practices](#security-best-practices)
+  - [1. Data Encryption](#1-data-encryption)
+  - [2. Secure Storage](#2-secure-storage)
+- [Testing Best Practices](#testing-best-practices)
+  - [1. Unit Testing](#1-unit-testing)
+  - [2. Integration Testing](#2-integration-testing)
+- [Performance Monitoring Best Practices](#performance-monitoring-best-practices)
+  - [1. Analytics Implementation](#1-analytics-implementation)
+  - [2. Performance Monitoring](#2-performance-monitoring)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide provides best practices for implementing the iOS Offline-First Framework effectively and efficiently. Follow these guidelines to ensure optimal performance, reliability, and user experience.

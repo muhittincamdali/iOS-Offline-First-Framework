@@ -1,5 +1,40 @@
 # 🔧 Configuration API
 
+<!-- TOC START -->
+## Table of Contents
+- [🔧 Configuration API](#-configuration-api)
+- [Overview](#overview)
+- [OfflineFirstConfiguration](#offlinefirstconfiguration)
+  - [Basic Configuration](#basic-configuration)
+  - [Advanced Configuration](#advanced-configuration)
+- [StorageConfiguration](#storageconfiguration)
+  - [Basic Storage Settings](#basic-storage-settings)
+  - [Advanced Storage Settings](#advanced-storage-settings)
+- [SyncConfiguration](#syncconfiguration)
+  - [Basic Sync Settings](#basic-sync-settings)
+  - [Advanced Sync Settings](#advanced-sync-settings)
+- [NetworkConfiguration](#networkconfiguration)
+  - [Basic Network Settings](#basic-network-settings)
+  - [Advanced Network Settings](#advanced-network-settings)
+- [ConflictResolutionConfiguration](#conflictresolutionconfiguration)
+  - [Basic Conflict Settings](#basic-conflict-settings)
+  - [Advanced Conflict Settings](#advanced-conflict-settings)
+- [AnalyticsConfiguration](#analyticsconfiguration)
+  - [Basic Analytics Settings](#basic-analytics-settings)
+  - [Advanced Analytics Settings](#advanced-analytics-settings)
+- [Configuration Validation](#configuration-validation)
+  - [Validation Methods](#validation-methods)
+  - [Validation Rules](#validation-rules)
+- [Configuration Persistence](#configuration-persistence)
+  - [Save Configuration](#save-configuration)
+  - [Load Configuration](#load-configuration)
+- [Configuration Migration](#configuration-migration)
+  - [Migration Manager](#migration-manager)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Configuration API provides comprehensive configuration management for the iOS Offline-First Framework, allowing fine-grained control over all framework components and behaviors.

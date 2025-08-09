@@ -1,5 +1,41 @@
 # 🔄 Synchronization Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [🔄 Synchronization Guide](#-synchronization-guide)
+- [Overview](#overview)
+- [Basic Synchronization](#basic-synchronization)
+  - [Simple Sync Setup](#simple-sync-setup)
+  - [Manual Synchronization](#manual-synchronization)
+- [Advanced Synchronization](#advanced-synchronization)
+  - [Incremental Synchronization](#incremental-synchronization)
+  - [Bidirectional Synchronization](#bidirectional-synchronization)
+- [Sync Strategies](#sync-strategies)
+  - [Strategy Types](#strategy-types)
+  - [Selective Synchronization](#selective-synchronization)
+- [Network Adaptation](#network-adaptation)
+  - [Network-Aware Synchronization](#network-aware-synchronization)
+  - [Connection Quality Monitoring](#connection-quality-monitoring)
+- [Sync Queuing](#sync-queuing)
+  - [Queue Management](#queue-management)
+- [Conflict Resolution](#conflict-resolution)
+  - [Conflict Detection](#conflict-detection)
+- [Sync Monitoring](#sync-monitoring)
+  - [Real-time Monitoring](#real-time-monitoring)
+- [Periodic Synchronization](#periodic-synchronization)
+  - [Automatic Sync Setup](#automatic-sync-setup)
+- [Error Handling](#error-handling)
+  - [Sync Error Handling](#sync-error-handling)
+- [Integration Example](#integration-example)
+- [Best Practices](#best-practices)
+  - [1. Sync Strategy Selection](#1-sync-strategy-selection)
+  - [2. Conflict Resolution Strategy](#2-conflict-resolution-strategy)
+  - [3. Network Adaptation](#3-network-adaptation)
+  - [4. Error Recovery](#4-error-recovery)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide covers data synchronization implementation with the iOS Offline-First Framework, including sync strategies, conflict resolution, and network adaptation.

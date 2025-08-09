@@ -1,5 +1,54 @@
 # 📊 Monitoring API
 
+<!-- TOC START -->
+## Table of Contents
+- [📊 Monitoring API](#-monitoring-api)
+- [Overview](#overview)
+- [PerformanceMonitor](#performancemonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`startMonitoring() -> Observable<MonitoringStatus>`](#startmonitoring-observablemonitoringstatus)
+    - [`getPerformanceMetrics() -> Observable<PerformanceMetrics>`](#getperformancemetrics-observableperformancemetrics)
+- [ErrorMonitor](#errormonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`logError(_ error: Error, context: ErrorContext) -> Observable<LogResult>`](#logerror-error-error-context-errorcontext-observablelogresult)
+    - [`getErrorReport() -> Observable<ErrorReport>`](#geterrorreport-observableerrorreport)
+- [NetworkMonitor](#networkmonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`monitorNetworkPerformance() -> Observable<NetworkPerformance>`](#monitornetworkperformance-observablenetworkperformance)
+    - [`testConnection(url: URL) -> Observable<ConnectionTestResult>`](#testconnectionurl-url-observableconnectiontestresult)
+- [StorageMonitor](#storagemonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`monitorStorageUsage() -> Observable<StorageUsage>`](#monitorstorageusage-observablestorageusage)
+    - [`getStorageReport() -> Observable<StorageReport>`](#getstoragereport-observablestoragereport)
+- [SyncMonitor](#syncmonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`monitorSyncProgress() -> Observable<SyncProgress>`](#monitorsyncprogress-observablesyncprogress)
+    - [`getSyncReport() -> Observable<SyncReport>`](#getsyncreport-observablesyncreport)
+- [AnalyticsMonitor](#analyticsmonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`trackEvent(_ event: AnalyticsEvent) -> Observable<TrackingResult>`](#trackevent-event-analyticsevent-observabletrackingresult)
+    - [`getAnalyticsReport() -> Observable<AnalyticsReport>`](#getanalyticsreport-observableanalyticsreport)
+- [HealthMonitor](#healthmonitor)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`checkSystemHealth() -> Observable<SystemHealth>`](#checksystemhealth-observablesystemhealth)
+    - [`getHealthRecommendations() -> Observable<[HealthRecommendation]>`](#gethealthrecommendations-observablehealthrecommendation)
+- [AlertManager](#alertmanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`createAlert(_ alert: Alert) -> Observable<AlertResult>`](#createalert-alert-alert-observablealertresult)
+    - [`getActiveAlerts() -> Observable<[Alert]>`](#getactivealerts-observablealert)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Monitoring API provides comprehensive monitoring capabilities for the iOS Offline-First Framework, including performance tracking, error monitoring, and real-time analytics.

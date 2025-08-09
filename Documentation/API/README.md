@@ -1,5 +1,57 @@
 # API Documentation
 
+<!-- TOC START -->
+## Table of Contents
+- [API Documentation](#api-documentation)
+- [OfflineFirstManager](#offlinefirstmanager)
+  - [Methods](#methods)
+    - [`initialize(with config: OfflineFirstConfiguration)`](#initializewith-config-offlinefirstconfiguration)
+    - [`sync(force: Bool = false) -> Observable<SyncResult>`](#syncforce-bool-false-observablesyncresult)
+    - [`save<T: Codable>(_ data: T) -> Observable<SaveResult>`](#savet-codable-data-t-observablesaveresult)
+    - [`load<T: Codable>(_ type: T.Type) -> Observable<[T]>`](#loadt-codable-type-ttype-observablet)
+    - [`delete<T: Codable>(_ data: T) -> Observable<DeleteResult>`](#deletet-codable-data-t-observabledeleteresult)
+    - [`resolveConflicts<T: Codable>(for data: T) -> Observable<ConflictResolutionResult>`](#resolveconflictst-codablefor-data-t-observableconflictresolutionresult)
+    - [`getAnalytics() -> Observable<OfflineAnalytics>`](#getanalytics-observableofflineanalytics)
+    - [`clearAllData() -> Observable<ClearResult>`](#clearalldata-observableclearresult)
+- [NetworkStateManager](#networkstatemanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`checkConnectivity() -> Observable<NetworkStatus>`](#checkconnectivity-observablenetworkstatus)
+    - [`testConnection(url: URL) -> Observable<ConnectionTestResult>`](#testconnectionurl-url-observableconnectiontestresult)
+- [OfflineStorageManager](#offlinestoragemanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`save<T: Codable>(_ data: T) -> Observable<SaveResult>`](#savet-codable-data-t-observablesaveresult)
+    - [`load<T: Codable>(_ type: T.Type) -> Observable<[T]>`](#loadt-codable-type-ttype-observablet)
+    - [`delete<T: Codable>(_ data: T) -> Observable<DeleteResult>`](#deletet-codable-data-t-observabledeleteresult)
+    - [`clearAllData() -> Observable<ClearResult>`](#clearalldata-observableclearresult)
+    - [`getStorageInfo() -> Observable<StorageInfo>`](#getstorageinfo-observablestorageinfo)
+- [DataSyncManager](#datasyncmanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`performSync(force: Bool = false) -> Observable<SyncResult>`](#performsyncforce-bool-false-observablesyncresult)
+    - [`pauseSync()`](#pausesync)
+    - [`resumeSync()`](#resumesync)
+    - [`cancelSync()`](#cancelsync)
+- [OfflineAnalyticsManager](#offlineanalyticsmanager)
+  - [Methods](#methods)
+    - [`getAnalytics() -> Observable<OfflineAnalytics>`](#getanalytics-observableofflineanalytics)
+    - [`recordOfflineSession(duration: TimeInterval)`](#recordofflinesessionduration-timeinterval)
+    - [`recordSyncSuccess()`](#recordsyncsuccess)
+    - [`recordSyncFailure(error: Error)`](#recordsyncfailureerror-error)
+    - [`recordStorageWarning()`](#recordstoragewarning)
+    - [`recordStorageFull()`](#recordstoragefull)
+    - [`recordSyncTime(duration: TimeInterval)`](#recordsynctimeduration-timeinterval)
+    - [`resetAnalytics()`](#resetanalytics)
+- [ConflictResolutionManager](#conflictresolutionmanager)
+  - [Methods](#methods)
+    - [`resolveConflicts<T: Codable>(for data: T) -> Observable<ConflictResolutionResult>`](#resolveconflictst-codablefor-data-t-observableconflictresolutionresult)
+    - [`detectConflicts<T: Codable>(local: T, remote: T) -> Observable<[Conflict]>`](#detectconflictst-codablelocal-t-remote-t-observableconflict)
+    - [`autoResolveConflicts(_ conflicts: [Conflict], strategy: ConflictResolutionStrategy) -> Observable<ConflictResolutionResult>`](#autoresolveconflicts-conflicts-conflict-strategy-conflictresolutionstrategy-observableconflictresolutionresult)
+    - [`manualResolveConflict(_ conflict: Conflict, resolution: ConflictResolution) -> Observable<ConflictResolutionResult>`](#manualresolveconflict-conflict-conflict-resolution-conflictresolution-observableconflictresolutionresult)
+<!-- TOC END -->
+
+
 ## OfflineFirstManager
 
 The main orchestrator for the offline-first framework.
