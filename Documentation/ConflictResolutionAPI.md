@@ -1,5 +1,38 @@
 # ⚡ Conflict Resolution API
 
+<!-- TOC START -->
+## Table of Contents
+- [⚡ Conflict Resolution API](#-conflict-resolution-api)
+- [Overview](#overview)
+- [ConflictResolutionManager](#conflictresolutionmanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`detectConflicts<T: Codable>(localData: T, remoteData: T) -> Observable<[Conflict]>`](#detectconflictst-codablelocaldata-t-remotedata-t-observableconflict)
+    - [`resolveConflicts<T: Codable>(_ conflicts: [Conflict], strategy: ResolutionStrategy) -> Observable<ConflictResolutionResult>`](#resolveconflictst-codable-conflicts-conflict-strategy-resolutionstrategy-observableconflictresolutionresult)
+- [Resolution Strategies](#resolution-strategies)
+  - [Strategy Types](#strategy-types)
+  - [Strategy Implementation](#strategy-implementation)
+- [Conflict Types](#conflict-types)
+  - [Conflict Categories](#conflict-categories)
+  - [Conflict Detection](#conflict-detection)
+- [Auto-Resolution](#auto-resolution)
+  - [Auto-Resolution Configuration](#auto-resolution-configuration)
+  - [Auto-Resolution Rules](#auto-resolution-rules)
+- [Manual Resolution](#manual-resolution)
+  - [Manual Resolution Interface](#manual-resolution-interface)
+  - [Resolution Options](#resolution-options)
+- [Conflict Analytics](#conflict-analytics)
+  - [Analytics Collection](#analytics-collection)
+- [Conflict Prevention](#conflict-prevention)
+  - [Prevention Strategies](#prevention-strategies)
+- [Error Handling](#error-handling)
+  - [ConflictError Types](#conflicterror-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Conflict Resolution API provides advanced conflict detection and resolution capabilities for the iOS Offline-First Framework, ensuring data consistency across offline and online operations.

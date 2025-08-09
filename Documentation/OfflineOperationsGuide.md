@@ -1,5 +1,38 @@
 # 📱 Offline Operations Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [📱 Offline Operations Guide](#-offline-operations-guide)
+- [Overview](#overview)
+- [Basic Offline Operations](#basic-offline-operations)
+  - [Simple Offline Setup](#simple-offline-setup)
+  - [Basic Offline Operations](#basic-offline-operations)
+- [Offline Data Management](#offline-data-management)
+  - [Offline Data Storage](#offline-data-storage)
+  - [Offline Data Operations](#offline-data-operations)
+- [Offline Queue Management](#offline-queue-management)
+  - [Queue Operations](#queue-operations)
+  - [Priority Queue Management](#priority-queue-management)
+- [Offline Status Management](#offline-status-management)
+  - [Status Monitoring](#status-monitoring)
+  - [Offline Indicators](#offline-indicators)
+- [Offline Analytics](#offline-analytics)
+  - [Analytics Collection](#analytics-collection)
+- [Offline-to-Online Transitions](#offline-to-online-transitions)
+  - [Transition Management](#transition-management)
+  - [Graceful Degradation](#graceful-degradation)
+- [Error Handling](#error-handling)
+  - [Offline Error Handling](#offline-error-handling)
+- [Integration Example](#integration-example)
+- [Best Practices](#best-practices)
+  - [1. Queue Management](#1-queue-management)
+  - [2. Error Recovery](#2-error-recovery)
+  - [3. Analytics and Monitoring](#3-analytics-and-monitoring)
+  - [4. Graceful Degradation](#4-graceful-degradation)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide covers offline operations implementation with the iOS Offline-First Framework, including offline data management, queue management, and offline-to-online transitions.

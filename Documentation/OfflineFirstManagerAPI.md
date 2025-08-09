@@ -1,5 +1,43 @@
 # 🏆 OfflineFirstManager API
 
+<!-- TOC START -->
+## Table of Contents
+- [🏆 OfflineFirstManager API](#-offlinefirstmanager-api)
+- [Overview](#overview)
+- [Core Properties](#core-properties)
+  - [Singleton Instance](#singleton-instance)
+  - [Manager Components](#manager-components)
+  - [Observable Properties](#observable-properties)
+- [Initialization](#initialization)
+  - [Basic Initialization](#basic-initialization)
+  - [Custom Configuration](#custom-configuration)
+- [Core Methods](#core-methods)
+  - [Data Operations](#data-operations)
+    - [`save<T: Codable>(_ data: T) -> Observable<SaveResult>`](#savet-codable-data-t-observablesaveresult)
+    - [`load<T: Codable>(_ type: T.Type) -> Observable<[T]>`](#loadt-codable-type-ttype-observablet)
+    - [`delete<T: Codable>(_ data: T) -> Observable<DeleteResult>`](#deletet-codable-data-t-observabledeleteresult)
+  - [Synchronization](#synchronization)
+    - [`sync(force: Bool = false) -> Observable<SyncResult>`](#syncforce-bool-false-observablesyncresult)
+  - [Conflict Resolution](#conflict-resolution)
+    - [`resolveConflicts<T: Codable>(for data: T) -> Observable<ConflictResolutionResult>`](#resolveconflictst-codablefor-data-t-observableconflictresolutionresult)
+  - [Analytics](#analytics)
+    - [`getAnalytics() -> Observable<OfflineAnalytics>`](#getanalytics-observableofflineanalytics)
+  - [Data Management](#data-management)
+    - [`clearAllData() -> Observable<ClearResult>`](#clearalldata-observableclearresult)
+- [Configuration](#configuration)
+  - [OfflineFirstConfiguration](#offlinefirstconfiguration)
+- [Status Monitoring](#status-monitoring)
+  - [Network Status](#network-status)
+  - [Sync Status](#sync-status)
+  - [Storage Status](#storage-status)
+- [Error Handling](#error-handling)
+  - [Error Types](#error-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The OfflineFirstManager is the main orchestrator for the iOS Offline-First Framework, providing comprehensive offline data management, synchronization, and conflict resolution capabilities.

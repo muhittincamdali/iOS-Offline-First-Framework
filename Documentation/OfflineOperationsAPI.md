@@ -1,5 +1,34 @@
 # 📱 Offline Operations API
 
+<!-- TOC START -->
+## Table of Contents
+- [📱 Offline Operations API](#-offline-operations-api)
+- [Overview](#overview)
+- [OfflineDataManager](#offlinedatamanager)
+  - [Properties](#properties)
+  - [Methods](#methods)
+    - [`performOfflineOperation<T: Codable>(_ operation: OfflineOperation, data: T) -> Observable<OfflineOperationResult>`](#performofflineoperationt-codable-operation-offlineoperation-data-t-observableofflineoperationresult)
+    - [`getOfflineData<T: Codable>(_ type: T.Type) -> Observable<[T]>`](#getofflinedatat-codable-type-ttype-observablet)
+    - [`updateOfflineData<T: Codable>(_ data: T) -> Observable<UpdateResult>`](#updateofflinedatat-codable-data-t-observableupdateresult)
+- [OfflineQueueManager](#offlinequeuemanager)
+  - [Queue Management](#queue-management)
+  - [Priority Levels](#priority-levels)
+- [OfflineStorageManager](#offlinestoragemanager)
+  - [Storage Operations](#storage-operations)
+- [OfflineSyncManager](#offlinesyncmanager)
+  - [Sync Operations](#sync-operations)
+- [OfflineAnalytics](#offlineanalytics)
+  - [Analytics Collection](#analytics-collection)
+- [OfflineStatusManager](#offlinestatusmanager)
+  - [Status Monitoring](#status-monitoring)
+- [Error Handling](#error-handling)
+  - [OfflineError Types](#offlineerror-types)
+  - [Error Recovery](#error-recovery)
+- [Best Practices](#best-practices)
+- [Integration Example](#integration-example)
+<!-- TOC END -->
+
+
 ## Overview
 
 The Offline Operations API provides comprehensive offline data management capabilities, including local storage, offline queues, and seamless offline-to-online transitions.

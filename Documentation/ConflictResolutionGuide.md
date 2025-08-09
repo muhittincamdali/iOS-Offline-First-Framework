@@ -1,5 +1,37 @@
 # ⚡ Conflict Resolution Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [⚡ Conflict Resolution Guide](#-conflict-resolution-guide)
+- [Overview](#overview)
+- [Understanding Conflicts](#understanding-conflicts)
+  - [Conflict Types](#conflict-types)
+  - [Conflict Detection](#conflict-detection)
+- [Resolution Strategies](#resolution-strategies)
+  - [Strategy Types](#strategy-types)
+  - [Field-Specific Strategies](#field-specific-strategies)
+- [Manual Resolution](#manual-resolution)
+  - [Manual Resolution Interface](#manual-resolution-interface)
+  - [Conflict Resolution UI](#conflict-resolution-ui)
+- [Auto-Resolution](#auto-resolution)
+  - [Auto-Resolution Configuration](#auto-resolution-configuration)
+  - [Auto-Resolution Rules](#auto-resolution-rules)
+- [Conflict Analytics](#conflict-analytics)
+  - [Analytics Collection](#analytics-collection)
+- [Conflict Prevention](#conflict-prevention)
+  - [Prevention Strategies](#prevention-strategies)
+- [Error Handling](#error-handling)
+  - [Conflict Error Handling](#conflict-error-handling)
+- [Integration Example](#integration-example)
+- [Best Practices](#best-practices)
+  - [1. Strategy Selection](#1-strategy-selection)
+  - [2. Conflict Prevention](#2-conflict-prevention)
+  - [3. Analytics and Monitoring](#3-analytics-and-monitoring)
+  - [4. Error Recovery](#4-error-recovery)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide covers conflict resolution implementation with the iOS Offline-First Framework, including conflict detection, resolution strategies, and manual resolution workflows.

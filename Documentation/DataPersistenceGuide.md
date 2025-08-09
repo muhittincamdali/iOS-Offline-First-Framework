@@ -1,5 +1,40 @@
 # 📦 Data Persistence Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [📦 Data Persistence Guide](#-data-persistence-guide)
+- [Overview](#overview)
+- [Storage Configuration](#storage-configuration)
+  - [Basic Storage Setup](#basic-storage-setup)
+  - [Advanced Storage Configuration](#advanced-storage-configuration)
+- [Data Models](#data-models)
+  - [Designing Offline-First Models](#designing-offline-first-models)
+  - [Model Validation](#model-validation)
+- [Storage Operations](#storage-operations)
+  - [Basic CRUD Operations](#basic-crud-operations)
+  - [Batch Operations](#batch-operations)
+- [Encryption and Security](#encryption-and-security)
+  - [Data Encryption](#data-encryption)
+  - [Secure Storage](#secure-storage)
+- [Compression and Optimization](#compression-and-optimization)
+  - [Data Compression](#data-compression)
+  - [Storage Optimization](#storage-optimization)
+- [Data Migration](#data-migration)
+  - [Migration Manager](#migration-manager)
+- [Backup and Restore](#backup-and-restore)
+  - [Backup Manager](#backup-manager)
+- [Monitoring and Analytics](#monitoring-and-analytics)
+  - [Storage Monitoring](#storage-monitoring)
+- [Best Practices](#best-practices)
+  - [1. Data Validation](#1-data-validation)
+  - [2. Error Handling](#2-error-handling)
+  - [3. Performance Optimization](#3-performance-optimization)
+  - [4. Security Best Practices](#4-security-best-practices)
+- [Integration Example](#integration-example)
+- [Conclusion](#conclusion)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide covers data persistence implementation with the iOS Offline-First Framework, including storage configuration, encryption, compression, and data management strategies.

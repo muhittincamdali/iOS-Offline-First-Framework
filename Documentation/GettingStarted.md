@@ -1,5 +1,44 @@
 # 🚀 Getting Started Guide
 
+<!-- TOC START -->
+## Table of Contents
+- [🚀 Getting Started Guide](#-getting-started-guide)
+- [Overview](#overview)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+  - [Swift Package Manager](#swift-package-manager)
+  - [Manual Installation](#manual-installation)
+- [Quick Start](#quick-start)
+  - [Step 1: Import the Framework](#step-1-import-the-framework)
+  - [Step 2: Initialize the Framework](#step-2-initialize-the-framework)
+  - [Step 3: Configure Basic Settings](#step-3-configure-basic-settings)
+  - [Step 4: Define Your Data Models](#step-4-define-your-data-models)
+  - [Step 5: Save Data Offline](#step-5-save-data-offline)
+  - [Step 6: Load Data](#step-6-load-data)
+  - [Step 7: Monitor Network Status](#step-7-monitor-network-status)
+  - [Step 8: Perform Synchronization](#step-8-perform-synchronization)
+- [Basic Example](#basic-example)
+- [Advanced Configuration](#advanced-configuration)
+  - [Custom Storage Configuration](#custom-storage-configuration)
+  - [Custom Sync Configuration](#custom-sync-configuration)
+  - [Custom Conflict Resolution](#custom-conflict-resolution)
+- [Testing Your Implementation](#testing-your-implementation)
+  - [Test Offline Functionality](#test-offline-functionality)
+  - [Test Conflict Resolution](#test-conflict-resolution)
+  - [Test Performance](#test-performance)
+- [Troubleshooting](#troubleshooting)
+  - [Common Issues](#common-issues)
+    - [Framework Not Initializing](#framework-not-initializing)
+    - [Data Not Saving](#data-not-saving)
+    - [Sync Not Working](#sync-not-working)
+    - [Conflicts Not Resolving](#conflicts-not-resolving)
+  - [Debug Mode](#debug-mode)
+- [Next Steps](#next-steps)
+- [Additional Resources](#additional-resources)
+- [Support](#support)
+<!-- TOC END -->
+
+
 ## Overview
 
 This guide will help you get started with the iOS Offline-First Framework quickly and efficiently. You'll learn how to integrate the framework into your iOS app and implement basic offline-first functionality.
