@@ -718,3 +718,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 2. Build: 
 3. Run tests: 
 4. Explore examples in  and .
+
+## 🌟 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=muhittincamdali/iOS-Offline-First-Framework&type=Date)](https://star-history.com/#muhittincamdali/iOS-Offline-First-Framework&Date)
+
