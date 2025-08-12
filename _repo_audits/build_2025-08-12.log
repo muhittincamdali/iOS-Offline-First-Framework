@@ -1,0 +1,112 @@
+error: 'ios-offline-first-framework': Invalid manifest (compiled with: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc", "-vfsoverlay", "/var/folders/q6/t22gr5r968j7tv3w6dblt_nc0000gn/T/TemporaryDirectory.CliBQR/vfs.yaml", "-L", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-lPackageDescription", "-Xlinker", "-rpath", "-Xlinker", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-target", "x86_64-apple-macosx14.0", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk", "-F", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks", "-F", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks", "-I", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib", "-L", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib", "-swift-version", "5", "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk", "-package-description-version", "5.9.0", "/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift", "-o", "/var/folders/q6/t22gr5r968j7tv3w6dblt_nc0000gn/T/TemporaryDirectory.7RX6Ox/ios-offline-first-framework-manifest"])
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:71:20: error: extra argument 'swiftSettings' in call
+69 |         )
+70 |     ],
+71 |     swiftSettings: [
+   |                    `- error: extra argument 'swiftSettings' in call
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:72:10: error: type 'Any' has no member 'enableUpcomingFeature'
+70 |     ],
+71 |     swiftSettings: [
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:73:10: error: type 'Any' has no member 'enableUpcomingFeature'
+71 |     swiftSettings: [
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:74:10: error: type 'Any' has no member 'enableUpcomingFeature'
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:75:10: error: type 'Any' has no member 'enableUpcomingFeature'
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+77 |         .enableUpcomingFeature("StrictConcurrency")
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:76:10: error: type 'Any' has no member 'enableUpcomingFeature'
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+77 |         .enableUpcomingFeature("StrictConcurrency")
+78 |     ]
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:77:10: error: type 'Any' has no member 'enableUpcomingFeature'
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+77 |         .enableUpcomingFeature("StrictConcurrency")
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+78 |     ]
+79 | )
+error: 'ios-offline-first-framework': Invalid manifest (compiled with: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc", "-vfsoverlay", "/var/folders/q6/t22gr5r968j7tv3w6dblt_nc0000gn/T/TemporaryDirectory.zEdjBw/vfs.yaml", "-L", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-lPackageDescription", "-Xlinker", "-rpath", "-Xlinker", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-target", "x86_64-apple-macosx14.0", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk", "-F", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks", "-F", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks", "-I", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib", "-L", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib", "-swift-version", "5", "-I", "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/pm/ManifestAPI", "-sdk", "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk", "-package-description-version", "5.9.0", "/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift", "-o", "/var/folders/q6/t22gr5r968j7tv3w6dblt_nc0000gn/T/TemporaryDirectory.t243le/ios-offline-first-framework-manifest"])
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:71:20: error: extra argument 'swiftSettings' in call
+69 |         )
+70 |     ],
+71 |     swiftSettings: [
+   |                    `- error: extra argument 'swiftSettings' in call
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:72:10: error: type 'Any' has no member 'enableUpcomingFeature'
+70 |     ],
+71 |     swiftSettings: [
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:73:10: error: type 'Any' has no member 'enableUpcomingFeature'
+71 |     swiftSettings: [
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:74:10: error: type 'Any' has no member 'enableUpcomingFeature'
+72 |         .enableUpcomingFeature("BareSlashRegexLiterals"),
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:75:10: error: type 'Any' has no member 'enableUpcomingFeature'
+73 |         .enableUpcomingFeature("ConciseMagicFile"),
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+77 |         .enableUpcomingFeature("StrictConcurrency")
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:76:10: error: type 'Any' has no member 'enableUpcomingFeature'
+74 |         .enableUpcomingFeature("ExistentialAny"),
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+77 |         .enableUpcomingFeature("StrictConcurrency")
+78 |     ]
+
+/Users/muhittincamdali/Desktop/Cursor Projects/GitHub/iOS-Offline-First-Framework/Package.swift:77:10: error: type 'Any' has no member 'enableUpcomingFeature'
+75 |         .enableUpcomingFeature("ForwardTrailingClosures"),
+76 |         .enableUpcomingFeature("ImplicitOpenExistentials"),
+77 |         .enableUpcomingFeature("StrictConcurrency")
+   |          `- error: type 'Any' has no member 'enableUpcomingFeature'
+78 |     ]
+79 | )
