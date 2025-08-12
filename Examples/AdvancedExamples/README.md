@@ -1,53 +1,6 @@
-# Advanced Examples
+# Advanced Examples — iOS-Offline-First-Framework
 
-<!-- TOC START -->
-## Table of Contents
-- [Advanced Examples](#advanced-examples)
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Installation (SPM)](#installation-spm)
-- [Quick Start](#quick-start)
-- [API Reference](#api-reference)
-- [Usage Examples](#usage-examples)
-- [Performance](#performance)
-- [Security](#security)
-- [Troubleshooting](#troubleshooting)
-- [FAQ](#faq)
-<!-- TOC END -->
+- Feature toggling demo with SwiftUI animations
+- Replace with repository-specific examples when integrating with package modules
 
-
-This directory contains advanced, production-minded examples for the Offline-First architecture, including conflict resolution, merge strategies, and background sync policies.
-
-## Overview
-This document belongs to the iOS Offline First Framework repository. It explains goals, scope, and usage.
-
-## Architecture
-Clean Architecture and SOLID are followed to ensure maintainability and scalability.
-
-## Installation (SPM)
-```swift
-.package(url: "https://github.com/owner/iOS-Offline-First-Framework.git", from: "1.0.0")
-```
-
-## Quick Start
-```swift
-// Add a concise example usage here
-```
-
-## API Reference
-Describe key types and methods exposed by this module.
-
-## Usage Examples
-Provide several concrete end-to-end examples.
-
-## Performance
-List relevant performance considerations.
-
-## Security
-Document security-sensitive areas and mitigations.
-
-## Troubleshooting
-Known issues and solutions.
-
-## FAQ
-Answer common questions with clear, actionable guidance.
+Run in a host app target or SwiftUI preview.
