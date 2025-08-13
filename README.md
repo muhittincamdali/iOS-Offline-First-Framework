@@ -23,7 +23,6 @@
 ![Queue](https://img.shields.io/badge/Queue-Management-795548?style=for-the-badge)
 ![Architecture](https://img.shields.io/badge/Architecture-Clean-FF5722?style=for-the-badge)
 ![Swift Package Manager](https://img.shields.io/badge/SPM-Dependencies-FF6B35?style=for-the-badge)
-![CocoaPods](https://img.shields.io/badge/CocoaPods-Supported-E91E63?style=for-the-badge)
 
 **🏆 Professional iOS Offline-First Framework**
 
