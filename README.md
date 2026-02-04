@@ -38,6 +38,19 @@
 
 ---
 
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+- [Star History](#-star-history)
+
+---
+
 ## Why Offline-First?
 
 Users expect apps to work everywhere — in subways, airplanes, rural areas, or during network outages. Offline-first isn't just a feature; it's a **user expectation**.
