@@ -13,7 +13,7 @@ public protocol CRDTValue {
 // MARK: - Vector Clock
 
 /// Vector clock for distributed timestamp tracking
-public struct VectorClock: Codable, Equatable, Comparable {
+public struct VectorClock: Codable, Equatable, Comparable, Sendable {
     public private(set) var clock: [String: UInt64]
     
     public init() {

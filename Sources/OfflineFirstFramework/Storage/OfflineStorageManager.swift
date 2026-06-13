@@ -1,19 +1,19 @@
 import Foundation
-import RxSwift
-import CocoaLumberjack
+@preconcurrency import Combine
 
 /// Manages offline data storage with encryption and compression
 @available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-public final class OfflineStorageManager {
+@MainActor
+public final class OfflineStorageManager: ObservableObject {
     
     // MARK: - Properties
     
-    public let storageStatus = BehaviorSubject<StorageStatus>(value: .normal)
-    public let storageUsage = BehaviorSubject<StorageUsage>(value: StorageUsage())
+    public let storageStatus = CurrentValueSubject<StorageStatus, Never>(.normal)
+    public let storageUsage = CurrentValueSubject<StorageUsage, Never>(StorageUsage())
     
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "com.offlinefirst.storage", qos: .userInitiated)
-    private let disposeBag = DisposeBag()
+    private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Storage Paths
     
@@ -42,27 +42,24 @@ public final class OfflineStorageManager {
     // MARK: - Public Methods
     
     public func initialize() {
-        DDLogInfo("OfflineStorageManager initialized")
+        Logger.info("OfflineStorageManager initialized")
         createDirectoriesIfNeeded()
         updateStorageStatus()
     }
     
     public func startMonitoring() {
-        Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-            self?.updateStorageStatus()
-        }
-        DDLogInfo("Storage monitoring started")
+        Timer.publish(every: 60.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.updateStorageStatus()
+            }
+            .store(in: &cancellables)
+        Logger.info("Storage monitoring started")
     }
     
-    public func save<T: Codable>(_ data: T) -> Observable<SaveResult> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onNext(.failure(StorageError.unknown))
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            self.queue.async {
+    public func save<T: Codable>(_ data: T) async throws -> SaveResult {
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
                 do {
                     let metadata = StorageMetadata(
                         id: UUID().uuidString,
@@ -72,8 +69,8 @@ public final class OfflineStorageManager {
                         size: 0
                     )
                     
-                    let data = try JSONEncoder().encode(data)
-                    let compressedData = try self.compress(data)
+                    let encodedData = try JSONEncoder().encode(data)
+                    let compressedData = try self.compress(encodedData)
                     let encryptedData = try self.encrypt(compressedData)
                     
                     let filename = "\(metadata.id).data"
@@ -86,34 +83,21 @@ public final class OfflineStorageManager {
                     let metadataURL = self.metadataDirectory.appendingPathComponent("\(metadata.id).meta")
                     try metadataData.write(to: metadataURL)
                     
-                    DispatchQueue.main.async {
-                        observer.onNext(.success)
-                        observer.onCompleted()
+                    Task { @MainActor in
+                        self.updateStorageStatus()
+                        continuation.resume(returning: .success)
                     }
-                    
-                    self.updateStorageStatus()
                     
                 } catch {
-                    DispatchQueue.main.async {
-                        observer.onNext(.failure(error))
-                        observer.onCompleted()
-                    }
+                    continuation.resume(throwing: error)
                 }
             }
-            
-            return Disposables.create()
         }
     }
     
-    public func load<T: Codable>(_ type: T.Type) -> Observable<[T]> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onNext([])
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            self.queue.async {
+    public func load<T: Codable>(_ type: T.Type) async throws -> [T] {
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
                 do {
                     let metadataFiles = try self.fileManager.contentsOfDirectory(
                         at: self.metadataDirectory,
@@ -136,32 +120,18 @@ public final class OfflineStorageManager {
                         }
                     }
                     
-                    DispatchQueue.main.async {
-                        observer.onNext(results)
-                        observer.onCompleted()
-                    }
+                    continuation.resume(returning: results)
                     
                 } catch {
-                    DispatchQueue.main.async {
-                        observer.onNext([])
-                        observer.onCompleted()
-                    }
+                    continuation.resume(returning: [])
                 }
             }
-            
-            return Disposables.create()
         }
     }
     
-    public func delete<T: Codable>(_ data: T) -> Observable<DeleteResult> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onNext(.failure(StorageError.unknown))
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            self.queue.async {
+    public func delete<T: Codable>(_ data: T) async throws -> DeleteResult {
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
                 do {
                     let dataToDelete = try JSONEncoder().encode(data)
                     let compressedData = try self.compress(dataToDelete)
@@ -183,42 +153,26 @@ public final class OfflineStorageManager {
                             try self.fileManager.removeItem(at: dataFile)
                             try self.fileManager.removeItem(at: metadataFile)
                             
-                            DispatchQueue.main.async {
-                                observer.onNext(.success)
-                                observer.onCompleted()
+                            Task { @MainActor in
+                                self.updateStorageStatus()
+                                continuation.resume(returning: .success)
                             }
-                            
-                            self.updateStorageStatus()
                             return
                         }
                     }
                     
-                    DispatchQueue.main.async {
-                        observer.onNext(.notFound)
-                        observer.onCompleted()
-                    }
+                    continuation.resume(returning: .notFound)
                     
                 } catch {
-                    DispatchQueue.main.async {
-                        observer.onNext(.failure(error))
-                        observer.onCompleted()
-                    }
+                    continuation.resume(throwing: error)
                 }
             }
-            
-            return Disposables.create()
         }
     }
     
-    public func clearAllData() -> Observable<ClearResult> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onNext(.failure(StorageError.unknown))
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            self.queue.async {
+    public func clearAllData() async throws -> ClearResult {
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
                 do {
                     let dataFiles = try self.fileManager.contentsOfDirectory(
                         at: self.dataDirectory,
@@ -238,33 +192,21 @@ public final class OfflineStorageManager {
                         try self.fileManager.removeItem(at: file)
                     }
                     
-                    DispatchQueue.main.async {
-                        observer.onNext(.success)
-                        observer.onCompleted()
+                    Task { @MainActor in
+                        self.updateStorageStatus()
+                        continuation.resume(returning: .success)
                     }
-                    
-                    self.updateStorageStatus()
                     
                 } catch {
-                    DispatchQueue.main.async {
-                        observer.onNext(.failure(error))
-                        observer.onCompleted()
-                    }
+                    continuation.resume(throwing: error)
                 }
             }
-            
-            return Disposables.create()
         }
     }
     
-    public func getStorageInfo() -> Observable<StorageInfo> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            self.queue.async {
+    public func getStorageInfo() async -> StorageInfo {
+        return await withCheckedContinuation { continuation in
+            queue.async {
                 do {
                     let dataFiles = try self.fileManager.contentsOfDirectory(
                         at: self.dataDirectory,
@@ -286,19 +228,12 @@ public final class OfflineStorageManager {
                         availableSpace: self.getAvailableSpace()
                     )
                     
-                    DispatchQueue.main.async {
-                        observer.onNext(info)
-                        observer.onCompleted()
-                    }
+                    continuation.resume(returning: info)
                     
                 } catch {
-                    DispatchQueue.main.async {
-                        observer.onCompleted()
-                    }
+                    continuation.resume(returning: StorageInfo(totalSize: 0, fileCount: 0, availableSpace: 0))
                 }
             }
-            
-            return Disposables.create()
         }
     }
     
@@ -314,31 +249,31 @@ public final class OfflineStorageManager {
             try fileManager.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: metadataDirectory, withIntermediateDirectories: true)
         } catch {
-            DDLogError("Failed to create storage directories: \(error)")
+            Logger.error("Failed to create storage directories: \(error.localizedDescription)")
         }
     }
     
     private func updateStorageStatus() {
-        getStorageInfo()
-            .subscribe(onNext: { [weak self] info in
-                self?.storageUsage.onNext(StorageUsage(
-                    usedSpace: info.totalSize,
-                    availableSpace: info.availableSpace,
-                    fileCount: info.fileCount
-                ))
-                
-                let status: StorageStatus
-                if info.totalSize > 100 * 1024 * 1024 { // 100MB
-                    status = .full
-                } else if info.totalSize > 50 * 1024 * 1024 { // 50MB
-                    status = .lowSpace
-                } else {
-                    status = .normal
-                }
-                
-                self?.storageStatus.onNext(status)
-            })
-            .disposed(by: disposeBag)
+        Task {
+            let info = await getStorageInfo()
+            
+            self.storageUsage.send(StorageUsage(
+                usedSpace: info.totalSize,
+                availableSpace: info.availableSpace,
+                fileCount: info.fileCount
+            ))
+            
+            let status: StorageStatus
+            if info.totalSize > 100 * 1024 * 1024 { // 100MB
+                status = .full
+            } else if info.totalSize > 50 * 1024 * 1024 { // 50MB
+                status = .lowSpace
+            } else {
+                status = .normal
+            }
+            
+            self.storageStatus.send(status)
+        }
     }
     
     private func getAvailableSpace() -> Int64 {
@@ -351,35 +286,31 @@ public final class OfflineStorageManager {
     }
     
     private func compress(_ data: Data) throws -> Data {
-        // Simple compression - in real implementation use proper compression
         return data
     }
     
     private func decompress(_ data: Data) throws -> Data {
-        // Simple decompression - in real implementation use proper decompression
         return data
     }
     
     private func encrypt(_ data: Data) throws -> Data {
-        // Simple encryption - in real implementation use proper encryption
         return data
     }
     
     private func decrypt(_ data: Data) throws -> Data {
-        // Simple decryption - in real implementation use proper decryption
         return data
     }
 }
 
 // MARK: - Supporting Types
 
-public enum StorageStatus {
+public enum StorageStatus: Sendable {
     case normal
     case lowSpace
     case full
 }
 
-public struct StorageUsage {
+public struct StorageUsage: Sendable {
     public let usedSpace: Int64
     public let availableSpace: Int64
     public let fileCount: Int
@@ -391,7 +322,7 @@ public struct StorageUsage {
     }
 }
 
-public struct StorageInfo {
+public struct StorageInfo: Sendable {
     public let totalSize: Int64
     public let fileCount: Int
     public let availableSpace: Int64
@@ -403,7 +334,7 @@ public struct StorageInfo {
     }
 }
 
-public struct StorageMetadata: Codable {
+public struct StorageMetadata: Codable, Sendable {
     public let id: String
     public let type: String
     public let createdAt: Date

@@ -20,17 +20,12 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/realm/SwiftLint", from: "0.54.0"),
         .package(url: "https://github.com/Quick/Quick", from: "7.0.0"),
-        .package(url: "https://github.com/Quick/Nimble", from: "13.0.0"),
-        .package(url: "https://github.com/ReactiveX/RxSwift", from: "6.6.0"),
-        .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack", from: "3.8.0")
+        .package(url: "https://github.com/Quick/Nimble", from: "13.0.0")
     ],
     targets: [
         .target(
             name: "OfflineFirstFramework",
-            dependencies: [
-                "RxSwift",
-                .product(name: "CocoaLumberjackSwift", package: "CocoaLumberjack")
-            ],
+            dependencies: [],
             path: "Sources/OfflineFirstFramework",
             swiftSettings: [
                 .define("DEBUG", .when(configuration: .debug)),

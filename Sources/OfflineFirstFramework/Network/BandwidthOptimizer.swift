@@ -73,7 +73,7 @@ public struct BandwidthConfiguration: Codable, Sendable {
 
 /// Represents current network quality metrics
 public struct NetworkQuality: Sendable {
-    public let connectionType: ConnectionType
+    public let connectionType: OFConnectionType
     public let isExpensive: Bool
     public let isConstrained: Bool
     public let estimatedBandwidth: Int64  // bytes per second
@@ -104,12 +104,7 @@ public struct NetworkQuality: Sendable {
     )
 }
 
-public enum ConnectionType: String, Codable, Sendable {
-    case wifi
-    case cellular
-    case ethernet
-    case unknown
-}
+
 
 public enum SignalStrength: Int, Codable, Sendable, Comparable {
     case unknown = 0
@@ -214,7 +209,7 @@ public actor BandwidthOptimizer {
     private let monitor: NWPathMonitor
     private var currentQuality: NetworkQuality = .unknown
     private var transferQueue: [TransferTask] = []
-    private var activeTasks: [String: TransferTask] = []
+    private var activeTasks: [String: TransferTask] = [:]
     private var throughputSamples: [Int64] = []
     private var monitorQueue = DispatchQueue(label: "com.offlinefirst.bandwidth")
     
@@ -287,7 +282,7 @@ public actor BandwidthOptimizer {
     }
     
     private func handlePathUpdate(_ path: NWPath) {
-        let connectionType: ConnectionType
+        let connectionType: OFConnectionType
         let isExpensive = path.isExpensive
         let isConstrained = path.isConstrained
         
@@ -306,7 +301,7 @@ public actor BandwidthOptimizer {
         let signalStrength: SignalStrength
         
         switch connectionType {
-        case .wifi:
+        case .loopback, .wifi:
             estimatedBandwidth = 50_000_000  // 50 Mbps typical
             signalStrength = .good
         case .ethernet:
