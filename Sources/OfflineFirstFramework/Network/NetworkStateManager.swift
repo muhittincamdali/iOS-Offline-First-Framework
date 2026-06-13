@@ -1,23 +1,22 @@
 import Foundation
 import Network
-import RxSwift
-import CocoaLumberjack
+@preconcurrency import Combine
 
 /// Manages network connectivity and state monitoring
 @available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-public final class NetworkStateManager {
+public final class NetworkStateManager: Sendable {
     
     // MARK: - Properties
     
-    public let isOnline = BehaviorSubject<Bool>(value: false)
-    public let connectionType = BehaviorSubject<ConnectionType>(value: .unknown)
-    public let connectionQuality = BehaviorSubject<ConnectionQuality>(value: .unknown)
+    public let isOnline = CurrentValueSubject<Bool, Never>(false)
+    public let connectionType = CurrentValueSubject<OFConnectionType, Never>(.unknown)
+    public let connectionQuality = CurrentValueSubject<OFConnectionQuality, Never>(.unknown)
     
     public var currentStatus: NetworkStatus {
         return NetworkStatus(
-            isOnline: (try? isOnline.value()) ?? false,
-            connectionType: (try? connectionType.value()) ?? .unknown,
-            connectionQuality: (try? connectionQuality.value()) ?? .unknown
+            isOnline: isOnline.value,
+            connectionType: connectionType.value,
+            connectionQuality: connectionQuality.value
         )
     }
     
@@ -25,7 +24,6 @@ public final class NetworkStateManager {
     
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "com.offlinefirst.network", qos: .utility)
-    private let disposeBag = DisposeBag()
     
     // MARK: - Initialization
     
@@ -36,65 +34,46 @@ public final class NetworkStateManager {
     // MARK: - Public Methods
     
     public func initialize() {
-        DDLogInfo("NetworkStateManager initialized")
+        Logger.info("NetworkStateManager initialized")
         startMonitoring()
     }
     
     public func startMonitoring() {
         monitor.start(queue: queue)
-        DDLogInfo("Network monitoring started")
+        Logger.info("Network monitoring started")
     }
     
     public func stopMonitoring() {
         monitor.cancel()
-        DDLogInfo("Network monitoring stopped")
+        Logger.info("Network monitoring stopped")
     }
     
-    public func checkConnectivity() -> Observable<NetworkStatus> {
-        return Observable.create { [weak self] observer in
-            guard let self = self else {
-                observer.onCompleted()
-                return Disposables.create()
-            }
-            
-            let status = self.currentStatus
-            observer.onNext(status)
-            observer.onCompleted()
-            
-            return Disposables.create()
-        }
+    public func checkConnectivity() async -> NetworkStatus {
+        return currentStatus
     }
     
-    public func testConnection(url: URL) -> Observable<ConnectionTestResult> {
-        return Observable.create { observer in
-            let task = URLSession.shared.dataTask(with: url) { data, response, error in
-                if let error = error {
-                    observer.onNext(.failure(error))
-                } else if let httpResponse = response as? HTTPURLResponse {
-                    let result = ConnectionTestResult(
-                        isSuccess: httpResponse.statusCode >= 200 && httpResponse.statusCode < 300,
-                        statusCode: httpResponse.statusCode,
-                        responseTime: Date().timeIntervalSince1970
-                    )
-                    observer.onNext(result)
-                } else {
-                    observer.onNext(.failure(NetworkError.unknown))
-                }
-                observer.onCompleted()
-            }
-            task.resume()
-            
-            return Disposables.create {
-                task.cancel()
-            }
+    public func testConnection(url: URL) async throws -> ConnectionTestResult {
+        let startTime = Date()
+        let (_, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NetworkError.unknown
         }
+        
+        return ConnectionTestResult(
+            isSuccess: (200..<300).contains(httpResponse.statusCode),
+            statusCode: httpResponse.statusCode,
+            responseTime: Date().timeIntervalSince(startTime)
+        )
     }
     
     // MARK: - Private Methods
     
     private func setupMonitoring() {
         monitor.pathUpdateHandler = { [weak self] path in
-            self?.handlePathUpdate(path)
+            Task { @MainActor in
+                self?.handlePathUpdate(path)
+            }
         }
     }
     
@@ -103,16 +82,14 @@ public final class NetworkStateManager {
         let connectionType = determineConnectionType(path)
         let connectionQuality = determineConnectionQuality(path)
         
-        DispatchQueue.main.async { [weak self] in
-            self?.isOnline.onNext(isOnline)
-            self?.connectionType.onNext(connectionType)
-            self?.connectionQuality.onNext(connectionQuality)
-            
-            DDLogInfo("Network update - Online: \(isOnline), Type: \(connectionType), Quality: \(connectionQuality)")
-        }
+        self.isOnline.send(isOnline)
+        self.connectionType.send(connectionType)
+        self.connectionQuality.send(connectionQuality)
+        
+        Logger.info("Network update - Online: \(isOnline), Type: \(connectionType), Quality: \(connectionQuality)")
     }
     
-    private func determineConnectionType(_ path: NWPath) -> ConnectionType {
+    private func determineConnectionType(_ path: NWPath) -> OFConnectionType {
         if path.usesInterfaceType(.wifi) {
             return .wifi
         } else if path.usesInterfaceType(.cellular) {
@@ -126,9 +103,7 @@ public final class NetworkStateManager {
         }
     }
     
-    private func determineConnectionQuality(_ path: NWPath) -> ConnectionQuality {
-        // This is a simplified implementation
-        // In a real app, you would measure actual network performance
+    private func determineConnectionQuality(_ path: NWPath) -> OFConnectionQuality {
         if path.status == .satisfied {
             return .good
         } else if path.status == .requiresConnection {
@@ -141,35 +116,11 @@ public final class NetworkStateManager {
 
 // MARK: - Supporting Types
 
-public enum ConnectionType {
-    case wifi
-    case cellular
-    case ethernet
-    case loopback
-    case unknown
-}
 
-public enum ConnectionQuality {
-    case excellent
-    case good
-    case fair
-    case poor
-    case unknown
-}
 
-public struct NetworkStatus {
-    public let isOnline: Bool
-    public let connectionType: ConnectionType
-    public let connectionQuality: ConnectionQuality
-    
-    public init(isOnline: Bool, connectionType: ConnectionType, connectionQuality: ConnectionQuality) {
-        self.isOnline = isOnline
-        self.connectionType = connectionType
-        self.connectionQuality = connectionQuality
-    }
-}
 
-public struct ConnectionTestResult {
+
+public struct ConnectionTestResult: Sendable {
     public let isSuccess: Bool
     public let statusCode: Int
     public let responseTime: TimeInterval

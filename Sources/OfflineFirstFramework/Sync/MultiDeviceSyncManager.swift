@@ -183,7 +183,7 @@ public actor MultiDeviceSyncManager {
             id: configuration.deviceId,
             name: configuration.deviceName,
             platform: configuration.platform,
-            syncVersion: localVectorClock.timestamp(for: configuration.deviceId),
+            syncVersion: Int64(localVectorClock.timestamp(for: configuration.deviceId)),
             capabilities: [.offlineStorage, .encryption, .backgroundSync]
         )
     }
@@ -407,7 +407,7 @@ public actor MultiDeviceSyncManager {
     
     private func handleConflictResolution(_ message: SyncMessage) async {
         // Parse conflict resolution
-        guard let resolution = try? JSONDecoder().decode(ConflictResolutionMessage.self, from: message.payload) else {
+        guard let _ = try? JSONDecoder().decode(ConflictResolutionMessage.self, from: message.payload) else {
             return
         }
         

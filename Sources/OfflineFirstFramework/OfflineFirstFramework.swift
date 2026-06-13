@@ -246,7 +246,11 @@ public enum LogLevel: Int, Comparable, Sendable {
 
 /// Internal logger
 internal struct Logger {
-    static var level: LogLevel = .info
+    private static let _level = Locked<LogLevel>(.info)
+    static var level: LogLevel {
+        get { _level.withLock { $0 } }
+        set { _level.withLock { $0 = newValue } }
+    }
     
     static func log(_ message: String, level: LogLevel = .debug, file: String = #file, function: String = #function, line: Int = #line) {
         guard level >= Self.level else { return }
