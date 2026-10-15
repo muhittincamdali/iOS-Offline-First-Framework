@@ -43,7 +43,7 @@ public struct PendingChange<Record: SyncableRecord>: Sendable, Identifiable {
     public let recordID: Record.ID
     /// The record as it will be pushed, or `nil` for a delete.
     public let record: Record?
-    /// Failed pushes of this change so far.
+    /// Failed pushes of this change so far, conflicts included.
     public let attempts: Int
     /// The earliest time of the next automatic push, or `nil` for the next sync.
     public let nextAttemptAt: Date?

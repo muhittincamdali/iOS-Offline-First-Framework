@@ -8,6 +8,10 @@ import Foundation
 /// pushes the change is parked: it stays in the store, ``OfflineStore/failedChanges()`` lists
 /// it, and ``OfflineStore/retryFailedChanges()`` puts it back in the queue.
 ///
+/// A push the server answers with a conflict is a failed attempt too. The resolved version goes
+/// out again right away once per sync, which settles an ordinary conflict; a further conflict
+/// waits like any other failure, so a change that keeps conflicting ends up parked.
+///
 /// Every value is checked when the policy is created: negative or non-finite numbers are
 /// replaced, so a policy built from remote configuration cannot produce a negative, infinite
 /// or overflowing delay.

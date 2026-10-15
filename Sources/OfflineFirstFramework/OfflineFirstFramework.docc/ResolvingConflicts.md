@@ -81,5 +81,9 @@ configuration.conflictResolver = .mergeable
 ## Limits
 
 A resolver that returns a record with another ID is ignored and the server's version is kept.
-If the server answers every push of a record with a new conflict, the store stops pushing that
-record after three attempts in one sync and tries again in the next one.
+A push the server answers with a conflict counts as a failed attempt of the
+``OfflineStore/Configuration/retryPolicy``. The resolved version goes out again right away once
+per sync; if that push conflicts too, it waits for its retry date, and after the last attempt
+it is parked in ``OfflineStore/failedChanges()``. So a server that answers every push with a
+conflict, or two devices that both keep their own version with
+``ConflictResolver/clientWins``, cannot keep the store pushing.

@@ -1,8 +1,8 @@
 import Foundation
 
 extension OfflineStore {
-    /// Pushes after a conflict are limited per record and sync, so a server that answers every
-    /// push with a new conflict cannot keep the sync running forever.
+    /// Pushes of one record in one sync. A second conflict already makes the change wait for
+    /// its retry date; the limit also holds with a ``RetryPolicy`` without delays.
     static var maximumPushesPerRecord: Int { 3 }
 
     /// Server-provided texts (rejection reasons, error descriptions) are cut to this length.
@@ -59,10 +59,13 @@ extension OfflineStore {
             try update { $0.lastSyncedAt = configuration.now() }
             setStatus(.idle)
             return report
-        } catch is CancellationError {
-            setStatus(.idle)
-            throw CancellationError()
         } catch {
+            // A transport may report its cancellation with an error of its own, such as
+            // URLError(.cancelled); the sync was still cancelled, not failed.
+            if error is CancellationError || Task.isCancelled {
+                setStatus(.idle)
+                throw CancellationError()
+            }
             breaker.recordFailure(at: configuration.now())
             setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
             throw error
@@ -107,13 +110,14 @@ extension OfflineStore {
                 outcomes = try await transport.push(changes)
             } catch {
                 inFlight.subtract(changes.map(\.recordID))
-                if !(error is CancellationError) {
-                    try recordFailedAttempts(changes, message: Self.message(for: error), report: &report)
-                }
+                if error is CancellationError || Task.isCancelled { throw CancellationError() }
+                // A failed write of the attempt count (a full disk) must not hide the reason the
+                // push failed; the attempt then counts again next time.
+                try? recordFailedAttempts(changes, message: Self.message(for: error), report: &report)
                 throw error
             }
             inFlight.subtract(changes.map(\.recordID))
-            try apply(outcomes, for: changes, report: &report)
+            try apply(outcomes, for: changes, pushes: pushes, report: &report)
         }
     }
 
@@ -151,7 +155,8 @@ extension OfflineStore {
             }
     }
 
-    private func apply(_ outcomes: [UUID: PushOutcome<Record>], for changes: [OutgoingChange<Record>], report: inout SyncReport) throws {
+    private func apply(_ outcomes: [UUID: PushOutcome<Record>], for changes: [OutgoingChange<Record>], pushes: [Record.ID: Int],
+                       report: inout SyncReport) throws {
         try update { state in
             for change in changes {
                 guard var entry = state.entries[change.recordID] else { continue }
@@ -175,7 +180,12 @@ extension OfflineStore {
                     if isCurrent { entry.pending = nil }
                 case .conflict(let current):
                     report.conflicts += 1
-                    guard isCurrent, Self.isConsistent(current, for: entry.id) else { break }
+                    guard isCurrent else { break }
+                    guard Self.isConsistent(current, for: entry.id) else {
+                        fail(&entry, message: "The server answered with a conflict that names another record or breaks the limits.",
+                             report: &report)
+                        break
+                    }
                     let current = receive(current, in: &state)
                     guard current.revision != entry.revision, !Self.isStale(current, comparedWith: entry, history: state.history) else {
                         // The version the change is based on, or an older one (a lagging replica
@@ -184,7 +194,8 @@ extension OfflineStore {
                              report: &report)
                         break
                     }
-                    entry = try resolve(entry, against: current, in: &state)
+                    entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushes[change.recordID] ?? 1,
+                                        report: &report)
                 case .rejected(let reason, let current):
                     report.rejected += 1
                     guard isCurrent else { break }
@@ -317,7 +328,7 @@ extension OfflineStore {
         if entry.pending != nil {
             // Changed on the device and on the server: a conflict for the resolver.
             report.conflicts += 1
-            Self.store(try resolve(entry, against: change, in: &state), in: &state)
+            Self.store(try resolve(entry, against: change, in: &state, pushesInThisSync: nil, report: &report), in: &state)
         } else {
             Self.store(Self.entry(from: change, replacing: entry, in: &state, configuration: configuration), in: &state)
         }
@@ -325,7 +336,13 @@ extension OfflineStore {
 
     // MARK: - Conflicts
 
-    private func resolve(_ entry: StoredEntry<Record>, against remote: RemoteChange<Record>, in state: inout State) throws -> StoredEntry<Record> {
+    /// Asks the resolver about `entry`'s pending change and `remote`, the server's newer version.
+    ///
+    /// - Parameter pushesInThisSync: For a conflict the server answered to a push, how often the
+    ///   change was pushed in this sync; `nil` for a conflict found by a pull, which is not a
+    ///   failed attempt.
+    private func resolve(_ entry: StoredEntry<Record>, against remote: RemoteChange<Record>, in state: inout State,
+                         pushesInThisSync: Int?, report: inout SyncReport) throws -> StoredEntry<Record> {
         if entry.record == nil && remote.record == nil {
             return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
         }
@@ -350,9 +367,41 @@ extension OfflineStore {
         // The local or merged version goes out again on top of the server's revision, under a
         // new change ID so the server does not answer it from an idempotency cache.
         Self.base(&result, on: remote, history: state.history)
-        result.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
-                                      attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
+        var pending = entry.pending
+            ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
+        pending.changeID = UUID()
+        if let pushesInThisSync {
+            pending = conflictAttempt(pending, pushesInThisSync: pushesInThisSync, report: &report)
+        }
+        result.pending = pending
         return result
+    }
+
+    /// Counts a conflict answer as a failed attempt of the resolved change. The first one in a
+    /// sync is pushed again right away, which settles an ordinary conflict; when the server
+    /// answers that push with a conflict too, the change waits as the ``RetryPolicy`` says, and
+    /// after its last attempt it is parked. Two devices that both keep their own version
+    /// (``ConflictResolver/clientWins``) or a server that conflicts on every push therefore
+    /// cannot keep the store pushing.
+    private func conflictAttempt(_ pending: PendingWrite, pushesInThisSync: Int, report: inout SyncReport) -> PendingWrite {
+        var pending = pending
+        pending.attempts = pending.attempts == .max ? .max : pending.attempts + 1
+        let policy = configuration.retryPolicy
+        guard policy.allowsRetry(afterAttempts: pending.attempts) else {
+            pending.isParked = true
+            pending.nextAttemptAt = nil
+            pending.lastError = "The server answered with a conflict again after \(pending.attempts) attempts."
+            report.parked += 1
+            return pending
+        }
+        pending.lastError = "The server answered with a conflict."
+        if pushesInThisSync > 1 {
+            let delay = policy.delay(afterAttempt: pending.attempts, random: configuration.random())
+            pending.nextAttemptAt = configuration.now().addingTimeInterval(delay.seconds)
+        } else {
+            pending.nextAttemptAt = nil
+        }
+        return pending
     }
 
     // MARK: - Helpers

@@ -267,9 +267,93 @@ struct SyncTests {
         let store = try makeStore(transport) { $0.conflictResolver = .clientWins }
         try await store.save(Note(id: "a", text: "mine"))
         let report = try await store.sync()
-        #expect(report.conflicts == OfflineStore<Note>.maximumPushesPerRecord)
-        #expect(await transport.pushed.count == OfflineStore<Note>.maximumPushesPerRecord)
-        #expect(await store.pendingChanges().count == 1)
+        // The resolved version goes out again once right away; after the second conflict it
+        // waits for its retry date.
+        #expect(report.conflicts == 2)
+        #expect(await transport.pushed.count == 2)
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 2)
+        #expect(pending.nextAttemptAt == clock.now.addingTimeInterval(20))
+    }
+
+    /// A server (or a device with `.clientWins` on the other side) that answers every push with
+    /// a conflict: the change backs off, is parked after the last attempt and reported, and the
+    /// syncs in between push nothing.
+    @Test func aChangeThatKeepsConflictingIsParked() async throws {
+        let counter = Counter()
+        let transport = ScriptedTransport()
+        await transport.onPush { changes in
+            let revision = await counter.next()
+            return Dictionary(uniqueKeysWithValues: changes.map {
+                ($0.id, .conflict(current: RemoteChange(recordID: $0.recordID, record: Note(id: $0.recordID, text: "s"),
+                                                         revision: "\(revision)", timestamp: HLCTimestamp(wallTime: 1, nodeID: "old"))))
+            })
+        }
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "mine"))
+        var parked = 0
+        for _ in 0..<20 {
+            let report = try await store.sync()
+            #expect(!report.skipped)
+            parked += report.parked
+        }
+        #expect(await transport.pushed.count == 2)
+        clock.advance(by: 20)
+        parked += try await store.sync().parked
+        #expect(await transport.pushed.count == 3)
+        #expect(parked == 1)
+        let failed = try #require(await store.failedChanges().first)
+        #expect(failed.record?.text == "mine")
+        #expect(failed.lastError?.contains("conflict") == true)
+        clock.advance(by: 3_600)
+        try await store.sync()
+        #expect(await transport.pushed.count == 3)
+        #expect(await store.breaker.state == .closed)
+
+        // The user can try again; the count starts over.
+        try await store.retryFailedChanges()
+        try await store.sync()
+        #expect(await transport.pushed.count == 5)
+    }
+
+    /// A conflict answer whose current version belongs to another record is counted, explained
+    /// and retried later, instead of being pushed again on every sync.
+    @Test func aConflictAnswerForAnotherRecordIsAFailedAttempt() async throws {
+        let bogus = RemoteChange(recordID: "zzz", record: Note(id: "zzz", text: "?"), revision: "9", timestamp: nil)
+        let transport = ScriptedTransport(push: { changes in
+            Dictionary(uniqueKeysWithValues: changes.map { ($0.id, PushOutcome<Note>.conflict(current: bogus)) })
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "A"))
+        for _ in 0..<5 { try await store.sync() }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 1)
+        #expect(pending.lastError?.contains("another record") == true)
+        #expect(pending.nextAttemptAt == clock.now.addingTimeInterval(10))
+        #expect(await transport.pushed.count == 1)
+    }
+
+    /// A transport that reports its cancellation as URLError(.cancelled) was cancelled, not
+    /// failed: no attempt is counted.
+    @Test func aCancellationReportedAsAnErrorIsNotAFailedAttempt() async throws {
+        let transport = ScriptedTransport(push: { _ in
+            do {
+                try await Task.sleep(for: .seconds(3_600))
+            } catch {
+                throw URLError(.cancelled)
+            }
+            return [:]
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "A"))
+        let caller = Task { try await store.sync() }
+        #expect(await eventually { await transport.pushed.count == 1 })
+        caller.cancel()
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 0)
+        #expect(await store.status == .idle)
+        #expect(await store.breaker.consecutiveFailures == 0)
     }
 
     @Test func missingAnswersCountAsFailedAttempts() async throws {
