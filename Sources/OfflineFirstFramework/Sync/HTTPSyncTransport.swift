@@ -117,6 +117,16 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Sends `request` and returns the body of a 2xx answer, reading at most
     /// ``maximumResponseSize`` bytes.
     private func send(_ request: URLRequest) async throws -> Data {
+        do {
+            return try await receive(request)
+        } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
+            // URLSession reports a cancelled task as URLError(.cancelled). The store treats
+            // CancellationError as "stopped", not as a failed attempt.
+            throw CancellationError()
+        }
+    }
+
+    private func receive(_ request: URLRequest) async throws -> Data {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.notHTTP }
         if response.expectedContentLength > Int64(maximumResponseSize) {

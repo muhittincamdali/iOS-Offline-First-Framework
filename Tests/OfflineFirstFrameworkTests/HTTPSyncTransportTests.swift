@@ -154,6 +154,29 @@ struct HTTPSyncTransportTests {
         }
     }
 
+    @Test func cancellingASyncOverHTTPIsNotAFailedAttempt() async throws {
+        let started = OSAllocatedUnfairLock(initialState: false)
+        let transport = transport { _, _ in
+            started.withLock { $0 = true }
+            // Answers late, so the sync is cancelled while the request is open.
+            Thread.sleep(forTimeInterval: 1)
+            return (200, Data(#"{"outcomes": {}}"#.utf8))
+        }
+        let clock = TestClock()
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: clock))
+        try await store.save(Note(id: "a", text: "A"))
+        let caller = Task { try await store.sync() }
+        #expect(await eventually { started.withLock { $0 } })
+        caller.cancel()
+
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 0)
+        #expect(pending.lastError == nil)
+        #expect(await store.status == .idle)
+    }
+
     @Test func storeSyncsThroughTheHTTPTransport() async throws {
         let server = InMemorySyncServer<Note>()
         // The stub forwards to the in-memory server, so the whole HTTP path runs.
