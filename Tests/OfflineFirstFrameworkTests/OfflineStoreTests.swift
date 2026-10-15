@@ -169,6 +169,36 @@ struct OfflineStoreTests {
         #expect(try small.names() == ["notes.store.corrupt-1700000000000"])
     }
 
+    /// Two instances on one file: the second one's write is refused instead of dropping the
+    /// record the first one saved.
+    @Test func aSecondInstanceCannotDropTheFirstOnesSave() async throws {
+        let storage = InMemoryStorage()
+        let first = try makeStore(storage)
+        let second = try makeStore(storage)
+        try await first.save(Note(id: "a", text: "A"))
+        await #expect(throws: OfflineFirstError.storeChangedElsewhere(name: "notes")) {
+            try await second.save(Note(id: "b", text: "B"))
+        }
+        #expect(await second.records().isEmpty)
+        let reopened = try makeStore(storage)
+        #expect(await reopened.records() == [Note(id: "a", text: "A")])
+        try await reopened.save(Note(id: "b", text: "B"))
+        #expect(await reopened.count == 2)
+    }
+
+    @Test func twoFileStoresForOneDirectoryShareTheProtection() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try makeStore(try FileStore(directory: directory, protection: .none))
+        let second = try makeStore(try FileStore(directory: directory.appending(path: "."), protection: .none))
+        try await second.save(Note(id: "b", text: "B"))
+        await #expect(throws: OfflineFirstError.storeChangedElsewhere(name: "notes")) {
+            try await first.save(Note(id: "a", text: "A"))
+        }
+        // Another store name is another file.
+        try await makeStore(try FileStore(directory: directory, protection: .none), name: "other").save(Note(id: "c", text: "C"))
+    }
+
     @Test func storesFromANewerSchemaAreNeverReset() throws {
         let storage = InMemoryStorage()
         try storage.write(Data(#"{"format":1,"schemaVersion":5,"nodeID":"x","nextSequence":0,"entries":[]}"#.utf8), to: "notes.store")

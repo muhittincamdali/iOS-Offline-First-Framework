@@ -26,6 +26,12 @@ it also means each write costs time proportional to the number of records. The d
 collections up to tens of thousands of records. For larger data sets, split them into several
 stores.
 
+Open one ``OfflineStore`` per file. A second instance on the same file in the same process
+cannot write once the first one did: its write throws
+``OfflineFirstError/storeChangedElsewhere(name:)`` instead of dropping the other instance's
+changes. Two processes, such as an app and its extension in one app group, are not
+coordinated; give each its own store, or make sure only one of them has the store open.
+
 ## Encryption
 
 ``StoreEncryption`` seals the file with AES-GCM. The easiest setup keeps a random 256-bit key
