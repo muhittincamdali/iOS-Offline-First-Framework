@@ -51,7 +51,7 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 140 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 142 testes de Swift Testing no macOS e em um simulador de
   iPhone, 16 testes de Node para o servidor e uma suíte de testes de ponta a ponta na CI que
   sincroniza dois stores por meio do servidor via HTTP.
 

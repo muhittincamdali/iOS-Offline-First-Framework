@@ -33,7 +33,7 @@
 - **任何后端** — `HTTPSyncTransport` 使用一套有文档的 JSON 协议，[`Examples/SyncServer`](Examples/SyncServer) 中的参考服务器用大约 280 行 JavaScript 实现了它；任何其他 API 都可以接在 `SyncTransport` 之后，例如使用 ETag 的 REST API。
 - **为 SwiftUI 而生** — `SyncedCollection` 是存储的 `@Observable` 模型；设备联网时以及本地编辑之后不久会自动同步，也可以通过一次调用在后台刷新任务中同步。
 - **静态数据受保护** — 使用保存在 Keychain 中的密钥进行 AES-GCM 文件加密、数据保护级别、记录架构迁移，以及针对损坏文件的处理策略。
-- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 140 个 Swift Testing 测试，为服务器编写了 16 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
+- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 142 个 Swift Testing 测试，为服务器编写了 16 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
 
 ### 内容一览
 

@@ -50,7 +50,7 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 140 Swift Testing
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 142 Swift Testing
   testi, sunucu için 16 Node testi ve CI'da iki yerel depoyu sunucu üzerinden HTTP ile eşitleyen uçtan uca
   bir test paketi.
 

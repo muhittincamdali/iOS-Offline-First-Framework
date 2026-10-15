@@ -46,7 +46,7 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 140 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 142 Swift Testing tests on macOS and an iPhone simulator,
   16 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
   server over HTTP.
 

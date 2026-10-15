@@ -53,7 +53,7 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 140 tests Swift Testing sur macOS et sur un simulateur
+- **Testé contre un vrai serveur** — 142 tests Swift Testing sur macOS et sur un simulateur
   d’iPhone, 16 tests Node pour le serveur et une suite de tests de bout en bout dans la CI qui
   synchronise deux stores via le serveur en HTTP.
 

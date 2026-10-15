@@ -33,7 +33,7 @@
 - **모든 백엔드** — `HTTPSyncTransport`는 문서화된 JSON 프로토콜을 사용하며, [`Examples/SyncServer`](Examples/SyncServer)의 참조 서버가 약 280줄의 JavaScript로 이를 구현합니다. 그 밖의 API도 `SyncTransport` 뒤에 둘 수 있습니다. 예를 들어 ETag를 쓰는 REST API가 그렇습니다.
 - **SwiftUI를 위해 설계** — `SyncedCollection`은 스토어의 `@Observable` 모델입니다. 자동 동기화는 기기가 온라인이 될 때와 로컬 편집 직후에 실행되고, 호출 한 번으로 백그라운드 새로 고침 작업에서도 동기화할 수 있습니다.
 - **저장된 데이터 보호** — Keychain에 보관한 키를 쓰는 AES-GCM 파일 암호화, 데이터 보호 클래스, 레코드 스키마 마이그레이션, 손상된 파일을 위한 정책을 제공합니다.
-- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 140개, 서버용 Node 테스트 16개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
+- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 142개, 서버용 Node 테스트 16개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
 
 ### 포함된 항목
 

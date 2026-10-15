@@ -25,7 +25,8 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
   state that becomes current only after the file write succeeded. A record is marked as sent in
   the file before its first push leaves, so deleting it after a lost answer or a crash still
   reaches the server. Calls to `sync` while one runs share it; cancelling one of them stops it
-  only when no other call waits. `save`, `save(contentsOf:)`, `delete`, `records`,
+  only when no other call waits, and a call made while a cancelled sync stops starts a new one.
+  `save`, `save(contentsOf:)`, `delete`, `records`,
   `pendingChanges`, `failedChanges`, `retryFailedChanges`, `discardChange(for:)`, `sync`,
   `states()` and `Configuration` with defaults for every setting.
 - Conflict handling: `ConflictResolver` with `lastWriteWins` (default), `serverWins`,
@@ -39,8 +40,8 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
 - Conflict-free types: `LWWRegister`, `LWWMap`, `GCounter`, `PNCounter`, `ORSet` and the
   `Mergeable` protocol.
 - Transports: `HTTPSyncTransport` for a two-endpoint JSON protocol (documented in the "Server
-  protocol" article), `InMemorySyncServer` for tests, previews and demos, and the
-  `SyncTransport` protocol for any other API.
+  protocol" article; a cancelled request ends with `CancellationError`), `InMemorySyncServer`
+  for tests, previews and demos, and the `SyncTransport` protocol for any other API.
 - Sync control: `RetryPolicy` (exponential backoff with jitter, parking after the last
   attempt), `CircuitBreaker`, automatic sync (`startAutomaticSync`) on reconnect, after local
   edits, when retries are due and at an interval; `NetworkConnectivityMonitor` and

@@ -51,7 +51,7 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 140 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 142 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, 16 pruebas de Node para el servidor y un conjunto de pruebas de extremo a extremo en CI que
   sincroniza dos almacenes a través del servidor por HTTP.
 

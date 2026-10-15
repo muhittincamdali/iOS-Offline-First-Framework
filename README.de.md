@@ -51,7 +51,7 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 140 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 142 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, 16 Node-Tests für den Server und eine End-to-End-Testsuite in der CI, die zwei
   Stores über HTTP durch den Server synchronisiert.
 
