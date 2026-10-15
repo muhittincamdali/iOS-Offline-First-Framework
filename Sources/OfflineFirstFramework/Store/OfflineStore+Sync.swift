@@ -82,6 +82,7 @@ extension OfflineStore {
             try Task.checkCancellation()
             let changes = dueChanges(excluding: pushes)
             guard !changes.isEmpty else { return }
+            try markSent(changes)
             for change in changes {
                 pushes[change.recordID, default: 0] += 1
                 inFlight.insert(change.recordID)
@@ -98,6 +99,22 @@ extension OfflineStore {
             }
             inFlight.subtract(changes.map(\.recordID))
             try apply(outcomes, for: changes, report: &report)
+        }
+    }
+
+    /// Records in `changes` the server has not confirmed are marked as sent, and the mark is
+    /// written before the request leaves: the server may apply a push whose answer never
+    /// arrives, so from now on deleting the record has to go through the server.
+    private func markSent(_ changes: [OutgoingChange<Record>]) throws {
+        let unmarked = changes.map(\.recordID).filter { id in
+            guard let entry = state.entries[id] else { return false }
+            return entry.revision == nil && !entry.wasSent
+        }
+        guard !unmarked.isEmpty else { return }
+        try update { state in
+            for id in unmarked {
+                state.entries[id]?.wasSent = true
+            }
         }
     }
 

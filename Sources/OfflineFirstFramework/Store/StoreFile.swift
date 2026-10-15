@@ -25,6 +25,28 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// The order the record was first stored in.
     var position: UInt64
     var pending: PendingWrite?
+    /// Whether a push of this record was ever sent. Written to the file before the request goes
+    /// out: when the answer is lost, or the app ends before it arrives, the server may hold the
+    /// record although ``revision`` is still `nil`, so a later delete must reach the server.
+    var wasSent = false
+}
+
+extension StoredEntry {
+    private enum CodingKeys: String, CodingKey {
+        case id, record, timestamp, revision, position, pending, wasSent
+    }
+
+    /// Files written before `wasSent` existed have no such key; their records count as unsent.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Record.ID.self, forKey: .id)
+        record = try container.decodeIfPresent(Record.self, forKey: .record)
+        timestamp = try container.decode(HLCTimestamp.self, forKey: .timestamp)
+        revision = try container.decodeIfPresent(String.self, forKey: .revision)
+        position = try container.decode(UInt64.self, forKey: .position)
+        pending = try container.decodeIfPresent(PendingWrite.self, forKey: .pending)
+        wasSent = try container.decodeIfPresent(Bool.self, forKey: .wasSent) ?? false
+    }
 }
 
 /// The file an ``OfflineStore`` writes.

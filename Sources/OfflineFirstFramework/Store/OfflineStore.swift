@@ -145,11 +145,11 @@ public actor OfflineStore<Record: SyncableRecord> {
         localChangeDidHappen()
     }
 
-    /// Deletes the record with `id` and queues the deletion for the server. A record the
-    /// server has never seen is removed right away. Deleting a missing record does nothing.
+    /// Deletes the record with `id` and queues the deletion for the server. A record that was
+    /// never sent to the server is removed right away. Deleting a missing record does nothing.
     public func delete(_ id: Record.ID) throws {
         guard let entry = state.entries[id], entry.record != nil else { return }
-        let reachedServer = entry.revision != nil || inFlight.contains(id)
+        let reachedServer = entry.revision != nil || entry.wasSent
         try update { state in
             if reachedServer {
                 try Self.write(nil, id: id, into: &state, configuration: configuration)
@@ -173,14 +173,14 @@ public actor OfflineStore<Record: SyncableRecord> {
         localChangeDidHappen()
     }
 
-    /// Drops the waiting change of record `id`. A record the server has never seen is removed;
-    /// for one it knows, the local version is removed too and the next sync pulls all server
+    /// Drops the waiting change of record `id`. A record that was never sent is removed; for one
+    /// the server may know, the local version is removed too and the next sync pulls all server
     /// changes again from the start, which brings back the server's copy.
     public func discardChange(for id: Record.ID) throws {
         guard let entry = state.entries[id], entry.pending != nil, !inFlight.contains(id) else { return }
         try update { state in
             state.entries[id] = nil
-            if entry.revision != nil {
+            if entry.revision != nil || entry.wasSent {
                 state.token = nil
             }
         }
