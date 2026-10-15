@@ -8,13 +8,6 @@ extension OfflineStore {
     /// Server-provided texts (rejection reasons, error descriptions) are cut to this length.
     static var maximumMessageLength: Int { 1_000 }
 
-    /// The longest revision or change token, in UTF-8 bytes, the store keeps. Every record
-    /// stores its revision, so longer values from a server would grow the file without limit.
-    static var maximumRevisionLength: Int { 1_024 }
-
-    /// The longest node ID, in UTF-8 bytes, accepted in a server timestamp.
-    static var maximumNodeIDLength: Int { 256 }
-
     /// Pushes local changes, then pulls server changes.
     ///
     /// Calls made while a sync runs wait for that sync and return its report. Cancelling the
@@ -284,49 +277,6 @@ extension OfflineStore {
     }
 
     // MARK: - Helpers
-
-    /// The server's version as a stored entry without a pending change.
-    static func entry(from remote: RemoteChange<Record>, replacing existing: StoredEntry<Record>?, in state: inout State,
-                      configuration: Configuration) -> StoredEntry<Record> {
-        let timestamp = remote.timestamp ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
-        return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
-                           position: existing?.position ?? state.takeSequence(), pending: nil)
-    }
-
-    /// Whether `change` carries an older timestamp than the server version the store holds.
-    static func isOlder(_ change: RemoteChange<Record>, than entry: StoredEntry<Record>) -> Bool {
-        guard entry.revision != nil, let timestamp = change.timestamp else { return false }
-        return timestamp < entry.timestamp
-    }
-
-    /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
-    /// server confirmed it (it has a revision), so an older version of the record that arrives
-    /// later is recognised; otherwise it is removed.
-    static func store(_ entry: StoredEntry<Record>, in state: inout State) {
-        let isGone = entry.record == nil && entry.pending == nil && entry.revision == nil
-        state.entries[entry.id] = isGone ? nil : entry
-    }
-
-    /// Tombstones kept per store; the oldest are dropped first.
-    static var maximumTombstones: Int { 1_000 }
-
-    /// Drops the oldest tombstones beyond ``maximumTombstones``.
-    static func pruneTombstones(in state: inout State) {
-        let tombstones = state.entries.values.filter { $0.record == nil && $0.pending == nil }
-        guard tombstones.count > maximumTombstones else { return }
-        for entry in tombstones.sorted(by: { $0.timestamp < $1.timestamp }).prefix(tombstones.count - maximumTombstones) {
-            state.entries[entry.id] = nil
-        }
-    }
-
-    /// A server record is ignored when its own ID differs from the ID it was sent for, or when
-    /// its revision or timestamp is longer than the limits.
-    static func isConsistent(_ change: RemoteChange<Record>, for id: Record.ID) -> Bool {
-        change.recordID == id
-            && (change.record.map { $0.id == id } ?? true)
-            && change.revision.utf8.count <= maximumRevisionLength
-            && (change.timestamp.map { $0.nodeID.utf8.count <= maximumNodeIDLength } ?? true)
-    }
 
     /// Moves the clock past a server timestamp; one too far in the future is ignored.
     private func observe(_ timestamp: HLCTimestamp?, in state: inout State) {
