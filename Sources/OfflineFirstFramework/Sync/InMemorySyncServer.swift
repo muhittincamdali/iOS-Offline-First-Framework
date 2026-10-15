@@ -34,6 +34,10 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     private var sequence = 0
     /// Names this run of the server in revisions and change tokens.
     private var epoch = InMemorySyncServer.makeEpoch()
+
+    /// Different for every instance, so a store that is opened with a new server instance
+    /// pulls everything again.
+    public nonisolated let serverIdentity: String? = "in-memory-\(UUID().uuidString)"
     private var clock: HybridLogicalClock
     private var answers: [UUID: PushOutcome<Record>] = [:]
     private var answerOrder: [UUID] = []
@@ -159,7 +163,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         return PullResponse(
             changes: page.map { remote($0.key, $0.value) },
             token: "\(epoch).\(next)",
-            hasMore: changed.count > page.count
+            hasMore: changed.count > page.count,
+            epoch: epoch
         )
     }
 

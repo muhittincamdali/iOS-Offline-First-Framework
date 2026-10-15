@@ -64,8 +64,11 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// The record, or `nil` when it was deleted on the server.
     public let record: Record?
 
-    /// The server's revision of the record. Any string that changes with every write works,
-    /// such as a version number or an ETag.
+    /// The server's revision of the record. Any string works, such as a version number or an
+    /// ETag, as long as the server never gives the same string to two different versions of
+    /// the record, not even after a restart or a restore from a backup: the store treats an
+    /// equal revision as the same version. The reference servers put their ``PullResponse/epoch``
+    /// in front of a counter (`"9f2c41d07ab35e18.43"`).
     public let revision: String
 
     /// When the record was last changed, if the server keeps the timestamps it receives.
@@ -110,11 +113,18 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// Whether more changes follow; the store pulls again right away.
     public let hasMore: Bool
 
+    /// Names the server's history of the records, if the server reports it. A server that may
+    /// have lost or replaced its data (an in-memory server that restarted, a restore from a
+    /// backup, a different database) reports a new epoch. The store then pulls everything again
+    /// from the start and keeps its own pending changes.
+    public let epoch: String?
+
     /// Creates a page.
-    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool) {
+    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil) {
         self.changes = changes
         self.token = token
         self.hasMore = hasMore
+        self.epoch = epoch
     }
 }
 
@@ -123,7 +133,8 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 /// Implement the two calls with your networking code (`URLSession`, a GraphQL client, a
 /// database SDK). Throw for a failure that is worth retrying, such as no connection or a 5xx
 /// status; answer ``PushOutcome/rejected(reason:current:)`` for a change that will never
-/// succeed.
+/// succeed. Both calls should stop when their task is cancelled: the store cancels a request
+/// when every caller of the sync gave up.
 ///
 /// ```swift
 /// struct NotesAPI: SyncTransport {
@@ -142,10 +153,21 @@ public protocol SyncTransport<Record>: Sendable {
     /// The record type the transport syncs.
     associatedtype Record: SyncableRecord
 
+    /// Identifies the server and collection the transport talks to, for example its URL. The
+    /// store keeps it with its change token; when the store is opened with a transport of
+    /// another identity, it pulls everything again instead of sending the old server's token.
+    /// Default: `nil`, which is not checked.
+    var serverIdentity: String? { get }
+
     /// Sends local changes and returns an outcome for each change ID. A change without an
     /// outcome counts as a failed attempt and is retried later.
     func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>]
 
     /// Returns server changes after `token`, which is `nil` on the first sync.
     func pull(since token: String?) async throws -> PullResponse<Record>
+}
+
+extension SyncTransport {
+    /// No identity: the store keeps its token whatever transport it is opened with.
+    public var serverIdentity: String? { nil }
 }

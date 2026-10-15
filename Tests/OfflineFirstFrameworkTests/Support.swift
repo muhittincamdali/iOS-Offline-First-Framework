@@ -50,11 +50,14 @@ actor ScriptedTransport: SyncTransport {
     private var pullHandler: PullHandler
     private(set) var pushed: [[OutgoingChange<Note>]] = []
     private(set) var pulls = 0
+    nonisolated let serverIdentity: String?
 
     init(
+        identity: String? = nil,
         push: @escaping PushHandler = { changes in Dictionary(uniqueKeysWithValues: changes.map { ($0.id, .accepted(revision: "r-\($0.id)")) }) },
         pull: @escaping PullHandler = { token in PullResponse(changes: [], token: token, hasMore: false) }
     ) {
+        serverIdentity = identity
         pushHandler = push
         pullHandler = pull
     }

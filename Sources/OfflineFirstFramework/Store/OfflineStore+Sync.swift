@@ -45,6 +45,7 @@ extension OfflineStore {
             report.skipped = true
             return report
         }
+        try bind(to: transport)
         guard breaker.allowsAttempt(at: configuration.now()) else {
             if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }
             report.skipped = true
@@ -65,6 +66,20 @@ extension OfflineStore {
             breaker.recordFailure(at: configuration.now())
             setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
             throw error
+        }
+    }
+
+    /// Keeps the transport's identity with the token. A store opened with another server
+    /// starts a new history instead of sending that server the old one's token. A store that
+    /// has no identity yet (a new store, or a file from before identities) takes the
+    /// transport's.
+    private func bind(to transport: any SyncTransport<Record>) throws {
+        guard let identity = transport.serverIdentity, identity != state.serverIdentity else { return }
+        try update { state in
+            if state.serverIdentity != nil {
+                Self.beginHistory(epoch: nil, in: &state)
+            }
+            state.serverIdentity = identity
         }
     }
 
@@ -153,6 +168,7 @@ extension OfflineStore {
                 case .accepted(let revision):
                     report.pushed += 1
                     entry.revision = revision
+                    entry.history = state.history
                     if isCurrent { entry.pending = nil }
                 case .conflict(let current):
                     report.conflicts += 1
@@ -206,6 +222,7 @@ extension OfflineStore {
     // MARK: - Pull
 
     private func pull(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
+        var historyChanged = false
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
             let token = state.token
@@ -213,7 +230,25 @@ extension OfflineStore {
             if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
                 throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
             }
+            let epochChanged = try Self.isNewEpoch(response.epoch, after: state.serverEpoch)
+            if epochChanged {
+                guard !historyChanged else {
+                    throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
+                }
+                historyChanged = true
+                if token != nil {
+                    // The page answers a token of the old history; start over from the beginning.
+                    try update { Self.beginHistory(epoch: response.epoch, in: &$0) }
+                    continue
+                }
+            }
             try update { state in
+                if epochChanged {
+                    Self.beginHistory(epoch: response.epoch, in: &state)
+                } else if state.serverEpoch == nil {
+                    // The first epoch the server reports, for example after an update of the server.
+                    state.serverEpoch = response.epoch
+                }
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
                 }
@@ -229,6 +264,16 @@ extension OfflineStore {
         report.hasMoreChanges = true
     }
 
+    /// Whether `epoch` names another server history than `known`. A server that reports no
+    /// epoch, or the first one, does not change the history.
+    private static func isNewEpoch(_ epoch: String?, after known: String?) throws -> Bool {
+        guard let epoch else { return false }
+        guard epoch.utf8.count <= maximumRevisionLength else {
+            throw OfflineFirstError.invalidServerResponse("The epoch has more than \(maximumRevisionLength) bytes.")
+        }
+        return known.map { $0 != epoch } ?? false
+    }
+
     private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {
         guard Self.isConsistent(change, for: change.recordID) else { return }
         observe(change.timestamp, in: &state)
@@ -238,14 +283,20 @@ extension OfflineStore {
             Self.store(Self.entry(from: change, replacing: nil, in: &state, configuration: configuration), in: &state)
             return
         }
-        // The same revision is the echo of a change this store pushed.
-        guard entry.revision != change.revision else { return }
+        // The same revision is the same version (a server never reuses one): the echo of a change
+        // this store pushed, or a record the server kept across a restart.
+        guard entry.revision != change.revision else {
+            state.entries[change.recordID]?.history = state.history
+            return
+        }
         report.pulled += 1
         // A server version older than the one the store holds (a page out of order, a lagging
         // replica, a deleted record's earlier version) never replaces it silently: the conflict
         // resolver decides, and a local win is pushed on top of that version, so the server's
-        // revision check settles what is current.
-        if entry.pending != nil || Self.isOlder(change, than: entry) {
+        // revision check settles what is current. A version the store holds from an earlier
+        // server history is replaced whatever its timestamp: the server lost or replaced it.
+        let isOlder = entry.history == state.history && Self.isOlder(change, than: entry)
+        if entry.pending != nil || isOlder {
             report.conflicts += 1
             Self.store(try resolve(entry, against: change, in: &state), in: &state)
         } else {
@@ -280,6 +331,7 @@ extension OfflineStore {
         // The local or merged version goes out again on top of the server's revision, under a
         // new change ID so the server does not answer it from an idempotency cache.
         result.revision = remote.revision
+        result.history = state.history
         result.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
                                       attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
         return result

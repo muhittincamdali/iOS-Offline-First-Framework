@@ -74,6 +74,7 @@ test('pages changes after a token', () => {
   assert.deepEqual(second.changes.map((c) => c.recordID), ['c']);
   assert.equal(second.hasMore, false);
   assert.equal(notes.changes(second.token).token, `${notes.epoch}.3`);
+  assert.equal(second.epoch, notes.epoch);
   // A token that is not one of this collection's starts from the beginning.
   assert.equal(notes.changes('../../etc').changes.length, 3);
   assert.equal(notes.changes(`${notes.epoch}.1`, 1e9).changes.length, 2);

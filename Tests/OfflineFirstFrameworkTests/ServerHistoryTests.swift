@@ -105,4 +105,106 @@ struct ServerHistoryTests {
         #expect(try await store.sync().pushed == 1)
         #expect(await server.record("a")?.text == "after the restart")
     }
+
+    // MARK: - Epochs and server identity
+
+    @Test func aStoreOpenedWithAnotherServerPullsFromTheStart() async throws {
+        let storage = InMemoryStorage()
+        let serverA = ScriptedTransport(identity: "https://a.example/sync/notes", pull: { _ in
+            PullResponse(changes: [], token: "serverA-cursor-42", hasMore: false)
+        })
+        try await makeStore(serverA, storage: storage).sync()
+        let tokens = TokenLog()
+        let serverB = ScriptedTransport(identity: "https://b.example/sync/notes", pull: { token in
+            await tokens.add(token)
+            return PullResponse(changes: [], token: "b1", hasMore: false)
+        })
+        try await makeStore(serverB, storage: storage).sync()
+        try await makeStore(serverB, storage: storage).sync()
+        #expect(await tokens.all == [nil, "b1"])
+    }
+
+    @Test func aNewEpochStartsThePullAgainAndKeepsPendingChanges() async throws {
+        let a = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "A"), revision: "e1.1", timestamp: nil)
+        let b = RemoteChange<Note>(recordID: "b", record: Note(id: "b", text: "B"), revision: "e1.2", timestamp: nil)
+        let transport = ScriptedTransport(push: { _ in throw URLError(.notConnectedToInternet) }, pull: { token in
+            token == nil ? PullResponse(changes: [a, b], token: "e1.2", hasMore: false, epoch: "e1")
+                : PullResponse(changes: [], token: token, hasMore: false, epoch: "e1")
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        try await store.save(Note(id: "draft", text: "written offline"))
+        await #expect(throws: URLError.self) { try await store.sync() }
+
+        // The server restarted from a backup: it kept "a", lost "b" and got "c" since.
+        let c = RemoteChange<Note>(recordID: "c", record: Note(id: "c", text: "C"), revision: "e2.3", timestamp: nil)
+        let tokens = TokenLog()
+        await transport.onPull { token in
+            await tokens.add(token)
+            return PullResponse(changes: [a, c], token: "e2.3", hasMore: false, epoch: "e2")
+        }
+        let report = try await store.sync()
+        #expect(await tokens.all == ["e1.2", nil])
+        #expect(report.pulled == 1)
+        #expect(await store.state.token == "e2.3")
+        #expect(await store.state.serverEpoch == "e2")
+        #expect(await store.record("c") == Note(id: "c", text: "C"))
+        #expect(await store.pendingChanges().map(\.recordID) == ["draft"])
+
+        await transport.onPush { changes in Dictionary(uniqueKeysWithValues: changes.map { ($0.id, .accepted(revision: "e2.4")) }) }
+        clock.advance(by: 60)
+        #expect(try await store.sync().pushed == 1)
+    }
+
+    @Test func anEpochThatChangesTwiceInOneSyncFailsTheSync() async throws {
+        let pulls = Counter()
+        let transport = ScriptedTransport(pull: { _ in
+            let number = await pulls.next()
+            return PullResponse(changes: [], token: "t\(number)", hasMore: false, epoch: "e\(number)")
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        await #expect(throws: OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")) {
+            try await store.sync()
+        }
+        #expect(await transport.pulls == 3)
+    }
+
+    @Test func theFirstEpochAServerReportsKeepsTheToken() async throws {
+        let transport = ScriptedTransport(pull: { token in
+            token == nil ? PullResponse(changes: [], token: "t1", hasMore: false)
+                : PullResponse(changes: [], token: "t2", hasMore: false, epoch: "e1")
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        try await store.sync()
+        #expect(await transport.pulls == 2)
+        #expect(await store.state.token == "t2")
+        #expect(await store.state.serverEpoch == "e1")
+    }
+
+    /// After a restore from a backup the server's copy is older than the one the store holds;
+    /// it is the server's current version, so it replaces the store's, without a conflict.
+    @Test func aVersionFromAnEarlierHistoryIsReplacedWhateverItsTimestamp() async throws {
+        let newer = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "lost by the server"), revision: "e1.7",
+                                       timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"))
+        let restored = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "restored"), revision: "e1.3",
+                                          timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"))
+        let transport = ScriptedTransport(pull: { _ in PullResponse(changes: [newer], token: "e1.7", hasMore: false, epoch: "e1") })
+        let store = try makeStore(transport)
+        try await store.sync()
+        await transport.onPull { _ in PullResponse(changes: [restored], token: "e2.3", hasMore: false, epoch: "e2") }
+        let report = try await store.sync()
+        #expect(report.conflicts == 0)
+        #expect(await store.record("a")?.text == "restored")
+        #expect(await store.pendingChanges().isEmpty)
+    }
+}
+
+private actor TokenLog {
+    private(set) var all: [String?] = []
+
+    func add(_ token: String?) {
+        all.append(token)
+    }
 }

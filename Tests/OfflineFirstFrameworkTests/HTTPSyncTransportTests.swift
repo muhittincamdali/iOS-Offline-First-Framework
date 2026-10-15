@@ -197,6 +197,9 @@ struct HTTPSyncTransportTests {
         let report = try await store.sync()
         #expect(report.pushed == 1)
         #expect(await server.record("a") == Note(id: "a", text: "Over HTTP"))
+        // The page names the server's epoch, and the token belongs to the transport's URL.
+        #expect(await store.state.serverEpoch != nil)
+        #expect(await store.state.serverIdentity == transport.baseURL.absoluteString)
     }
 
     /// Translates the wire format to the in-memory server and back.
@@ -216,7 +219,7 @@ struct HTTPSyncTransportTests {
         }
         let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "since" }?.value
         let page = try await server.pull(since: since)
-        struct Page: Encodable { let changes: [RemoteChange<Note>]; let token: String?; let hasMore: Bool }
-        return try JSONEncoder().encode(Page(changes: page.changes, token: page.token, hasMore: page.hasMore))
+        struct Page: Encodable { let changes: [RemoteChange<Note>]; let token: String?; let hasMore: Bool; let epoch: String? }
+        return try JSONEncoder().encode(Page(changes: page.changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch))
     }
 }

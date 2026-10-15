@@ -20,6 +20,12 @@ public actor OfflineStore<Record: SyncableRecord> {
         var token: String?
         var lastSyncedAt: Date?
         var nextSequence: UInt64
+        /// The ``SyncTransport/serverIdentity`` the token and revisions belong to.
+        var serverIdentity: String?
+        /// The last ``PullResponse/epoch`` the server reported.
+        var serverEpoch: String?
+        /// Grows by one whenever the server's history changes: a new epoch or another server.
+        var history: UInt64
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -232,7 +238,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         let clock = state.clock.latest.wallTime == .min ? nil : state.clock.latest
         let file = StoreFile(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion, nodeID: nodeID,
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
-                             nextSequence: state.nextSequence, entries: entries)
+                             nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
+                             serverEpoch: state.serverEpoch, history: state.history)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         try storage.write(data, to: fileName)
     }
@@ -250,7 +257,8 @@ public actor OfflineStore<Record: SyncableRecord> {
             throw OfflineFirstError.clock(error)
         }
         var entry = state.entries[id]
-            ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil)
+            ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil,
+                           history: state.history)
         // A record saved again after its deletion reached the server is new to the list.
         if entry.revision != nil, entry.record == nil, entry.pending == nil, record != nil {
             entry.position = state.takeSequence()

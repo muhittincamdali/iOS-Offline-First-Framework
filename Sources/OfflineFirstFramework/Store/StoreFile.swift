@@ -29,14 +29,18 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// out: when the answer is lost, or the app ends before it arrives, the server may hold the
     /// record although ``revision`` is still `nil`, so a later delete must reach the server.
     var wasSent = false
+    /// The server history (``OfflineStore/State/history``) ``revision`` belongs to. A version
+    /// from an earlier history says nothing about the order of the server's current versions.
+    var history: UInt64 = 0
 }
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
-        case id, record, timestamp, revision, position, pending, wasSent
+        case id, record, timestamp, revision, position, pending, wasSent, history
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
+    /// Files written before `history` existed belong to the first history.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Record.ID.self, forKey: .id)
@@ -46,6 +50,7 @@ extension StoredEntry {
         position = try container.decode(UInt64.self, forKey: .position)
         pending = try container.decodeIfPresent(PendingWrite.self, forKey: .pending)
         wasSent = try container.decodeIfPresent(Bool.self, forKey: .wasSent) ?? false
+        history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
     }
 }
 
@@ -61,6 +66,12 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var lastSyncedAt: Date?
     var nextSequence: UInt64
     var entries: [StoredEntry<Record>]
+    /// The ``SyncTransport/serverIdentity`` the token belongs to.
+    var serverIdentity: String? = nil
+    /// The last ``PullResponse/epoch`` the server reported.
+    var serverEpoch: String? = nil
+    /// Counts the server histories the store has seen; `nil` in files from before it existed.
+    var history: UInt64? = nil
 }
 
 /// The two fields read before the rest of the file, to pick the migrations.

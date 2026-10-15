@@ -8,7 +8,7 @@ import Foundation
 ///
 /// - `POST <baseURL>/push` with `{"changes": [...]}`, answered with `{"outcomes": {...}}`.
 /// - `GET <baseURL>/changes?since=<token>`, answered with
-///   `{"changes": [...], "token": "...", "hasMore": false}`.
+///   `{"changes": [...], "token": "...", "hasMore": false, "epoch": "..."}`.
 ///
 /// ```swift
 /// let transport = HTTPSyncTransport<Note>(
@@ -58,6 +58,11 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
 
     private let headers: @Sendable () async throws -> [String: String]
 
+    /// The base URL: a store opened with a transport for another URL pulls everything again.
+    public var serverIdentity: String? {
+        baseURL.absoluteString
+    }
+
     /// Creates a transport.
     ///
     /// - Parameters:
@@ -100,7 +105,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
         let request = try await makeRequest(url: url)
         let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
-        return PullResponse(changes: page.changes, token: page.token, hasMore: page.hasMore)
+        return PullResponse(changes: page.changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch)
     }
 
     // MARK: - HTTP
@@ -201,5 +206,6 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         let changes: [RemoteChange<Record>]
         let token: String?
         let hasMore: Bool
+        let epoch: String?
     }
 }

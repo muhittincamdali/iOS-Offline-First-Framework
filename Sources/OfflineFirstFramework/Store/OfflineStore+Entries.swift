@@ -14,7 +14,17 @@ extension OfflineStore {
                       configuration: Configuration) -> StoredEntry<Record> {
         let timestamp = remote.timestamp ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
         return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
-                           position: existing?.position ?? state.takeSequence(), pending: nil)
+                           position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history)
+    }
+
+    /// Starts a new server history: the server lost or replaced its data, or the store talks to
+    /// another server. The token goes, so the next pull starts from the beginning. Entries keep
+    /// their revisions (a pending change still names its base) but belong to the old history,
+    /// so the server's current versions replace them whatever their timestamps say.
+    static func beginHistory(epoch: String?, in state: inout State) {
+        state.history &+= 1
+        state.serverEpoch = epoch
+        state.token = nil
     }
 
     /// Whether `change` carries an older timestamp than the server version the store holds.

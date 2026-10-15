@@ -108,9 +108,9 @@ export class Collection {
   }
 
   /**
-   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first. A token of another
-   * epoch, or one ahead of this collection, starts from the beginning, so the client gets every
-   * record again instead of waiting for writes that never come.
+   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first, and the epoch. A token
+   * of another epoch, or one ahead of this collection, starts from the beginning, so the client
+   * gets every record again instead of waiting for writes that never come.
    */
   changes(token, limit = LIMITS.pageSize) {
     const match = TOKEN.exec(token ?? '');
@@ -123,6 +123,7 @@ export class Collection {
       changes: page.map((entry) => this.#remote(entry)),
       token: `${this.#epoch}.${page.at(-1)?.sequence ?? since}`,
       hasMore: changed.length > page.length,
+      epoch: this.#epoch,
     };
   }
 
