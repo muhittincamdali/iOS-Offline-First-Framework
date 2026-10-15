@@ -1,11 +1,13 @@
 import Foundation
 
-/// Stops sync attempts for a while after repeated failures.
+/// Stops pulls for a while after repeated failures.
 ///
-/// After ``failureThreshold`` failed syncs in a row the breaker opens: the store skips sync
-/// attempts until ``cooldown`` has passed, which saves battery and server load while the
-/// server is down. The first attempt after the cooldown is a trial (half-open): success closes
-/// the breaker, failure opens it for another cooldown.
+/// After ``failureThreshold`` failed pulls in a row the breaker opens: the store skips pulls
+/// until ``cooldown`` has passed, which saves battery and server load while the server is down.
+/// The first pull after the cooldown is a trial (half-open): success closes the breaker,
+/// failure opens it for another cooldown. Pushes do not depend on the breaker: each change
+/// waits for its own retry date (see ``RetryPolicy``), so local edits still reach a server whose
+/// pulls fail.
 public struct CircuitBreaker: Hashable, Sendable {
     /// The state of the breaker.
     public enum State: Hashable, Sendable {

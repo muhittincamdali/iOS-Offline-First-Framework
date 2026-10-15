@@ -26,9 +26,13 @@ public struct SyncReport: Hashable, Sendable {
     public var rejected = 0
     /// Changes that ran out of attempts in this sync and were parked.
     public var parked = 0
+    /// Server changes the store could not use and set aside; see
+    /// ``OfflineStore/quarantinedChanges()``.
+    public var quarantined = 0
     /// Whether the server still had changes after the page limit; the next sync continues.
     public var hasMoreChanges = false
-    /// Whether the sync was skipped: no transport, or the circuit breaker is open.
+    /// Whether the sync skipped its pull: there is no transport, or the ``CircuitBreaker`` is
+    /// open. While the breaker is open, changes that are due are still pushed (see ``pushed``).
     public var skipped = false
 
     /// Creates an empty report.

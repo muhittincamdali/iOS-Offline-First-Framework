@@ -31,6 +31,9 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         /// The response was not an HTTP response.
         case notHTTP
         /// The push answer used an outcome status other than accepted, conflict or rejected.
+        ///
+        /// No longer thrown: an outcome that cannot be read counts as a missing answer for its
+        /// change only, so the other changes of the push are still settled.
         case unknownOutcome(String)
 
         public var errorDescription: String? {
@@ -92,8 +95,10 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         let answer = try JSONDecoder().decode(PushAnswer.self, from: try await send(request))
         var outcomes: [UUID: PushOutcome<Record>] = [:]
         for (key, outcome) in answer.outcomes {
-            guard let id = UUID(uuidString: key) else { continue }
-            outcomes[id] = try outcome.pushOutcome()
+            // An outcome that cannot be read leaves only its own change without an answer; the
+            // store retries that change and settles the others.
+            guard let id = UUID(uuidString: key), let outcome = try? outcome.wire?.pushOutcome() else { continue }
+            outcomes[id] = outcome
         }
         return outcomes
     }
@@ -105,7 +110,15 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
         let request = try await makeRequest(url: url)
         let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
-        return PullResponse(changes: page.changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch)
+        var changes: [RemoteChange<Record>] = []
+        var quarantined: [QuarantinedChange] = []
+        for change in page.changes {
+            switch change {
+            case .readable(let change): changes.append(change)
+            case .unreadable(let entry): quarantined.append(entry)
+            }
+        }
+        return PullResponse(changes: changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch, quarantined: quarantined)
     }
 
     // MARK: - HTTP
@@ -177,7 +190,16 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     }
 
     private struct PushAnswer: Decodable {
-        let outcomes: [String: WireOutcome]
+        let outcomes: [String: LossyOutcome]
+    }
+
+    /// One outcome of a push answer, or `nil` when it cannot be read.
+    private struct LossyOutcome: Decodable {
+        let wire: WireOutcome?
+
+        init(from decoder: any Decoder) throws {
+            wire = try? WireOutcome(from: decoder)
+        }
     }
 
     private struct WireOutcome: Decodable {
@@ -203,9 +225,41 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     }
 
     private struct PullPage: Decodable {
-        let changes: [RemoteChange<Record>]
+        let changes: [LossyChange]
         let token: String?
         let hasMore: Bool
         let epoch: String?
+    }
+
+    /// One change of a page, or why it cannot be read, so one bad record does not make the
+    /// whole page, and every later pull, fail.
+    private enum LossyChange: Decodable {
+        case readable(RemoteChange<Record>)
+        case unreadable(QuarantinedChange)
+
+        init(from decoder: any Decoder) throws {
+            do {
+                self = .readable(try RemoteChange<Record>(from: decoder))
+            } catch {
+                let raw = try? JSONValue(from: decoder)
+                let recordID = raw?["recordID"].flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
+                var revision: String?
+                if case .string(let value)? = raw?["revision"] { revision = value }
+                self = .unreadable(QuarantinedChange(recordID: recordID ?? "null", revision: revision, reason: Self.describe(error)))
+            }
+        }
+
+        private static func describe(_ error: any Error) -> String {
+            guard let error = error as? DecodingError else { return String(describing: error) }
+            let context: DecodingError.Context
+            switch error {
+            case .typeMismatch(_, let found), .valueNotFound(_, let found), .keyNotFound(_, let found), .dataCorrupted(let found):
+                context = found
+            @unknown default:
+                return String(describing: error)
+            }
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
+        }
     }
 }

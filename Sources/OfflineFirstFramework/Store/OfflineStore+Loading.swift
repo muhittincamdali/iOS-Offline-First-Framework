@@ -49,7 +49,8 @@ extension OfflineStore {
         let nodeID = file.nodeID.isEmpty ? UUID().uuidString : file.nodeID
         let clock = HybridLogicalClock(nodeID: nodeID, maximumDrift: configuration.maximumClockDrift, latest: file.clock)
         return State(entries: byID, clock: clock, token: file.token, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence,
-                     serverIdentity: file.serverIdentity, serverEpoch: file.serverEpoch, history: file.history ?? 0)
+                     serverIdentity: file.serverIdentity, serverEpoch: file.serverEpoch, history: file.history ?? 0,
+                     quarantine: Array((file.quarantine ?? []).suffix(maximumQuarantinedChanges)))
     }
 }
 

@@ -146,12 +146,84 @@ struct HTTPSyncTransportTests {
         }
     }
 
-    @Test func unknownOutcomesAreErrors() async {
-        let id = UUID()
-        let transport = transport { _, _ in (200, Data(#"{"outcomes": {"\#(id.uuidString)": {"status": "maybe"}}}"#.utf8)) }
-        await #expect(throws: HTTPSyncTransport<Note>.Failure.unknownOutcome("maybe")) {
-            try await transport.push([OutgoingChange(id: id, recordID: "a", operation: .delete, timestamp: timestamp, baseRevision: "1")])
+    /// An outcome that cannot be read leaves its own change unanswered; the others are settled.
+    @Test func anUnreadableOutcomeLeavesOnlyItsChangeUnanswered() async throws {
+        let unknown = UUID(), malformed = UUID(), accepted = UUID()
+        let transport = transport { _, _ in
+            let answer = """
+            {"outcomes": {
+              "\(unknown.uuidString)": {"status": "maybe"},
+              "\(malformed.uuidString)": {"status": "conflict", "current": {"recordID": "b", "record": {"id": "b", "text": 42}, "revision": "7"}},
+              "\(accepted.uuidString)": {"status": "accepted", "revision": "5"}
+            }}
+            """
+            return (200, Data(answer.utf8))
         }
+        let outcomes = try await transport.push([
+            OutgoingChange(id: unknown, recordID: "a", operation: .delete, timestamp: timestamp, baseRevision: "1"),
+            OutgoingChange(id: malformed, recordID: "b", operation: .delete, timestamp: timestamp, baseRevision: "1"),
+            OutgoingChange(id: accepted, recordID: "c", operation: .delete, timestamp: timestamp, baseRevision: "1")
+        ])
+        #expect(outcomes.count == 1)
+        guard case .accepted(let revision)? = outcomes[accepted] else { Issue.record("accepted"); return }
+        #expect(revision == "5")
+    }
+
+    /// One record the app cannot decode is set aside; the rest of the page is used and the
+    /// token moves on, so the pull does not stop for good.
+    @Test func aRecordThatDoesNotDecodeIsQuarantined() async throws {
+        let transport = transport { _, _ in
+            let page = #"{"changes":[{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"1"},{"recordID":"bad","record":{"id":"bad","text":42},"revision":"2"}],"token":"t9","hasMore":false}"#
+            return (200, Data(page.utf8))
+        }
+        let response = try await transport.pull(since: nil)
+        #expect(response.changes.map(\.recordID) == ["ok"])
+        let entry = try #require(response.quarantined.first)
+        #expect(entry.recordID == #""bad""#)
+        #expect(entry.revision == "2")
+        #expect(entry.reason.contains("text"))
+
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: TestClock()))
+        let report = try await store.sync()
+        #expect(report.pulled == 1)
+        #expect(report.quarantined == 1)
+        #expect(await store.record("ok") == Note(id: "ok", text: "fine"))
+        #expect(await store.state.token == "t9")
+        #expect(await store.quarantinedChanges() == [entry])
+    }
+
+    /// A server whose pulls keep failing opens the circuit breaker, but local edits are still
+    /// pushed: the breaker pauses pulls only.
+    @Test func failingPullsDoNotStopPushes() async throws {
+        let pushes = OSAllocatedUnfairLock(initialState: 0)
+        let transport = transport { request, body in
+            guard request.httpMethod == "POST" else { return (500, Data()) }
+            pushes.withLock { $0 += 1 }
+            let json = try JSONDecoder().decode(JSONValue.self, from: body)
+            guard case .array(let changes)? = json["changes"] else { throw URLError(.badServerResponse) }
+            var outcomes: [String: JSONValue] = [:]
+            for change in changes {
+                if case .string(let id)? = change["id"] { outcomes[id] = ["status": "accepted", "revision": "1"] }
+            }
+            return (200, try JSONEncoder().encode(JSONValue.object(["outcomes": .object(outcomes)])))
+        }
+        let clock = TestClock()
+        var configuration = makeConfiguration(clock: clock)
+        configuration.circuitBreaker = CircuitBreaker(failureThreshold: 2, cooldown: .seconds(60))
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport, configuration: configuration)
+        for _ in 0..<2 {
+            await #expect(throws: HTTPSyncTransport<Note>.Failure.self) { try await store.sync() }
+        }
+        #expect(try await store.sync().skipped)
+
+        try await store.save(Note(id: "new", text: "local"))
+        let report = try await store.sync()
+        #expect(report.pushed == 1)
+        #expect(report.skipped)
+        #expect(pushes.withLock { $0 } == 1)
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await store.status == .paused(until: clock.now.addingTimeInterval(60)))
     }
 
     @Test func cancellingASyncOverHTTPIsNotAFailedAttempt() async throws {

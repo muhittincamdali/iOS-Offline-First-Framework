@@ -16,8 +16,9 @@ extension OfflineStore {
     /// cancelled call returns its report too. A call made after every caller of the running
     /// sync was cancelled waits for that sync to stop and then starts a new one.
     ///
-    /// - Returns: What the sync did. Without a transport, or while the ``CircuitBreaker`` is
-    ///   open, nothing happens and ``SyncReport/skipped`` is `true`.
+    /// - Returns: What the sync did. Without a transport nothing happens and
+    ///   ``SyncReport/skipped`` is `true`; while the ``CircuitBreaker`` is open, only changes
+    ///   that are due are pushed, and ``SyncReport/skipped`` is `true` too.
     /// - Throws: The transport's error, or an ``OfflineFirstError``. Changes that failed are
     ///   retried by a later sync, following the ``RetryPolicy``.
     @discardableResult
@@ -46,31 +47,50 @@ extension OfflineStore {
             return report
         }
         try bind(to: transport)
-        guard breaker.allowsAttempt(at: configuration.now()) else {
+        // The circuit breaker pauses pulls only. Due changes are pushed anyway: each waits for
+        // its own retry date, so a server that is down is not hit harder, and a server whose
+        // pulls fail still gets the device's edits.
+        let mayPull = breaker.allowsAttempt(at: configuration.now())
+        guard mayPull || !dueChanges(excluding: [:]).isEmpty else {
             if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }
             report.skipped = true
             return report
         }
         setStatus(.syncing)
+        let deadline = ContinuousClock.now + configuration.syncTimeout
         do {
-            let deadline = ContinuousClock.now + configuration.syncTimeout
             try await push(using: transport, until: deadline, report: &report)
-            try await pull(using: transport, until: deadline, report: &report)
-            breaker.recordSuccess()
-            try update { $0.lastSyncedAt = configuration.now() }
-            setStatus(.idle)
-            return report
         } catch {
-            // A transport may report its cancellation with an error of its own, such as
-            // URLError(.cancelled); the sync was still cancelled, not failed.
-            if error is CancellationError || Task.isCancelled {
-                setStatus(.idle)
-                throw CancellationError()
-            }
-            breaker.recordFailure(at: configuration.now())
-            setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
+            throw failed(with: error)
+        }
+        guard mayPull else {
+            report.skipped = true
+            if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }
+            return report
+        }
+        do {
+            try await pull(using: transport, until: deadline, report: &report)
+            try update { $0.lastSyncedAt = configuration.now() }
+        } catch {
+            let error = failed(with: error)
+            if !(error is CancellationError) { breaker.recordFailure(at: configuration.now()) }
             throw error
         }
+        breaker.recordSuccess()
+        setStatus(.idle)
+        return report
+    }
+
+    /// Sets the status after a failed sync and returns the error to throw. A transport may report
+    /// its cancellation with an error of its own, such as URLError(.cancelled); the sync was
+    /// still cancelled, not failed.
+    private func failed(with error: any Error) -> any Error {
+        if error is CancellationError || Task.isCancelled {
+            setStatus(.idle)
+            return CancellationError()
+        }
+        setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
+        return error
     }
 
     /// Keeps the transport's identity with the token. A store opened with another server
@@ -278,6 +298,9 @@ extension OfflineStore {
                     // The first epoch the server reports, for example after an update of the server.
                     state.serverEpoch = response.epoch
                 }
+                for change in response.quarantined {
+                    Self.quarantine(change, in: &state, report: &report)
+                }
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
                 }
@@ -304,7 +327,16 @@ extension OfflineStore {
     }
 
     private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {
-        guard Self.isConsistent(change, for: change.recordID) else { return }
+        // A change that cannot be used is set aside and reported; the rest of the page goes on.
+        if let reason = Self.inconsistency(of: change, for: change.recordID) {
+            Self.quarantine(QuarantinedChange(recordID: Self.describe(change.recordID), revision: change.revision, reason: reason),
+                            in: &state, report: &report)
+            return
+        }
+        if !state.quarantine.isEmpty {
+            let recordID = Self.describe(change.recordID)
+            state.quarantine.removeAll { $0.recordID == recordID }
+        }
         let change = receive(change, in: &state)
         guard var entry = state.entries[change.recordID] else {
             // A deletion is kept as a tombstone too, so an older version of the record that

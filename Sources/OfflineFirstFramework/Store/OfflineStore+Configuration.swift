@@ -19,7 +19,7 @@ extension OfflineStore {
         /// Backoff and attempt limit for failed pushes. Default: ``RetryPolicy/default``.
         public var retryPolicy: RetryPolicy
 
-        /// Pauses syncing after repeated failures. Default: 5 failures, 60 seconds.
+        /// Pauses pulls after repeated failures. Default: 5 failures, 60 seconds.
         public var circuitBreaker: CircuitBreaker
 
         /// The schema version of `Record`. Raise it, and add a ``RecordMigration``, when you

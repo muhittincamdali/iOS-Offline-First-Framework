@@ -130,12 +130,43 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// from the start and keeps its own pending changes.
     public let epoch: String?
 
+    /// Changes in this page the transport could not read, for example a record that does not
+    /// decode as `Record`. The store lists them in ``OfflineStore/quarantinedChanges()`` and
+    /// goes on with the rest of the page.
+    public let quarantined: [QuarantinedChange]
+
     /// Creates a page.
-    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil) {
+    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil,
+                quarantined: [QuarantinedChange] = []) {
         self.changes = changes
         self.token = token
         self.hasMore = hasMore
         self.epoch = epoch
+        self.quarantined = quarantined
+    }
+}
+
+/// A server change the store set aside because it could not use it.
+///
+/// The pull goes on without it, so one bad record does not stop the sync. A later version of
+/// the same record that can be used removes the entry, and ``OfflineStore/resetChangeToken()``
+/// pulls everything again, for example after an app update that reads the record.
+public struct QuarantinedChange: Codable, Hashable, Sendable {
+    /// The record's ID as JSON, for example `"C2D6"` with its quotes, or `null` when the
+    /// change had none.
+    public let recordID: String
+
+    /// The server's revision of the change, if it could be read.
+    public let revision: String?
+
+    /// Why the change was set aside.
+    public let reason: String
+
+    /// Creates an entry.
+    public init(recordID: String, revision: String?, reason: String) {
+        self.recordID = recordID
+        self.revision = revision
+        self.reason = reason
     }
 }
 

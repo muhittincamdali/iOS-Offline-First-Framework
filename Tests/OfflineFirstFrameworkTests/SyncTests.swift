@@ -394,7 +394,7 @@ struct SyncTests {
         #expect(await store.records().map(\.id) == ["n0", "n1", "n2", "n3", "n4"])
     }
 
-    @Test func malformedServerRecordsAreIgnored() async throws {
+    @Test func malformedServerRecordsAreQuarantined() async throws {
         let transport = ScriptedTransport(pull: { _ in
             PullResponse(changes: [
                 RemoteChange(recordID: "a", record: Note(id: "b", text: "mismatched"), revision: "1", timestamp: nil),
@@ -402,11 +402,16 @@ struct SyncTests {
             ], token: "2", hasMore: false)
         })
         let store = try makeStore(transport)
-        try await store.sync()
+        let report = try await store.sync()
         #expect(await store.records() == [Note(id: "c", text: "fine")])
+        // The page is not applied in part silently: the change that was not used is listed.
+        #expect(report.quarantined == 1)
+        #expect(await store.quarantinedChanges() == [
+            QuarantinedChange(recordID: #""a""#, revision: "1", reason: "The record's own ID differs from the change's recordID.")
+        ])
     }
 
-    @Test func oversizedRevisionsAndNodeIDsAreIgnored() async throws {
+    @Test func oversizedRevisionsAndNodeIDsAreQuarantined() async throws {
         let long = String(repeating: "r", count: OfflineStore<Note>.maximumRevisionLength + 1)
         let transport = ScriptedTransport(pull: { _ in
             PullResponse(changes: [
@@ -419,6 +424,53 @@ struct SyncTests {
         let store = try makeStore(transport)
         try await store.sync()
         #expect(await store.records() == [Note(id: "c", text: "fine")])
+        let quarantined = await store.quarantinedChanges()
+        #expect(quarantined.map(\.recordID) == [#""a""#, #""b""#])
+        #expect(quarantined.allSatisfy { ($0.revision?.utf8.count ?? 0) <= OfflineStore<Note>.maximumRevisionLength })
+    }
+
+    /// A later version that can be used replaces the entry; resetting the token clears the list
+    /// and pulls everything again.
+    @Test func quarantinedChangesGoWhenTheRecordComesAgain() async throws {
+        let pages = Counter()
+        let transport = ScriptedTransport(pull: { _ in
+            await pages.next() == 1
+                ? PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "x", text: "bad"), revision: "1", timestamp: nil),
+                                         RemoteChange(recordID: "b", record: Note(id: "y", text: "bad"), revision: "2", timestamp: nil)],
+                               token: "2", hasMore: false)
+                : PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "fixed"), revision: "3", timestamp: nil)],
+                               token: "3", hasMore: false)
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        #expect(await store.quarantinedChanges().count == 2)
+        try await store.sync()
+        #expect(await store.quarantinedChanges().map(\.recordID) == [#""b""#])
+        #expect(await store.record("a")?.text == "fixed")
+        try await store.resetChangeToken()
+        #expect(await store.quarantinedChanges().isEmpty)
+    }
+
+    /// One outcome the transport cannot read must not fail the changes the server accepted in
+    /// the same push.
+    @Test func anUnansweredChangeDoesNotFailTheRestOfThePush() async throws {
+        let transport = ScriptedTransport(push: { changes in
+            var outcomes: [UUID: PushOutcome<Note>] = [:]
+            for change in changes where change.recordID == "good" {
+                outcomes[change.id] = .accepted(revision: "7")
+            }
+            return outcomes
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "good", text: "g"))
+        try await store.save(Note(id: "odd", text: "o"))
+        for _ in 0..<3 {
+            _ = try? await store.sync()
+            clock.advance(by: 1_000)
+        }
+        #expect(await store.failedChanges().map(\.recordID) == ["odd"])
+        #expect(await store.state.entries["good"]?.revision == "7")
+        #expect(await store.state.entries["good"]?.pending == nil)
     }
 
     @Test func oversizedChangeTokensFailTheSyncWithoutBeingSaved() async throws {

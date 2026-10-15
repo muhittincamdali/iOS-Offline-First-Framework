@@ -35,6 +35,7 @@ extension OfflineStore {
         state.history &+= 1
         state.serverEpoch = epoch
         state.token = nil
+        state.quarantine.removeAll()
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out
@@ -77,12 +78,46 @@ extension OfflineStore {
         }
     }
 
-    /// A server record is ignored when its own ID differs from the ID it was sent for, or when
+    /// A server record is not used when its own ID differs from the ID it was sent for, or when
     /// its revision or timestamp is longer than the limits.
     static func isConsistent(_ change: RemoteChange<Record>, for id: Record.ID) -> Bool {
-        change.recordID == id
-            && (change.record.map { $0.id == id } ?? true)
-            && change.revision.utf8.count <= maximumRevisionLength
-            && (change.timestamp.map { $0.nodeID.utf8.count <= maximumNodeIDLength } ?? true)
+        inconsistency(of: change, for: id) == nil
+    }
+
+    /// Why a server record cannot be used for `id`, or `nil` when it can.
+    static func inconsistency(of change: RemoteChange<Record>, for id: Record.ID) -> String? {
+        if change.recordID != id {
+            return "The change belongs to another record."
+        }
+        if let record = change.record, record.id != id {
+            return "The record's own ID differs from the change's recordID."
+        }
+        if change.revision.utf8.count > maximumRevisionLength {
+            return "The revision is longer than \(maximumRevisionLength) bytes."
+        }
+        if let timestamp = change.timestamp, timestamp.nodeID.utf8.count > maximumNodeIDLength {
+            return "The timestamp's node ID is longer than \(maximumNodeIDLength) bytes."
+        }
+        return nil
+    }
+
+    /// Server changes the store keeps in ``OfflineStore/quarantinedChanges()``; the oldest go.
+    static var maximumQuarantinedChanges: Int { 100 }
+
+    /// Sets a server change aside, in place of an earlier entry for the same record, with every
+    /// text cut to the limits.
+    static func quarantine(_ change: QuarantinedChange, in state: inout State, report: inout SyncReport) {
+        let entry = QuarantinedChange(recordID: String(change.recordID.prefix(maximumRevisionLength)),
+                                      revision: change.revision.map { String($0.prefix(maximumRevisionLength)) },
+                                      reason: String(change.reason.prefix(maximumMessageLength)))
+        state.quarantine.removeAll { $0.recordID == entry.recordID }
+        state.quarantine.append(entry)
+        state.quarantine.removeFirst(max(0, state.quarantine.count - maximumQuarantinedChanges))
+        report.quarantined += 1
+    }
+
+    /// A record ID as JSON, as ``QuarantinedChange/recordID`` holds it.
+    static func describe(_ id: Record.ID) -> String {
+        (try? JSONEncoder().encode(id)).map { String(decoding: $0, as: UTF8.self) } ?? String(describing: id)
     }
 }

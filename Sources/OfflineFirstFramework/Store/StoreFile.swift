@@ -85,6 +85,8 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var serverEpoch: String? = nil
     /// Counts the server histories the store has seen; `nil` in files from before it existed.
     var history: UInt64? = nil
+    /// Server changes set aside; `nil` when there are none.
+    var quarantine: [QuarantinedChange]? = nil
 }
 
 /// The two fields read before the rest of the file, to pick the migrations.

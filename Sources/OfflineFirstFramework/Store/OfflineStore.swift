@@ -26,6 +26,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         var serverEpoch: String?
         /// Grows by one whenever the server's history changes: a new epoch or another server.
         var history: UInt64
+        /// Server changes set aside, oldest first.
+        var quarantine: [QuarantinedChange] = []
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -127,6 +129,13 @@ public actor OfflineStore<Record: SyncableRecord> {
         pendingChanges().filter(\.isParked)
     }
 
+    /// Server changes the store set aside because it could not use them, oldest first: a
+    /// record that does not decode, or a change whose IDs do not match. The pull went on
+    /// without them; see ``QuarantinedChange``.
+    public func quarantinedChanges() -> [QuarantinedChange] {
+        state.quarantine
+    }
+
     /// The records and sync state as one value.
     public func currentState() -> StoreState<Record> {
         let pending = state.entries.values.compactMap(\.pending)
@@ -199,12 +208,17 @@ public actor OfflineStore<Record: SyncableRecord> {
     }
 
     /// Forgets the change token, so the next sync pulls every server change from the
-    /// beginning; a pull that is on its way starts over. Records and pending changes stay.
+    /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
+    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
     ///
     /// Use it when the server can no longer continue after the token, for example when it
-    /// answers every pull with an error for it.
+    /// answers every pull with an error for it, or after an app update that can read records
+    /// the store set aside.
     public func resetChangeToken() throws {
-        try update { $0.token = nil }
+        try update { state in
+            state.token = nil
+            state.quarantine.removeAll()
+        }
         tokenGeneration &+= 1
     }
 
@@ -255,7 +269,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         let file = StoreFile(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion, nodeID: nodeID,
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
-                             serverEpoch: state.serverEpoch, history: state.history)
+                             serverEpoch: state.serverEpoch, history: state.history,
+                             quarantine: state.quarantine.isEmpty ? nil : state.quarantine)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         try storage.write(data, to: fileName)
     }
