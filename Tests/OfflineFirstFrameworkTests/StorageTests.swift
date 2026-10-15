@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 import Testing
 @testable import OfflineFirstFramework
 
@@ -149,7 +150,24 @@ struct StoreEncryptionTests {
     }
 }
 
-@Suite("Keychain store")
+/// Unhosted test bundles on the iOS simulator have no Keychain entitlement
+/// (errSecMissingEntitlement); the Keychain tests run on macOS and wherever the host allows it.
+enum KeychainAvailability {
+    static let isAvailable: Bool = {
+        let probe = KeychainStore(service: "OfflineFirstFrameworkTests.probe.\(UUID().uuidString)")
+        do {
+            try probe.save(Data([1]), for: "probe")
+            try? probe.delete("probe")
+            return true
+        } catch OfflineFirstError.keychain(status: errSecMissingEntitlement) {
+            return false
+        } catch {
+            return true
+        }
+    }()
+}
+
+@Suite("Keychain store", .enabled(if: KeychainAvailability.isAvailable, "This test host has no Keychain entitlement."))
 struct KeychainStoreTests {
     @Test func savesLoadsAndDeletes() throws {
         let keychain = KeychainStore(service: "OfflineFirstFrameworkTests.\(UUID().uuidString)")
