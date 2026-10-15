@@ -6,6 +6,7 @@ export const LIMITS = Object.freeze({
   pageSize: 100,
   maxPageSize: 1000,
   rememberedChanges: 10_000,
+  recordsPerCollection: 100_000,
   idLength: 256,
   nodeIDLength: 128,
   revisionLength: 64,
@@ -67,9 +68,13 @@ export class Collection {
   #revision = 0;
   #answers = new Map(); // change ID -> outcome, oldest first
 
-  /** Optional check that returns a reason to reject a record, or null. */
-  constructor({ validate = () => null, state } = {}) {
+  /**
+   * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
+   * deleted ones included, so clients cannot grow the server's memory without limit.
+   */
+  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection } = {}) {
     this.validate = validate;
+    this.maxRecords = maxRecords;
     if (state) this.#restore(state);
   }
 
@@ -113,6 +118,9 @@ export class Collection {
     const current = this.#records.get(keyOf(change.recordID));
     if (current && String(current.revision) !== change.baseRevision) {
       return { status: 'conflict', current: this.#remote(current) };
+    }
+    if (!current && this.#records.size >= this.maxRecords) {
+      return { status: 'rejected', reason: `The collection holds the maximum of ${this.maxRecords} records.` };
     }
     const reason = change.record ? this.validate(change.record) : null;
     if (reason) {

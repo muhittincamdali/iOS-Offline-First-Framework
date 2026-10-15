@@ -53,6 +53,17 @@ test('rejects records the validator refuses', () => {
   assert.equal(notes.revision, 0);
 });
 
+test('refuses new records beyond the limit but keeps accepting edits', () => {
+  const notes = new Collection({ maxRecords: 1 });
+  notes.push({ changes: [change()] });
+  const extra = change({ recordID: 'b', record: { id: 'b' } });
+  const answer = notes.push({ changes: [extra] }).outcomes[extra.id.toUpperCase()];
+  assert.equal(answer.status, 'rejected');
+  assert.match(answer.reason, /maximum of 1 records/);
+  const edit = change({ record: { id: 'a', text: 'edited' }, baseRevision: '1' });
+  assert.equal(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()].status, 'accepted');
+});
+
 test('pages changes after a token', () => {
   const notes = new Collection();
   for (const id of ['a', 'b', 'c']) notes.push({ changes: [change({ recordID: id, record: { id } })] });

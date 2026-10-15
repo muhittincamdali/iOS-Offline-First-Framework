@@ -46,7 +46,7 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 - The answers to the last 10,000 change IDs are remembered, so a push that is repeated after a
   lost answer is not applied twice.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
-  collections, record IDs of at most 256 characters, timestamps that a JavaScript number holds
+  collections, 100,000 records per collection (deleted ones included), record IDs of at most 256 characters, timestamps that a JavaScript number holds
   exactly. Requests outside them get status 400, 413 or 507.
 
 The server has no authentication or rate limiting. Put it behind your own before you expose it.
