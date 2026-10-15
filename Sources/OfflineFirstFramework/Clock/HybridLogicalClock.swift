@@ -51,7 +51,8 @@ public struct HLCTimestamp: Hashable, Comparable, Codable, Sendable, CustomStrin
 /// A received timestamp that is further ahead of the device clock than ``maximumDrift`` is
 /// refused with ``Failure/driftExceeded(remote:local:maximum:)``. Without that limit a single
 /// timestamp from a broken or hostile peer (for example `Int64.max`) would move the clock to
-/// the end of time and every later local write would lose to it.
+/// the end of time: every later local write would carry that time, and the clock would run out
+/// of timestamps.
 public struct HybridLogicalClock: Sendable {
     /// Reasons a clock operation fails.
     public enum Failure: Error, Equatable, Sendable {

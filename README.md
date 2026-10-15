@@ -35,9 +35,9 @@ dependencies.
 - **Writes that never wait** — `save` and `delete` go to an atomically written file and a
   durable queue of pending changes that survives restarts; failed pushes are retried with
   exponential backoff and jitter, and parked after the last attempt instead of being lost.
-- **Conflicts decided on purpose** — last write wins on hybrid logical clock timestamps (a
-  wrong device clock cannot make old edits win), server wins, client wins, your own merge, or
-  conflict-free fields: `LWWRegister`, `LWWMap`, `GCounter`, `PNCounter` and `ORSet`.
+- **Conflicts decided on purpose** — last write wins on hybrid logical clock timestamps (they
+  never go backwards and give every device the same order), server wins, client wins, your own
+  merge, or conflict-free fields: `LWWRegister`, `LWWMap`, `GCounter`, `PNCounter` and `ORSet`.
 - **Any backend** — `HTTPSyncTransport` speaks a documented JSON protocol that the reference
   server in [`Examples/SyncServer`](Examples/SyncServer) implements in about 280 lines of
   JavaScript; any other API fits behind `SyncTransport`, for example a REST API with ETags.

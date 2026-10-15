@@ -38,7 +38,10 @@ Last write wins compares hybrid logical clock timestamps, not plain dates. A
 every timestamp it receives, and orders writes from the same millisecond by a counter and the
 device ID, so all devices agree on the winner. A server timestamp more than
 ``OfflineStore/Configuration/maximumClockDrift`` ahead of the device clock does not move the
-clock, so one device with a wrong clock cannot make its edits win forever.
+clock, so one wrong timestamp cannot push every later local write into the future. A device
+whose own clock runs ahead still stamps its writes with that time and wins conflicts against
+edits made before it; if devices with wrong clocks are a concern, use
+``ConflictResolver/serverWins`` or a merge.
 
 ## Merging fields
 
