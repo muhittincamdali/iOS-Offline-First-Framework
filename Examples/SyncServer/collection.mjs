@@ -14,7 +14,6 @@ export const LIMITS = Object.freeze({
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EPOCH = /^[0-9a-f]{16}$/;
 const TOKEN = /^([0-9a-f]{16})\.(\d{1,15})$/;
 
 export class ValidationError extends Error {}
@@ -67,11 +66,13 @@ export function validateChange(change) {
 }
 
 export class Collection {
-  #records = new Map(); // key -> { recordID, record, revision, timestamp }
-  #revision = 0;
+  #records = new Map(); // key -> { recordID, record, revision, sequence, timestamp }
+  #sequence = 0; // the number of writes; the newest write's position in the change feed
   #answers = new Map(); // change ID -> outcome, oldest first
-  // Names this collection's history in change tokens. A collection created empty (a restarted
-  // in-memory server) gets a new one, so tokens handed out before do not match.
+  // Names this run of the collection in revisions and change tokens. Every start gets a new one,
+  // also a start from saved data: the file may be an older backup, so the writes after it were
+  // lost and their revisions and token positions would be handed out again. With a new epoch a
+  // revision is never reused, and a token from before starts the pull from the beginning.
   #epoch = randomBytes(8).toString('hex');
 
   /**
@@ -84,8 +85,8 @@ export class Collection {
     if (state) this.#restore(state);
   }
 
-  get revision() {
-    return this.#revision;
+  get sequence() {
+    return this.#sequence;
   }
 
   get epoch() {
@@ -107,32 +108,32 @@ export class Collection {
   }
 
   /**
-   * Returns changes after `token` (`<epoch>.<revision>`), oldest first. A token of another
-   * epoch, or one ahead of this collection (a backup was restored), starts from the beginning,
-   * so the client gets every record again instead of waiting for revisions that never come.
+   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first. A token of another
+   * epoch, or one ahead of this collection, starts from the beginning, so the client gets every
+   * record again instead of waiting for writes that never come.
    */
   changes(token, limit = LIMITS.pageSize) {
     const match = TOKEN.exec(token ?? '');
     const position = match && match[1] === this.#epoch ? Number(match[2]) : 0;
-    const since = position <= this.#revision ? position : 0;
+    const since = position <= this.#sequence ? position : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
-    const changed = [...this.#records.values()].filter((entry) => entry.revision > since).sort((a, b) => a.revision - b.revision);
+    const changed = [...this.#records.values()].filter((entry) => entry.sequence > since).sort((a, b) => a.sequence - b.sequence);
     const page = changed.slice(0, size);
     return {
       changes: page.map((entry) => this.#remote(entry)),
-      token: `${this.#epoch}.${page.at(-1)?.revision ?? since}`,
+      token: `${this.#epoch}.${page.at(-1)?.sequence ?? since}`,
       hasMore: changed.length > page.length,
     };
   }
 
-  /** A plain object for saving to disk. */
+  /** A plain object for saving to disk: the records and the remembered answers. */
   snapshot() {
-    return { epoch: this.#epoch, revision: this.#revision, records: [...this.#records.values()] };
+    return { sequence: this.#sequence, records: [...this.#records.values()], answers: [...this.#answers] };
   }
 
   #apply(change) {
     const current = this.#records.get(keyOf(change.recordID));
-    if (current && String(current.revision) !== change.baseRevision) {
+    if (current && current.revision !== change.baseRevision) {
       return { status: 'conflict', current: this.#remote(current) };
     }
     if (!current && this.#records.size >= this.maxRecords) {
@@ -142,18 +143,20 @@ export class Collection {
     if (reason) {
       return { status: 'rejected', reason, ...(current ? { current: this.#remote(current) } : {}) };
     }
-    this.#revision += 1;
+    this.#sequence += 1;
+    const revision = `${this.#epoch}.${this.#sequence}`;
     this.#records.set(keyOf(change.recordID), {
       recordID: change.recordID,
       record: change.record,
-      revision: this.#revision,
+      revision,
+      sequence: this.#sequence,
       timestamp: change.timestamp,
     });
-    return { status: 'accepted', revision: String(this.#revision) };
+    return { status: 'accepted', revision };
   }
 
   #remote(entry) {
-    const remote = { recordID: entry.recordID, revision: String(entry.revision), timestamp: entry.timestamp };
+    const remote = { recordID: entry.recordID, revision: entry.revision, timestamp: entry.timestamp };
     if (entry.record) remote.record = entry.record;
     return remote;
   }
@@ -167,13 +170,26 @@ export class Collection {
   }
 
   #restore(state) {
-    check(isPlainObject(state) && Number.isSafeInteger(state.revision) && Array.isArray(state.records), 'invalid saved state');
-    this.#revision = state.revision;
-    // Files saved before epochs existed get a new one; their clients pull everything once.
-    if (EPOCH.test(state.epoch ?? '')) this.#epoch = state.epoch;
-    for (const entry of state.records) {
-      validateRecordID(entry.recordID);
+    check(isPlainObject(state), 'invalid saved state');
+    // Files written before revisions had an epoch call the counter `revision`.
+    const sequence = state.sequence ?? state.revision;
+    check(Number.isSafeInteger(sequence) && sequence >= 0 && Array.isArray(state.records), 'invalid saved state');
+    this.#sequence = sequence;
+    for (const saved of state.records) {
+      check(isPlainObject(saved), 'invalid saved record');
+      validateRecordID(saved.recordID);
+      // Such files also keep each record's revision as a plain number, which clients hold as
+      // a string; it stays valid, and new writes get revisions with an epoch.
+      const entry = typeof saved.revision === 'number' ? { ...saved, revision: String(saved.revision), sequence: saved.revision } : saved;
+      check(typeof entry.revision === 'string' && Number.isSafeInteger(entry.sequence) && entry.sequence <= sequence, 'invalid saved record');
       this.#records.set(keyOf(entry.recordID), entry);
+    }
+    // The answers are kept, so a push repeated after a restart is still applied only once.
+    const answers = state.answers ?? [];
+    check(Array.isArray(answers), 'invalid saved answers');
+    for (const pair of answers.slice(-LIMITS.rememberedChanges)) {
+      check(Array.isArray(pair) && typeof pair[0] === 'string' && isPlainObject(pair[1]), 'invalid saved answer');
+      this.#remember(pair[0], pair[1]);
     }
   }
 }

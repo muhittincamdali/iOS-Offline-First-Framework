@@ -27,10 +27,13 @@ test('push and pull over HTTP', async () => {
   const id = randomUUID();
   const pushed = await push('notes', [{ id, recordID: 'a', operation: 'upsert', record: { id: 'a', text: 'Hi' }, timestamp }]);
   assert.equal(pushed.status, 200);
-  assert.deepEqual(await pushed.json(), { outcomes: { [id.toUpperCase()]: { status: 'accepted', revision: '1' } } });
+  const { outcomes } = await pushed.json();
+  assert.equal(outcomes[id.toUpperCase()].status, 'accepted');
+  const revision = outcomes[id.toUpperCase()].revision;
+  assert.match(revision, /^[0-9a-f]{16}\.1$/);
 
   const pulled = await (await fetch(`${base}/sync/notes/changes`)).json();
-  assert.deepEqual(pulled.changes, [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision: '1', timestamp }]);
+  assert.deepEqual(pulled.changes, [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision, timestamp }]);
   assert.match(pulled.token, /^[0-9a-f]{16}\.1$/);
   assert.equal(pulled.hasMore, false);
   const empty = await (await fetch(`${base}/sync/notes/changes?since=${pulled.token}`)).json();

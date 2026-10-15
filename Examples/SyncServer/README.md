@@ -39,16 +39,19 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 
 ## Behaviour
 
-- Every accepted write increments the collection's revision; deletions keep their revision, so
-  other devices learn about them.
+- Every accepted write gets the revision `<epoch>.<n>`, where `n` counts the collection's
+  writes; deletions keep their revision, so other devices learn about them.
+- The epoch is new every time the server starts, also with `--data`: the file may be an older
+  backup, and the writes after it would otherwise get revisions that devices already hold for
+  other versions. So a revision is never handed out twice, and a push based on a revision from
+  before the restart is checked against the record's current revision.
 - A change whose `baseRevision` is not the record's current revision gets a conflict with the
   current record.
-- The answers to the last 10,000 change IDs are remembered, so a push that is repeated after a
-  lost answer is not applied twice.
-- A change token is `<epoch>.<revision>`. The epoch is created with the collection and saved
-  with `--data`. A server started without its data creates new epochs, and a token of another
-  epoch or past the newest revision starts the pull from the beginning, so clients get every
-  record again instead of waiting for revisions that never come.
+- The answers to the last 10,000 change IDs are remembered, and saved with `--data`, so a push
+  that is repeated after a lost answer or a restart is not applied twice.
+- A change token is `<epoch>.<n>`. A token of another epoch or past the newest write starts the
+  pull from the beginning, so after a restart each client pulls every record once instead of
+  waiting for writes that never come.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
   collections, 100,000 records per collection (deleted ones included), record IDs of at most 256 characters, timestamps that a JavaScript number holds
   exactly. Requests outside them get status 400, 413 or 507.

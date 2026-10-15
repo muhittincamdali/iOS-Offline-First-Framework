@@ -9,12 +9,12 @@ function change(overrides = {}) {
   return { id: randomUUID(), recordID: 'a', operation: 'upsert', record: { id: 'a', text: 'A' }, timestamp, baseRevision: null, ...overrides };
 }
 
-test('accepts new records and bumps the revision', () => {
+test('accepts new records and gives each write a revision with the epoch', () => {
   const notes = new Collection();
   const first = change();
   const { outcomes } = notes.push({ changes: [first] });
-  assert.deepEqual(outcomes[first.id.toUpperCase()], { status: 'accepted', revision: '1' });
-  assert.equal(notes.revision, 1);
+  assert.deepEqual(outcomes[first.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.1` });
+  assert.equal(notes.sequence, 1);
 });
 
 test('answers a stale base revision with the current record', () => {
@@ -23,9 +23,9 @@ test('answers a stale base revision with the current record', () => {
   const stale = change({ record: { id: 'a', text: 'B' } });
   const answer = notes.push({ changes: [stale] }).outcomes[stale.id.toUpperCase()];
   assert.equal(answer.status, 'conflict');
-  assert.deepEqual(answer.current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: '1', timestamp });
+  assert.deepEqual(answer.current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: `${notes.epoch}.1`, timestamp });
 
-  const fresh = change({ record: { id: 'a', text: 'B' }, baseRevision: '1' });
+  const fresh = change({ record: { id: 'a', text: 'B' }, baseRevision: `${notes.epoch}.1` });
   assert.equal(notes.push({ changes: [fresh] }).outcomes[fresh.id.toUpperCase()].status, 'accepted');
 });
 
@@ -35,22 +35,22 @@ test('applies a repeated change ID only once', () => {
   const first = notes.push({ changes: [once] });
   const second = notes.push({ changes: [once] });
   assert.deepEqual(first, second);
-  assert.equal(notes.revision, 1);
+  assert.equal(notes.sequence, 1);
 });
 
 test('deletes keep a revision so other devices learn about them', () => {
   const notes = new Collection();
   notes.push({ changes: [change()] });
-  notes.push({ changes: [change({ operation: 'delete', record: undefined, baseRevision: '1' })] });
-  const page = notes.changes('1');
-  assert.deepEqual(page.changes, [{ recordID: 'a', revision: '2', timestamp }]);
+  notes.push({ changes: [change({ operation: 'delete', record: undefined, baseRevision: `${notes.epoch}.1` })] });
+  const page = notes.changes(`${notes.epoch}.1`);
+  assert.deepEqual(page.changes, [{ recordID: 'a', revision: `${notes.epoch}.2`, timestamp }]);
 });
 
 test('rejects records the validator refuses', () => {
   const notes = new Collection({ validate: (record) => (record.text ? null : 'Text is required') });
   const empty = change({ record: { id: 'a', text: '' } });
   assert.deepEqual(notes.push({ changes: [empty] }).outcomes[empty.id.toUpperCase()], { status: 'rejected', reason: 'Text is required' });
-  assert.equal(notes.revision, 0);
+  assert.equal(notes.sequence, 0);
 });
 
 test('refuses new records beyond the limit but keeps accepting edits', () => {
@@ -60,7 +60,7 @@ test('refuses new records beyond the limit but keeps accepting edits', () => {
   const answer = notes.push({ changes: [extra] }).outcomes[extra.id.toUpperCase()];
   assert.equal(answer.status, 'rejected');
   assert.match(answer.reason, /maximum of 1 records/);
-  const edit = change({ record: { id: 'a', text: 'edited' }, baseRevision: '1' });
+  const edit = change({ record: { id: 'a', text: 'edited' }, baseRevision: `${notes.epoch}.1` });
   assert.equal(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()].status, 'accepted');
 });
 
@@ -117,7 +117,7 @@ test('refuses malformed changes', () => {
   for (const body of cases) {
     assert.throws(() => notes.push(body), ValidationError);
   }
-  assert.equal(notes.revision, 0);
+  assert.equal(notes.sequence, 0);
 });
 
 test('remembers a bounded number of change IDs', () => {
@@ -131,15 +131,46 @@ test('remembers a bounded number of change IDs', () => {
   assert.equal(notes.push({ changes: [first] }).outcomes[first.id.toUpperCase()].status, 'conflict');
 });
 
-test('round-trips through a snapshot', () => {
+test('round-trips through a snapshot with a new epoch', () => {
   const notes = new Collection();
-  notes.push({ changes: [change()] });
+  const first = change();
+  notes.push({ changes: [first] });
   const restored = new Collection({ state: JSON.parse(JSON.stringify(notes.snapshot())) });
-  assert.deepEqual(restored.changes(null), notes.changes(null));
-  // The epoch is saved, so tokens stay valid across a restart with --data.
-  assert.equal(restored.epoch, notes.epoch);
-  assert.deepEqual(restored.changes(notes.changes(null).token).changes, []);
-  const { epoch, ...withoutEpoch } = notes.snapshot();
-  assert.notEqual(new Collection({ state: withoutEpoch }).epoch, epoch);
-  assert.throws(() => new Collection({ state: { revision: 'x', records: [] } }), ValidationError);
+  assert.notEqual(restored.epoch, notes.epoch);
+  assert.deepEqual(restored.changes(null).changes, notes.changes(null).changes);
+  // A token from before the restart starts the pull from the beginning.
+  assert.deepEqual(restored.changes(notes.changes(null).token).changes.map((c) => c.recordID), ['a']);
+  // The remembered answers are restored, so a repeated push is not applied again.
+  assert.deepEqual(restored.push({ changes: [first] }), notes.push({ changes: [first] }));
+  assert.equal(restored.sequence, 1);
+  assert.throws(() => new Collection({ state: { sequence: 'x', records: [] } }), ValidationError);
+  assert.throws(() => new Collection({ state: { sequence: 1, records: [{ recordID: 'a', revision: 'r', sequence: 2 }] } }), ValidationError);
+});
+
+test('a restored backup never hands out a revision again', () => {
+  const live = new Collection();
+  live.push({ changes: [change()] });
+  const backup = JSON.parse(JSON.stringify(live.snapshot()));
+  const v1 = `${live.epoch}.1`;
+  const second = change({ record: { id: 'a', text: 'B' }, baseRevision: v1 });
+  const lost = live.push({ changes: [second] }).outcomes[second.id.toUpperCase()].revision;
+
+  // The server comes back from the backup: the second write is gone. A device that holds it
+  // pushes an edit on top of it and must get a conflict, not overwrite the restored record.
+  const restored = new Collection({ state: backup });
+  const third = change({ record: { id: 'a', text: 'C' }, baseRevision: v1 });
+  const accepted = restored.push({ changes: [third] }).outcomes[third.id.toUpperCase()];
+  assert.equal(accepted.status, 'accepted');
+  assert.notEqual(accepted.revision, lost);
+  const stale = change({ record: { id: 'a', text: 'D' }, baseRevision: lost });
+  assert.equal(restored.push({ changes: [stale] }).outcomes[stale.id.toUpperCase()].status, 'conflict');
+});
+
+test('reads files written before revisions had an epoch', () => {
+  const legacy = { epoch: '0123456789abcdef', revision: 2, records: [{ recordID: 'a', record: { id: 'a' }, revision: 2, timestamp }] };
+  const notes = new Collection({ state: legacy });
+  assert.equal(notes.sequence, 2);
+  assert.deepEqual(notes.changes(null).changes, [{ recordID: 'a', record: { id: 'a' }, revision: '2', timestamp }]);
+  const edit = change({ record: { id: 'a', text: 'new' }, baseRevision: '2' });
+  assert.deepEqual(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.3` });
 });

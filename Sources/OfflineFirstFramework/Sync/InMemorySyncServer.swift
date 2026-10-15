@@ -5,8 +5,10 @@ import Foundation
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
 /// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
-/// connection. Change tokens name the server instance, so a store that kept a token from an
-/// earlier instance (an app relaunched with a fresh demo server) pulls everything again.
+/// connection. Revisions and change tokens start with an epoch that is new for every instance
+/// and every ``restart()``, so a revision is never handed out twice, and a store that kept a
+/// token from an earlier instance (an app relaunched with a fresh demo server) pulls everything
+/// again.
 ///
 /// ```swift
 /// let server = InMemorySyncServer<Note>()
@@ -17,7 +19,10 @@ import Foundation
 public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     private struct Stored {
         var record: Record?
-        var revision: Int
+        /// `<epoch>.<sequence>` of the write that stored this version.
+        var revision: String
+        /// The position of the write in the change feed.
+        var sequence: Int
         var timestamp: HLCTimestamp
     }
 
@@ -25,9 +30,10 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     public static var rememberedChangeLimit: Int { 10_000 }
 
     private var stored: [Record.ID: Stored] = [:]
-    private var revision = 0
-    /// Identifies this instance in change tokens.
-    private let epoch = String(UUID().uuidString.prefix(8))
+    /// The number of writes so far; the last write's position in the change feed.
+    private var sequence = 0
+    /// Names this run of the server in revisions and change tokens.
+    private var epoch = InMemorySyncServer.makeEpoch()
     private var clock: HybridLogicalClock
     private var answers: [UUID: PushOutcome<Record>] = [:]
     private var answerOrder: [UUID] = []
@@ -89,14 +95,24 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         stored[id]?.record
     }
 
-    /// All records on the server, in revision order.
+    /// All records on the server, in the order they were last written.
     public func records() -> [Record] {
-        stored.values.sorted { $0.revision < $1.revision }.compactMap(\.record)
+        stored.values.sorted { $0.sequence < $1.sequence }.compactMap(\.record)
     }
 
     /// The server's current revision of a record.
     public func revision(of id: Record.ID) -> String? {
-        stored[id].map { String($0.revision) }
+        stored[id]?.revision
+    }
+
+    /// Simulates a restart of a server that keeps its records and the change IDs it answered.
+    ///
+    /// The server starts a new epoch: change tokens handed out before make the next pull start
+    /// from the beginning, and writes from now on get revisions that the earlier run never
+    /// handed out, so a push based on a revision from before the restart is still checked
+    /// against the record's current revision.
+    public func restart() {
+        epoch = Self.makeEpoch()
     }
 
     /// Writes a record as another device would, with a new revision.
@@ -137,11 +153,11 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         pullRequests += 1
         try await simulateNetwork()
         let after = position(of: token)
-        let changed = stored.filter { $0.value.revision > after }.sorted { $0.value.revision < $1.value.revision }
+        let changed = stored.filter { $0.value.sequence > after }.sorted { $0.value.sequence < $1.value.sequence }
         let page = changed.prefix(pageSize)
-        let next = page.last?.value.revision ?? after
+        let next = page.last?.value.sequence ?? after
         return PullResponse(
-            changes: page.map { RemoteChange(recordID: $0.key, record: $0.value.record, revision: String($0.value.revision), timestamp: $0.value.timestamp) },
+            changes: page.map { remote($0.key, $0.value) },
             token: "\(epoch).\(next)",
             hasMore: changed.count > page.count
         )
@@ -149,19 +165,19 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
 
     // MARK: - Internals
 
-    /// The revision a token stands for. A token of another instance, or one this instance has
-    /// not reached, starts from the beginning: the client then gets every record again instead
-    /// of waiting for revisions that may never come.
+    /// The feed position a token stands for. A token of another epoch, or one this run has not
+    /// reached, starts from the beginning: the client then gets every record again instead of
+    /// waiting for writes that may never come.
     private func position(of token: String?) -> Int {
         guard let token, let dot = token.firstIndex(of: "."), token[..<dot] == epoch,
-              let after = Int(token[token.index(after: dot)...]), (0...revision).contains(after)
+              let after = Int(token[token.index(after: dot)...]), (0...sequence).contains(after)
         else { return 0 }
         return after
     }
 
     private func handle(_ change: OutgoingChange<Record>) -> PushOutcome<Record> {
         let current = stored[change.recordID]
-        if current.map({ String($0.revision) }) != change.baseRevision {
+        if current?.revision != change.baseRevision {
             if let current {
                 return .conflict(current: remote(change.recordID, current))
             }
@@ -175,13 +191,19 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     }
 
     private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp) -> String {
-        revision += 1
-        stored[id] = Stored(record: record, revision: revision, timestamp: timestamp)
-        return String(revision)
+        sequence += 1
+        let revision = "\(epoch).\(sequence)"
+        stored[id] = Stored(record: record, revision: revision, sequence: sequence, timestamp: timestamp)
+        return revision
     }
 
     private func remote(_ id: Record.ID, _ stored: Stored) -> RemoteChange<Record> {
-        RemoteChange(recordID: id, record: stored.record, revision: String(stored.revision), timestamp: stored.timestamp)
+        RemoteChange(recordID: id, record: stored.record, revision: stored.revision, timestamp: stored.timestamp)
+    }
+
+    /// 64 random bits as 16 hexadecimal digits.
+    private static func makeEpoch() -> String {
+        String(format: "%016llx", UInt64.random(in: .min ... .max))
     }
 
     private func remember(_ answer: PushOutcome<Record>, for changeID: UUID) {
