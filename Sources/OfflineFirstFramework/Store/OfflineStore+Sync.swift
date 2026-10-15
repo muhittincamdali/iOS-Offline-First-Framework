@@ -176,7 +176,7 @@ extension OfflineStore {
                 case .conflict(let current):
                     report.conflicts += 1
                     guard isCurrent, Self.isConsistent(current, for: entry.id) else { break }
-                    observe(current.timestamp, in: &state)
+                    let current = receive(current, in: &state)
                     guard current.revision != entry.revision, !Self.isStale(current, comparedWith: entry, history: state.history) else {
                         // The version the change is based on, or an older one (a lagging replica
                         // answered): nothing to resolve; the change is pushed again later.
@@ -189,7 +189,7 @@ extension OfflineStore {
                     report.rejected += 1
                     guard isCurrent else { break }
                     if let current, Self.isConsistent(current, for: entry.id) {
-                        entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
+                        entry = Self.entry(from: receive(current, in: &state), replacing: entry, in: &state, configuration: configuration)
                     } else {
                         entry.pending?.isParked = true
                         entry.pending?.nextAttemptAt = nil
@@ -286,7 +286,7 @@ extension OfflineStore {
 
     private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {
         guard Self.isConsistent(change, for: change.recordID) else { return }
-        observe(change.timestamp, in: &state)
+        let change = receive(change, in: &state)
         guard var entry = state.entries[change.recordID] else {
             // A deletion is kept as a tombstone too, so an older version of the record that
             // arrives later (a page out of order) does not bring it back.
@@ -352,10 +352,24 @@ extension OfflineStore {
 
     // MARK: - Helpers
 
-    /// Moves the clock past a server timestamp; one too far in the future is ignored.
-    private func observe(_ timestamp: HLCTimestamp?, in state: inout State) {
-        guard let timestamp else { return }
-        _ = try? state.clock.receive(timestamp, at: configuration.now())
+    /// Moves the clock past a server version's timestamp (one too far in the future is ignored)
+    /// and returns the version with its timestamp no further ahead of the device clock than
+    /// ``Configuration/maximumClockDrift``.
+    ///
+    /// A device with a wrong clock, or a hostile one, could otherwise stamp a write years ahead:
+    /// it would win every last-write-wins comparison and look newer than every later edit, on
+    /// every device that stores it. Moved back to the limit, it counts as a write from a device
+    /// that is at most that far ahead.
+    private func receive(_ change: RemoteChange<Record>, in state: inout State) -> RemoteChange<Record> {
+        guard let timestamp = change.timestamp else { return change }
+        let now = configuration.now()
+        _ = try? state.clock.receive(timestamp, at: now)
+        let (limit, overflow) = HybridLogicalClock.milliseconds(since1970: now)
+            .addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
+        guard !overflow, timestamp.wallTime > limit else { return change }
+        return RemoteChange(recordID: change.recordID, record: change.record, revision: change.revision,
+                            timestamp: HLCTimestamp(wallTime: limit, counter: timestamp.counter, nodeID: timestamp.nodeID),
+                            sequence: change.sequence)
     }
 
     static func message(for error: any Error) -> String {

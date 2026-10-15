@@ -39,8 +39,9 @@ extension OfflineStore {
         /// Pull pages fetched in one sync; the rest waits for the next sync. Default: 100.
         public var maximumPullPages: Int
 
-        /// How far ahead of the device clock a server timestamp may be before the store stops
-        /// moving its clock to it. Default: 5 minutes.
+        /// How far ahead of the device clock a server timestamp may be. The store does not move
+        /// its clock to a timestamp further ahead, and stores and compares such a timestamp as
+        /// if it were at this limit. Default: 5 minutes.
         public var maximumClockDrift: Duration
 
         /// What happens when the store file cannot be read. Default: ``CorruptionPolicy/fail``.

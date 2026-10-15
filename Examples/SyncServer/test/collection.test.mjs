@@ -175,3 +175,10 @@ test('reads files written before revisions had an epoch', () => {
   const edit = change({ record: { id: 'a', text: 'new' }, baseRevision: '2' });
   assert.deepEqual(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.3` });
 });
+
+test('stores a timestamp from the future at five minutes ahead of the server clock', () => {
+  const notes = new Collection({ now: () => 1_700_000_000_000 });
+  const broken = { wallTime: 4_000_000_000_000, counter: 3, nodeID: 'broken' };
+  notes.push({ changes: [change({ timestamp: broken })] });
+  assert.deepEqual(notes.changes(null).changes[0].timestamp, { ...broken, wallTime: 1_700_000_000_000 + LIMITS.clockDriftMs });
+});

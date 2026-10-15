@@ -11,6 +11,7 @@ export const LIMITS = Object.freeze({
   idLength: 256,
   nodeIDLength: 128,
   revisionLength: 64,
+  clockDriftMs: 300_000,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -77,11 +78,13 @@ export class Collection {
 
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
-   * deleted ones included, so clients cannot grow the server's memory without limit.
+   * deleted ones included, so clients cannot grow the server's memory without limit. `now`
+   * returns the server's time in milliseconds.
    */
-  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection } = {}) {
+  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection, now = Date.now } = {}) {
     this.validate = validate;
     this.maxRecords = maxRecords;
+    this.now = now;
     if (state) this.#restore(state);
   }
 
@@ -151,9 +154,18 @@ export class Collection {
       record: change.record,
       revision,
       sequence: this.#sequence,
-      timestamp: change.timestamp,
+      timestamp: this.#clamped(change.timestamp),
     });
     return { status: 'accepted', revision };
+  }
+
+  /**
+   * A timestamp more than five minutes ahead of the server's clock is stored at that limit, so
+   * a device with a wrong clock cannot make its write look newer than every later one.
+   */
+  #clamped(timestamp) {
+    const limit = this.now() + LIMITS.clockDriftMs;
+    return timestamp.wallTime > limit ? { ...timestamp, wallTime: limit } : timestamp;
   }
 
   #remote(entry) {
