@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,9 +53,10 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 142 tests Swift Testing sur macOS et sur un simulateur
-  d’iPhone, 16 tests Node pour le serveur et une suite de tests de bout en bout dans la CI qui
-  synchronise deux stores via le serveur en HTTP.
+- **Testé contre un vrai serveur** — 195 tests Swift Testing sur macOS et sur un simulateur
+  d’iPhone, dont un test de propriétés qui soumet chaque politique de conflit à des requêtes perdues,
+  des redémarrages et des pages périmées, 19 tests Node pour le serveur et une suite de tests de
+  bout en bout dans la CI qui synchronise deux stores via le serveur en HTTP.
 
 ### Contenu
 
@@ -330,6 +331,34 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Garanties et limites
+
+Le store tient ces promesses avec toute politique de conflit, malgré les requêtes perdues, les
+réponses perdues, les redémarrages de l’app et du serveur et les pages périmées, tant que le
+serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md) :
+
+- Un enregistrement ou une suppression est dans le fichier avant que l’appel ne rende la main, et
+  une modification en attente est envoyée jusqu’à ce que le serveur y réponde. Une nouvelle
+  tentative garde l’ID de la modification, si bien que le serveur ne l’applique qu’une fois.
+- Une copie périmée ne remplace jamais une écriture acceptée par le serveur : le résolveur n’est
+  consulté que lorsqu’un enregistrement a changé sur l’appareil et sur le serveur, et une version
+  plus ancienne du serveur est ignorée.
+- Les enregistrements supprimés le restent. Un serveur qui a perdu ses données, ou un autre
+  serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente. Un
+  enregistrement que l’app ne sait pas décoder est mis de côté dans `quarantinedChanges()` au lieu
+  d’arrêter la récupération.
+- Une horloge en avance, un serveur qui répond à chaque envoi par un conflit et un serveur qui ne
+  répond jamais ont un effet borné : les horodatages comptent au plus cinq minutes d’avance, les
+  nouvelles tentatives patientent puis sont mises de côté, et une synchronisation s’arrête après
+  `syncTimeout`.
+
+Le serveur ne doit jamais donner la même révision à deux versions d’un enregistrement, devrait
+envoyer un `epoch` et un `sequence`, et doit retenir les ID de modification d’un redémarrage à
+l’autre. Limites : les écritures qu’un serveur a perdues lors d’une restauration ne sont pas
+renvoyées, une seule instance du store par fichier, le fichier entier est écrit à chaque
+modification, et les suppressions au-delà de 10 000 sont oubliées. [Garanties et
+limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) donne la liste complète.
+
 ## Démo
 
 | Synchronisé                                                                  | Hors ligne, deux modifications en attente                                   |
@@ -401,9 +430,10 @@ Le serveur de référence nécessite Node 24 ou une version ultérieure.
   pas synchronisé, une modification en attente avec un ID qui change à chaque modification locale.
 - Une synchronisation envoie les modifications en attente par lots (les plus anciennes d’abord, avec
   la révision sur laquelle elles reposaient), applique chaque résultat, puis récupère des pages de
-  modifications du serveur postérieures au jeton de modification enregistré. Les conflits venant de
-  l’un ou l’autre côté vont au `ConflictResolver`. Les modifications faites pendant qu’un envoi est en
-  cours sont conservées et envoyées ensuite.
+  modifications du serveur postérieures au jeton de modification enregistré. Un enregistrement qui a
+  changé sur l’appareil et sur le serveur va au `ConflictResolver` ; une version plus ancienne du
+  serveur est ignorée. Les modifications faites pendant qu’un envoi est en cours sont conservées et
+  envoyées ensuite.
 - `Sync/` contient le protocole de transport, les transports HTTP et en mémoire, la politique de
   nouvelles tentatives, le circuit breaker et la connectivité ; `Storage/` les stores de fichiers et
   du Keychain, le chiffrement et les migrations ; `Clock/` et `CRDT/` les types valeur pour ordonner

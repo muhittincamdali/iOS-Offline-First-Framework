@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,9 +50,10 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 142 Swift Testing
-  testi, sunucu için 16 Node testi ve CI'da iki yerel depoyu sunucu üzerinden HTTP ile eşitleyen uçtan uca
-  bir test paketi.
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 195 Swift Testing
+  testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar ve bayat
+  sayfalarla sınayan bir özellik testi), sunucu için 19 Node testi ve CI'da iki yerel depoyu sunucu
+  üzerinden HTTP ile eşitleyen uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -325,6 +326,30 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Güvenceler ve sınırlar
+
+Sunucu [protokole](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md) uyduğu sürece depo, her çakışma politikasında; kaybolan isteklerde,
+kaybolan yanıtlarda, uygulama ve sunucu yeniden başlatmalarında ve bayat sayfalarda şu sözleri
+tutar:
+
+- Bir kaydetme ya da silme, çağrı dönmeden önce dosyadadır ve kuyruktaki bir değişiklik, sunucu
+  yanıtlayana kadar gönderilir. Yeniden deneme aynı değişiklik kimliğini kullanır, böylece sunucu
+  onu bir kez uygular.
+- Bayat bir kopya, sunucunun kabul ettiği bir yazmanın yerini asla almaz: çözücüye yalnızca kayıt
+  hem cihazda hem sunucuda değiştiyse sorulur ve sunucunun daha eski bir sürümü atlanır.
+- Silinen kayıtlar silinmiş kalır. Verisini kaybetmiş bir sunucu ya da başka bir sunucu, deponun
+  her şeyi baştan çekmesine yol açar ve bekleyen değişiklikler korunur. Uygulamanın çözemediği bir
+  kayıt, çekmeyi durdurmak yerine `quarantinedChanges()` içine ayrılır.
+- İleri giden bir saat, her gönderime çakışmayla yanıt veren bir sunucu ve hiç yanıt vermeyen bir
+  sunucu sınırlı etki yapar: zaman damgaları en fazla beş dakika ileri sayılır, yeniden denemeler
+  bekletilir ve park edilir, bir eşitleme de `syncTimeout` sonunda biter.
+
+Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli, bir `epoch` ve bir `sequence`
+göndermeli ve değişiklik kimliklerini yeniden başlatmalar boyunca hatırlamalıdır. Sınırlar:
+sunucunun bir geri yüklemede kaybettiği yazmalar yeniden yüklenmez, dosya başına tek bir depo
+örneği kullanılır, her değişiklikte dosyanın tamamı yazılır ve 10.000'i aşan silmeler unutulur.
+Tam liste [Güvenceler ve sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) makalesindedir.
+
 ## Demo
 
 | Eşitlendi                                                                           | Çevrimdışı, iki değişiklik bekliyor                                                  |
@@ -397,8 +422,9 @@ Referans sunucu Node 24 veya üstünü gerektirir.
   sahip tek bir bekleyen değişikliği taşır.
 - Bir eşitleme, bekleyen değişiklikleri gruplar halinde gönderir (en eskiden başlayarak, dayandıkları
   revision ile), her sonucu uygular, ardından kayıtlı değişiklik belirtecinden sonraki sunucu
-  değişikliklerini sayfa sayfa çeker. Her iki taraftan gelen çakışmalar `ConflictResolver`'a gider.
-  Bir gönderim sürerken yapılan düzenlemeler korunur ve bir sonraki turda gönderilir.
+  değişikliklerini sayfa sayfa çeker. Hem cihazda hem sunucuda değişen bir kayıt
+  `ConflictResolver`'a gider; sunucunun daha eski bir sürümü atlanır. Bir gönderim sürerken yapılan
+  düzenlemeler korunur ve bir sonraki turda gönderilir.
 - `Sync/` transport protokolünü, HTTP ve bellek içi transport'ları, yeniden deneme politikasını,
   devre kesiciyi (circuit breaker) ve bağlantı denetimini; `Storage/` dosya ve Keychain depolarını,
   şifrelemeyi ve geçişleri; `Clock/` ve `CRDT/` sıralama ve birleştirme için değer türlerini;

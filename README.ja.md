@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg" alt="Offline-First Framework: オフラインでも動き続け、サーバーと同期する Swift アプリ向けのローカルストア。"></picture></p>
@@ -33,7 +33,7 @@
 - **任意のバックエンド** — `HTTPSyncTransport` は、文書化された JSON プロトコルを使います。[`Examples/SyncServer`](Examples/SyncServer) のリファレンスサーバーは、約 280 行の JavaScript でこのプロトコルを実装しています。ほかの API も `SyncTransport` の背後に置けます。たとえば ETag を使う REST API です。
 - **SwiftUI 向けに設計** — `SyncedCollection` はストアの `@Observable` モデルです。自動同期は、デバイスがオンラインになったときとローカルでの編集の直後に実行され、バックグラウンドリフレッシュのタスクからは 1 回の呼び出しで同期できます。
 - **保存データを保護** — Keychain に保管したキーによる AES-GCM のファイル暗号化、データ保護クラス、レコードスキーマのマイグレーション、破損したファイルに対するポリシーを備えています。
-- **実際のサーバーに対してテスト済み** — macOS と iPhone シミュレータで 142 件の Swift Testing テスト、サーバー用の 16 件の Node テスト、そして CI では 2 つのストアを HTTP 経由でサーバーを通して同期するエンドツーエンドのテストスイートを実行しています。
+- **実際のサーバーに対してテスト済み** — macOS と iPhone シミュレータで 195 件の Swift Testing テスト（すべての競合ポリシーをリクエストの消失、再起動、古いページにさらすプロパティテストを含む）、サーバー用の 19 件の Node テスト、そして CI では 2 つのストアを HTTP 経由でサーバーを通して同期するエンドツーエンドのテストスイートを実行しています。
 
 ### 含まれるもの
 
@@ -280,6 +280,17 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## 保証と制限
+
+サーバーが[プロトコル](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)に従っている限り、ストアはどの競合ポリシーでも、リクエストの消失、応答の消失、アプリとサーバーの再起動、古いページがあっても、次の約束を守ります。
+
+- 保存や削除は呼び出しが戻る前にファイルに書き込まれ、キューに入った変更はサーバーが応答するまでプッシュされます。再試行では変更 ID が変わらないため、サーバーはそれを一度だけ適用します。
+- 古いコピーが、サーバーが受け入れた書き込みを置き換えることはありません。リゾルバーが呼ばれるのはレコードがデバイスとサーバーの両方で変更された場合だけで、サーバーの古いバージョンはスキップされます。
+- 削除されたレコードは削除されたままです。データを失ったサーバーや別のサーバーに対しては、ストアが保留中の変更を残したまますべてを最初から取得し直します。アプリがデコードできないレコードは取得を止めず、`quarantinedChanges()` に取り分けられます。
+- 進んだ時計、すべてのプッシュに競合で応答するサーバー、まったく応答しないサーバーの影響は限られます。タイムスタンプは最大でも 5 分先として扱われ、再試行は間隔を空けたうえで保留され、同期は `syncTimeout` が過ぎると終了します。
+
+サーバーは同じ revision をレコードの 2 つのバージョンに与えてはならず、`epoch` と `sequence` を送るべきで、変更 ID を再起動後も覚えておく必要があります。制限: サーバーがバックアップからの復元で失った書き込みは再アップロードされない、1 つのファイルにつきストアのインスタンスは 1 つ、変更のたびにファイル全体が書き込まれる、10,000 件を超える削除は忘れられる。完全な一覧は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
+
 ## デモ
 
 | 同期済み                                                                   | オフライン、2 件の変更が待機中                                                |
@@ -338,7 +349,7 @@ xcodebuild docbuild -scheme OfflineFirstFramework -destination 'generic/platform
 ## アーキテクチャ
 
 - `OfflineStore` は 1 つのコレクションを所有する actor です。その状態（レコード、保留中の変更、変更トークン、クロック）は 1 つの JSON ファイルとして書き込まれます。すべての変更はコピーに対して実行され、書き込みが成功した後にはじめてコピーが現在の状態になるため、クラッシュやディスクの空き容量不足で、変更が中途半端に適用された状態が残ることはありません。各レコードは、サーバーの revision、最後のタイムスタンプ、そして未同期の間は、ローカルで編集するたびに変わる ID を持つ保留中の変更を 1 件保持します。
-- 同期では、保留中の変更を（古いものから順に、基にした revision とともに）バッチで送信し、それぞれの結果を適用してから、保存された変更トークン以降のサーバーの変更をページ単位で取得します。どちら側から生じた競合も `ConflictResolver` に渡されます。プッシュの実行中に行われた編集は保持され、次回にプッシュされます。
+- 同期では、保留中の変更を（古いものから順に、基にした revision とともに）バッチで送信し、それぞれの結果を適用してから、保存された変更トークン以降のサーバーの変更をページ単位で取得します。デバイスとサーバーの両方で変更されたレコードが `ConflictResolver` に渡され、サーバーの古いバージョンはスキップされます。プッシュの実行中に行われた編集は保持され、次回にプッシュされます。
 - `Sync/` には transport プロトコル、HTTP とインメモリの transport、再試行ポリシー、サーキットブレーカー（circuit breaker）、接続監視が、`Storage/` にはファイルと Keychain のストア、暗号化、マイグレーションが、`Clock/` と `CRDT/` には順序付けとマージのための値型が、`SwiftUI/` には observable なモデルがあります。参照型は `OfflineStore`、`InMemorySyncServer`、`SyncedCollection` だけです。
 - ストアは、不正な動作をするサーバーや破損したファイルから身を守ります。キュー、ページ、レスポンス、revision、変更トークンのサイズの上限、必ず進まなければならない変更トークン、1 レコード・1 回の同期あたり最大 3 回のプッシュ、ID が一致せず無視されるレコード、許容されるクロックのずれを超えるタイムスタンプ、ディレクトリの外に出られないファイル名がそれにあたります。テストはこれらのそれぞれをカバーしています。
 - 変更のたびにファイル全体を書き直すため、ストアあたり数万件までのレコードを持つコレクションに向いています。

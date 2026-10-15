@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg" alt="Offline-First Framework: 面向 Swift 应用的本地存储：离线照常工作，联网后与你的服务器同步。"></picture></p>
@@ -33,7 +33,7 @@
 - **任何后端** — `HTTPSyncTransport` 使用一套有文档的 JSON 协议，[`Examples/SyncServer`](Examples/SyncServer) 中的参考服务器用大约 280 行 JavaScript 实现了它；任何其他 API 都可以接在 `SyncTransport` 之后，例如使用 ETag 的 REST API。
 - **为 SwiftUI 而生** — `SyncedCollection` 是存储的 `@Observable` 模型；设备联网时以及本地编辑之后不久会自动同步，也可以通过一次调用在后台刷新任务中同步。
 - **静态数据受保护** — 使用保存在 Keychain 中的密钥进行 AES-GCM 文件加密、数据保护级别、记录架构迁移，以及针对损坏文件的处理策略。
-- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 142 个 Swift Testing 测试，为服务器编写了 16 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
+- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 195 个 Swift Testing 测试，其中包括一个让每种冲突策略经受请求丢失、重启和过期页面考验的属性测试；为服务器编写了 19 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
 
 ### 内容一览
 
@@ -280,6 +280,17 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## 保证与限制
+
+只要服务器遵循[协议](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)，无论使用哪种冲突策略，存储在请求丢失、应答丢失、应用和服务器重启以及过期页面的情况下都会信守以下承诺：
+
+- 保存或删除在调用返回之前就已写入文件，队列中的改动会一直推送，直到服务器给出应答。重试沿用同一个改动 ID，因此服务器只会应用一次。
+- 过期的副本绝不会覆盖服务器已接受的写入：只有当一条记录在设备和服务器上都发生了变化时才会询问解决器，服务器上较旧的版本会被跳过。
+- 已删除的记录保持删除状态。丢失了数据的服务器或另一台服务器会让存储从头重新拉取全部内容，并保留待同步改动。应用无法解码的记录会被放进 `quarantinedChanges()`，而不会让拉取停止。
+- 走快的时钟、对每次推送都回应冲突的服务器以及从不应答的服务器，其影响都是有限的：时间戳最多按领先五分钟计算，重试会退避并被搁置，一次同步会在 `syncTimeout` 之后结束。
+
+服务器绝不能把同一个 revision 分配给一条记录的两个版本，应当发送 `epoch` 和 `sequence`，并且必须在重启后仍记得改动 ID。限制：服务器在恢复备份时丢失的写入不会被重新上传；每个文件只能有一个存储实例；每次改动都会写入整个文件；超过 10,000 条的删除会被遗忘。完整列表见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
+
 ## 演示
 
 | 已同步                                                          | 离线，有两处改动等待同步                                       |
@@ -338,7 +349,7 @@ xcodebuild docbuild -scheme OfflineFirstFramework -destination 'generic/platform
 ## 架构
 
 - `OfflineStore` 是一个 actor，拥有一个集合。它的状态（记录、待同步改动、变更令牌、时钟）会写成一个 JSON 文件；每次改动都在一份副本上进行，只有写入成功后该副本才会成为当前状态，因此崩溃或磁盘写满都不会留下只应用了一半的改动。每条记录都带有它的服务器 revision、最后一个时间戳，并且在尚未同步时带有一条待同步改动，其 ID 会随每次本地编辑而改变。
-- 一次同步会分批推送待同步改动（最旧的优先，并附上它们所基于的 revision），应用每个结果，然后在已保存的变更令牌之后分页拉取服务器改动。来自任一方的冲突都交给 `ConflictResolver`。推送进行期间所做的编辑会被保留，并在下一次推送。
+- 一次同步会分批推送待同步改动（最旧的优先，并附上它们所基于的 revision），应用每个结果，然后在已保存的变更令牌之后分页拉取服务器改动。在设备和服务器上都发生变化的记录交给 `ConflictResolver`；服务器上较旧的版本会被跳过。推送进行期间所做的编辑会被保留，并在下一次推送。
 - `Sync/` 包含 transport 协议、HTTP 与内存 transport、重试策略、断路器（circuit breaker）和连接状态；`Storage/` 包含文件与 Keychain 存储、加密和迁移；`Clock/` 与 `CRDT/` 是用于排序和合并的值类型；`SwiftUI/` 是可观察模型。只有 `OfflineStore`、`InMemorySyncServer` 和 `SyncedCollection` 是引用类型。
 - 存储会防范行为异常的服务器和损坏的文件：队列、页面、响应、revision 和变更令牌的大小上限，必须前进的变更令牌，每条记录每次同步最多三次推送，ID 不匹配而被忽略的记录，超出允许时钟偏差的时间戳，以及无法跳出其目录的文件名。测试覆盖了其中的每一项。
 - 每次改动都会重写整个文件，这适用于每个存储最多几万条记录的集合。

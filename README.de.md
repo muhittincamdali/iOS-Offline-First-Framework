@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,9 +51,10 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 142 Swift-Testing-Tests auf macOS und in einem
-  iPhone-Simulator, 16 Node-Tests für den Server und eine End-to-End-Testsuite in der CI, die zwei
-  Stores über HTTP durch den Server synchronisiert.
+- **Gegen einen echten Server getestet** — 195 Swift-Testing-Tests auf macOS und in einem
+  iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
+  Anfragen, Neustarts und veraltete Seiten schickt, 19 Node-Tests für den Server und eine
+  End-to-End-Testsuite in der CI, die zwei Stores über HTTP durch den Server synchronisiert.
 
 ### Was enthalten ist
 
@@ -326,6 +327,34 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Garantien und Grenzen
+
+Der Store hält diese Zusagen bei jeder Konfliktrichtlinie ein, auch bei verlorenen Anfragen,
+verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solange der Server dem
+[Protokoll](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md) folgt:
+
+- Ein Speichern oder Löschen steht in der Datei, bevor der Aufruf zurückkehrt, und eine
+  ausstehende Änderung wird übertragen, bis der Server sie beantwortet. Eine Wiederholung behält
+  die Änderungs-ID, sodass der Server sie nur einmal anwendet.
+- Eine veraltete Kopie ersetzt nie einen Schreibvorgang, den der Server angenommen hat: Der
+  Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf dem Server geändert hat,
+  und eine ältere Serverversion wird übersprungen.
+- Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein anderer
+  Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben. Ein
+  Datensatz, den die App nicht dekodieren kann, wird in `quarantinedChanges()` zurückgestellt,
+  statt den Abruf anzuhalten.
+- Eine vorgehende Uhr, ein Server, der jede Übertragung mit einem Konflikt beantwortet, und ein
+  Server, der nie antwortet, wirken nur begrenzt: Zeitstempel zählen höchstens fünf Minuten im
+  Voraus, Wiederholungen warten und werden geparkt, und eine Synchronisierung endet nach
+  `syncTimeout`.
+
+Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`
+und eine `sequence` senden und muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen:
+Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht erneut
+hochgeladen, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben,
+und Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
+die vollständige Liste.
+
 ## Demo
 
 | Synchronisiert                                                                | Offline, zwei Änderungen warten                                        |
@@ -398,9 +427,10 @@ Der Referenzserver benötigt Node 24 oder neuer.
   ausstehende Änderung mit einer ID, die sich bei jeder lokalen Bearbeitung ändert.
 - Eine Synchronisierung überträgt ausstehende Änderungen in Stapeln (die ältesten zuerst, mit der
   Revision, auf der sie beruhten), wendet jedes Ergebnis an und ruft dann Seiten mit
-  Serveränderungen nach dem gespeicherten Änderungstoken ab. Konflikte von beiden Seiten gehen an den
-  `ConflictResolver`. Bearbeitungen, die während einer laufenden Übertragung erfolgen, bleiben
-  erhalten und werden als Nächstes übertragen.
+  Serveränderungen nach dem gespeicherten Änderungstoken ab. Ein Datensatz, der sich auf dem Gerät
+  und auf dem Server geändert hat, geht an den `ConflictResolver`; eine ältere Serverversion wird
+  übersprungen. Bearbeitungen, die während einer laufenden Übertragung erfolgen, bleiben erhalten
+  und werden als Nächstes übertragen.
 - `Sync/` enthält das Transport-Protokoll, die HTTP- und In-Memory-Transporte, die
   Wiederholungsrichtlinie, den Circuit Breaker und die Konnektivität; `Storage/` die Datei- und
   Keychain-Stores, die Verschlüsselung und die Migrationen; `Clock/` und `CRDT/` die Werttypen zum

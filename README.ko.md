@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg" alt="Offline-First Framework: 오프라인에서도 계속 동작하고 서버와 동기화되는 Swift 앱용 로컬 저장소."></picture></p>
@@ -33,7 +33,7 @@
 - **모든 백엔드** — `HTTPSyncTransport`는 문서화된 JSON 프로토콜을 사용하며, [`Examples/SyncServer`](Examples/SyncServer)의 참조 서버가 약 280줄의 JavaScript로 이를 구현합니다. 그 밖의 API도 `SyncTransport` 뒤에 둘 수 있습니다. 예를 들어 ETag를 쓰는 REST API가 그렇습니다.
 - **SwiftUI를 위해 설계** — `SyncedCollection`은 스토어의 `@Observable` 모델입니다. 자동 동기화는 기기가 온라인이 될 때와 로컬 편집 직후에 실행되고, 호출 한 번으로 백그라운드 새로 고침 작업에서도 동기화할 수 있습니다.
 - **저장된 데이터 보호** — Keychain에 보관한 키를 쓰는 AES-GCM 파일 암호화, 데이터 보호 클래스, 레코드 스키마 마이그레이션, 손상된 파일을 위한 정책을 제공합니다.
-- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 142개, 서버용 Node 테스트 16개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
+- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 195개(모든 충돌 정책을 요청 유실, 재시작, 오래된 페이지로 시험하는 속성 테스트 포함), 서버용 Node 테스트 19개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
 
 ### 포함된 항목
 
@@ -280,6 +280,17 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## 보장과 한계
+
+서버가 [프로토콜](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)을 따르는 한, 스토어는 어떤 충돌 정책에서든 요청 유실, 응답 유실, 앱과 서버의 재시작, 오래된 페이지에도 다음 약속을 지킵니다.
+
+- 저장이나 삭제는 호출이 반환되기 전에 파일에 기록되고, 큐에 있는 변경은 서버가 응답할 때까지 푸시됩니다. 재시도는 변경 ID를 그대로 쓰므로 서버는 변경을 한 번만 적용합니다.
+- 오래된 사본이 서버가 받아들인 쓰기를 대체하는 일은 없습니다. 리졸버는 레코드가 기기와 서버 양쪽에서 바뀐 경우에만 호출되고, 서버의 더 오래된 버전은 건너뜁니다.
+- 삭제된 레코드는 삭제된 상태로 남습니다. 데이터를 잃은 서버나 다른 서버를 만나면 스토어는 대기 중 변경을 유지한 채 모든 것을 처음부터 다시 가져옵니다. 앱이 디코딩할 수 없는 레코드는 가져오기를 멈추지 않고 `quarantinedChanges()`로 따로 둡니다.
+- 앞서 가는 시계, 모든 푸시에 충돌로 응답하는 서버, 전혀 응답하지 않는 서버의 영향은 제한됩니다. 타임스탬프는 최대 5분 앞선 것으로만 계산되고, 재시도는 간격을 두다가 보류되며, 동기화는 `syncTimeout`이 지나면 끝납니다.
+
+서버는 같은 revision을 레코드의 두 버전에 절대 주면 안 되고, `epoch`와 `sequence`를 보내야 하며, 변경 ID를 재시작 후에도 기억해야 합니다. 한계: 서버가 백업 복원으로 잃은 쓰기는 다시 업로드되지 않고, 파일 하나에 스토어 인스턴스는 하나이며, 변경할 때마다 파일 전체를 쓰고, 10,000건을 넘는 삭제는 잊힙니다. 전체 목록은 [보장과 한계](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)에 있습니다.
+
 ## 데모
 
 | 동기화됨                                                             | 오프라인, 변경 2건 대기 중                                            |
@@ -338,7 +349,7 @@ xcodebuild docbuild -scheme OfflineFirstFramework -destination 'generic/platform
 ## 아키텍처
 
 - `OfflineStore`는 컬렉션 하나를 소유하는 actor 입니다. 상태(레코드, 대기 중 변경, 변경 토큰, 시계)는 JSON 파일 하나로 기록됩니다. 모든 변경은 복사본에서 실행되고 기록에 성공한 뒤에야 복사본이 현재 상태가 되므로, 충돌이나 디스크 가득 참으로 변경이 반쯤만 적용된 채 남는 일이 없습니다. 각 레코드는 서버 revision, 마지막 타임스탬프, 그리고 동기화되기 전까지는 로컬 편집마다 바뀌는 ID가 붙은 대기 중 변경 하나를 가집니다.
-- 동기화는 대기 중 변경을 (오래된 것부터, 기반이 된 revision과 함께) 일괄로 푸시하고, 각 결과를 적용한 다음, 저장된 변경 토큰 이후의 서버 변경을 페이지 단위로 가져옵니다. 어느 쪽에서 오든 충돌은 `ConflictResolver`로 넘어갑니다. 푸시가 진행되는 동안 이루어진 편집은 보존되어 다음에 푸시됩니다.
+- 동기화는 대기 중 변경을 (오래된 것부터, 기반이 된 revision과 함께) 일괄로 푸시하고, 각 결과를 적용한 다음, 저장된 변경 토큰 이후의 서버 변경을 페이지 단위로 가져옵니다. 기기와 서버 양쪽에서 바뀐 레코드는 `ConflictResolver`로 넘어가고, 서버의 더 오래된 버전은 건너뜁니다. 푸시가 진행되는 동안 이루어진 편집은 보존되어 다음에 푸시됩니다.
 - `Sync/` 에는 transport 프로토콜, HTTP와 인메모리 transport, 재시도 정책, 서킷 브레이커(circuit breaker), 연결 상태가 있고, `Storage/` 에는 파일과 Keychain 스토어, 암호화, 마이그레이션이, `Clock/`과 `CRDT/` 에는 순서 지정과 병합을 위한 값 타입이, `SwiftUI/` 에는 관찰 가능한 모델이 있습니다. 참조 타입은 `OfflineStore`, `InMemorySyncServer`, `SyncedCollection` 뿐입니다.
 - 스토어는 오작동하는 서버와 손상된 파일로부터 스스로를 보호합니다. 큐, 페이지, 응답, revision, 변경 토큰 크기의 상한, 반드시 앞으로 나아가야 하는 변경 토큰, 레코드와 동기화당 최대 세 번의 푸시, ID가 일치하지 않아 무시되는 레코드, 허용된 시계 편차를 넘는 타임스탬프, 디렉터리를 벗어날 수 없는 파일 이름이 그 예입니다. 테스트가 이 각각을 다룹니다.
 - 변경할 때마다 파일 전체를 다시 쓰므로, 스토어당 수만 개 레코드까지의 컬렉션에 적합합니다.
