@@ -39,7 +39,7 @@ public actor OfflineStore<Record: SyncableRecord> {
     var state: State
     var breaker: CircuitBreaker
     var observers: [UUID: AsyncStream<StoreState<Record>>.Continuation] = [:]
-    var activeSync: Task<SyncReport, any Error>?
+    var activeSync: SharedSync?
     /// Records whose push is waiting for the server's answer.
     var inFlight: Set<Record.ID> = []
     var automaticSync: AutomaticSync?

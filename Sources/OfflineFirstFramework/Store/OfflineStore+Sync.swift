@@ -18,7 +18,9 @@ extension OfflineStore {
     /// Pushes local changes, then pulls server changes.
     ///
     /// Calls made while a sync runs wait for that sync and return its report. Cancelling the
-    /// calling task stops the sync after the current request; what was applied so far stays.
+    /// calling task stops the sync after the current request when no other call waits for it;
+    /// what was applied so far stays. While other calls still wait, the sync goes on and the
+    /// cancelled call returns its report too.
     ///
     /// - Returns: What the sync did. Without a transport, or while the ``CircuitBreaker`` is
     ///   open, nothing happens and ``SyncReport/skipped`` is `true`.
@@ -27,16 +29,12 @@ extension OfflineStore {
     @discardableResult
     public func sync() async throws -> SyncReport {
         if let activeSync {
-            return try await activeSync.value
+            return try await activeSync.value()
         }
-        let task = Task { try await self.performSync() }
-        activeSync = task
+        let shared = SharedSync { try await self.performSync() }
+        activeSync = shared
         defer { activeSync = nil }
-        return try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
-        }
+        return try await shared.value()
     }
 
     private func performSync() async throws -> SyncReport {
