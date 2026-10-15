@@ -10,6 +10,17 @@ let package = Package(
         .watchOS(.v10),
         .visionOS(.v1)
     ],
-    products: [],
-    targets: []
+    products: [
+        .library(name: "OfflineFirstFramework", targets: ["OfflineFirstFramework"])
+    ],
+    targets: [
+        .target(
+            name: "OfflineFirstFramework",
+            path: "Sources/OfflineFirstFramework"
+        ),
+        .testTarget(
+            name: "OfflineFirstFrameworkTests",
+            dependencies: ["OfflineFirstFramework"]
+        )
+    ]
 )
