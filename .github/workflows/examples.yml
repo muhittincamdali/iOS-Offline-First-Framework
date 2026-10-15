@@ -1,0 +1,79 @@
+# Repository-specific: builds the example app the README samples come from, and tests the
+# reference sync server alone and together with the package (end to end over HTTP).
+name: Examples
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: examples-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  app:
+    name: OfflineTodos (${{ matrix.platform }})
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: iOS
+            destination: generic/platform=iOS Simulator
+          - platform: macOS
+            destination: platform=macOS
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: xcodebuild -version
+
+      - name: Build
+        working-directory: Examples/OfflineTodos
+        env:
+          DESTINATION: ${{ matrix.destination }}
+        run: |
+          set -o pipefail
+          xcodebuild build -project OfflineTodos.xcodeproj -scheme OfflineTodos \
+            -destination "$DESTINATION" -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO -quiet
+
+  server:
+    name: Sync server and end-to-end tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Server tests
+        working-directory: Examples/SyncServer
+        run: npm test
+
+      - name: End-to-end tests against the server
+        run: |
+          set -o pipefail
+          node Examples/SyncServer/server.mjs --port 8080 > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl --silent --fail http://localhost:8080/sync/health/changes > /dev/null && break
+            sleep 1
+          done
+          OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+          # The suite skips itself without the server; make sure it ran.
+          grep -q "twoDevicesShareEditsDeletesAndConflicts() passed" "$RUNNER_TEMP/e2e.log"

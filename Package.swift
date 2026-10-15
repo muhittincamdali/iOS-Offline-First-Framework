@@ -1,46 +1,26 @@
-// swift-tools-version: 5.9
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "OfflineFirstFramework",
     platforms: [
-        .iOS(.v15),
-        .macOS(.v12),
-        .tvOS(.v15),
-        .watchOS(.v8)
+        .iOS(.v17),
+        .macOS(.v14),
+        .tvOS(.v17),
+        .watchOS(.v10),
+        .visionOS(.v1)
     ],
     products: [
-        .library(
-            name: "OfflineFirstFramework",
-            targets: ["OfflineFirstFramework"]
-        )
-    ],
-    dependencies: [
-        .package(url: "https://github.com/realm/SwiftLint", from: "0.54.0"),
-        .package(url: "https://github.com/Quick/Quick", from: "7.0.0"),
-        .package(url: "https://github.com/Quick/Nimble", from: "13.0.0")
+        .library(name: "OfflineFirstFramework", targets: ["OfflineFirstFramework"])
     ],
     targets: [
         .target(
             name: "OfflineFirstFramework",
-            dependencies: [],
-            path: "Sources/OfflineFirstFramework",
-            swiftSettings: [
-                .define("DEBUG", .when(configuration: .debug)),
-                .define("RELEASE", .when(configuration: .release))
-            ]
+            path: "Sources/OfflineFirstFramework"
         ),
         .testTarget(
             name: "OfflineFirstFrameworkTests",
-            dependencies: [
-                "OfflineFirstFramework",
-                "Quick",
-                "Nimble"
-            ],
-            path: "Tests/OfflineFirstFrameworkTests"
+            dependencies: ["OfflineFirstFramework"]
         )
-    ],
-    swiftLanguageVersions: [.v5]
+    ]
 )

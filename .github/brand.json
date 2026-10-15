@@ -1,0 +1,97 @@
+{
+  "name": "Offline-First Framework",
+  "repository": "muhittincamdali/iOS-Offline-First-Framework",
+  "branch": "master",
+  "tagline": {
+    "en": "A local store for Swift apps that keeps working offline and syncs with your server.",
+    "tr": "Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu.",
+    "zh-CN": "面向 Swift 应用的本地存储：离线照常工作，联网后与你的服务器同步。",
+    "ja": "オフラインでも動き続け、サーバーと同期する Swift アプリ向けのローカルストア。",
+    "ko": "오프라인에서도 계속 동작하고 서버와 동기화되는 Swift 앱용 로컬 저장소.",
+    "es": "Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor.",
+    "de": "Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert.",
+    "fr": "Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur.",
+    "pt-BR": "Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor.",
+    "ru": "Локальное хранилище для Swift-приложений: работает без сети и синхронизируется с вашим сервером."
+  },
+  "tags": {
+    "en": [
+      "Offline-first",
+      "Conflict resolution",
+      "No dependencies"
+    ],
+    "tr": [
+      "Çevrimdışı öncelikli",
+      "Çakışma çözümü",
+      "Bağımlılık yok"
+    ],
+    "zh-CN": [
+      "离线优先",
+      "冲突解决",
+      "无依赖"
+    ],
+    "ja": [
+      "オフラインファースト",
+      "競合解決",
+      "依存関係なし"
+    ],
+    "ko": [
+      "오프라인 우선",
+      "충돌 해결",
+      "의존성 없음"
+    ],
+    "es": [
+      "Primero sin conexión",
+      "Resolución de conflictos",
+      "Sin dependencias"
+    ],
+    "de": [
+      "Offline-first",
+      "Konfliktlösung",
+      "Keine Abhängigkeiten"
+    ],
+    "fr": [
+      "Hors ligne d’abord",
+      "Résolution des conflits",
+      "Sans dépendance"
+    ],
+    "pt-BR": [
+      "Offline primeiro",
+      "Resolução de conflitos",
+      "Sem dependências"
+    ],
+    "ru": [
+      "Сначала офлайн",
+      "Разрешение конфликтов",
+      "Без зависимостей"
+    ]
+  },
+  "motif": "phone",
+  "buttons": [
+    "start",
+    "docs",
+    "examples"
+  ],
+  "links": {
+    "docs": "https://muhittincamdali.github.io/iOS-Offline-First-Framework/documentation/offlinefirstframework/",
+    "examples": "Examples/"
+  },
+  "languages": [
+    "en",
+    "tr",
+    "zh-CN",
+    "ja",
+    "ko",
+    "es",
+    "de",
+    "fr",
+    "pt-BR",
+    "ru"
+  ],
+  "docc": {
+    "targets": [
+      "OfflineFirstFramework"
+    ]
+  },
+  "socialTheme": "dark"
+}
