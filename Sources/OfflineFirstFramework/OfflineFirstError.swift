@@ -41,6 +41,10 @@ public enum OfflineFirstError: Error, Equatable, Sendable {
     /// which would repeat the same page forever.
     case pullTokenDidNotAdvance(token: String?)
 
+    /// The server's answer breaks a rule of the sync protocol, for example a change token that
+    /// is too long.
+    case invalidServerResponse(String)
+
     /// The hybrid logical clock could not produce a timestamp.
     case clock(HybridLogicalClock.Failure)
 }
@@ -72,6 +76,8 @@ extension OfflineFirstError: LocalizedError {
             "There are already \(limit) changes waiting to sync."
         case .pullTokenDidNotAdvance(let token):
             "The server returned the same sync token (\(token ?? "none")) and said more changes follow."
+        case .invalidServerResponse(let description):
+            "The sync server's answer could not be used: \(description)"
         case .clock(let failure):
             "The sync clock failed: \(failure)."
         }

@@ -8,6 +8,13 @@ extension OfflineStore {
     /// Server-provided texts (rejection reasons, error descriptions) are cut to this length.
     static var maximumMessageLength: Int { 1_000 }
 
+    /// The longest revision or change token, in UTF-8 bytes, the store keeps. Every record
+    /// stores its revision, so longer values from a server would grow the file without limit.
+    static var maximumRevisionLength: Int { 1_024 }
+
+    /// The longest node ID, in UTF-8 bytes, accepted in a server timestamp.
+    static var maximumNodeIDLength: Int { 256 }
+
     /// Pushes local changes, then pulls server changes.
     ///
     /// Calls made while a sync runs wait for that sync and return its report. Cancelling the
@@ -180,6 +187,9 @@ extension OfflineStore {
             try Task.checkCancellation()
             let token = state.token
             let response = try await transport.pull(since: token)
+            if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
+                throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
+            }
             try update { state in
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
@@ -262,9 +272,13 @@ extension OfflineStore {
         state.entries[entry.id] = entry.record == nil && entry.pending == nil ? nil : entry
     }
 
-    /// A server record whose own ID differs from the ID it was sent for is ignored.
+    /// A server record is ignored when its own ID differs from the ID it was sent for, or when
+    /// its revision or timestamp is longer than the limits.
     static func isConsistent(_ change: RemoteChange<Record>, for id: Record.ID) -> Bool {
-        change.recordID == id && (change.record.map { $0.id == id } ?? true)
+        change.recordID == id
+            && (change.record.map { $0.id == id } ?? true)
+            && change.revision.utf8.count <= maximumRevisionLength
+            && (change.timestamp.map { $0.nodeID.utf8.count <= maximumNodeIDLength } ?? true)
     }
 
     /// Moves the clock past a server timestamp; one too far in the future is ignored.

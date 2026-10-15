@@ -294,6 +294,40 @@ struct SyncTests {
         #expect(await store.records() == [Note(id: "c", text: "fine")])
     }
 
+    @Test func oversizedRevisionsAndNodeIDsAreIgnored() async throws {
+        let long = String(repeating: "r", count: OfflineStore<Note>.maximumRevisionLength + 1)
+        let transport = ScriptedTransport(pull: { _ in
+            PullResponse(changes: [
+                RemoteChange(recordID: "a", record: Note(id: "a", text: "long revision"), revision: long, timestamp: nil),
+                RemoteChange(recordID: "b", record: Note(id: "b", text: "long node"), revision: "2",
+                             timestamp: HLCTimestamp(wallTime: 1, nodeID: String(repeating: "n", count: 300))),
+                RemoteChange(recordID: "c", record: Note(id: "c", text: "fine"), revision: "3", timestamp: nil)
+            ], token: "3", hasMore: false)
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        #expect(await store.records() == [Note(id: "c", text: "fine")])
+    }
+
+    @Test func oversizedChangeTokensFailTheSyncWithoutBeingSaved() async throws {
+        let long = String(repeating: "t", count: OfflineStore<Note>.maximumRevisionLength + 1)
+        let transport = ScriptedTransport(pull: { _ in
+            PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "A"), revision: "1", timestamp: nil)],
+                         token: long, hasMore: false)
+        })
+        let store = try makeStore(transport)
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        #expect(await store.state.token == nil)
+        #expect(await store.records().isEmpty)
+    }
+
+    @Test func automaticSyncWaitsStayBetweenASecondAndADay() {
+        #expect(OfflineStore<Note>.clampedDelay(.zero) == .seconds(1))
+        #expect(OfflineStore<Note>.clampedDelay(.seconds(-5)) == .seconds(1))
+        #expect(OfflineStore<Note>.clampedDelay(.seconds(90)) == .seconds(90))
+        #expect(OfflineStore<Note>.clampedDelay(.seconds(Int64.max)) == .seconds(86_400))
+    }
+
     @Test func farFutureServerTimestampsDoNotMoveTheClock() async throws {
         let transport = ScriptedTransport(pull: { _ in
             PullResponse(changes: [

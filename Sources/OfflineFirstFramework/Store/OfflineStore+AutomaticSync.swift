@@ -26,17 +26,17 @@ extension OfflineStore {
     ///
     /// - Parameters:
     ///   - monitor: Where the online state comes from. Default: `NWPathMonitor`.
-    ///   - interval: Time between syncs while online, or `nil` to sync only on the other
-    ///     triggers. Default: 5 minutes.
-    ///   - debounce: Wait after a local change, so a burst of edits goes out in one push.
-    ///     Default: 2 seconds.
+    ///   - interval: Time between syncs while online, from one second to one day, or `nil` to
+    ///     sync only on the other triggers. Default: 5 minutes.
+    ///   - debounce: Wait after a local change, so a burst of edits goes out in one push, up to
+    ///     one hour. Default: 2 seconds.
     public func startAutomaticSync(
         monitor: any ConnectivityMonitor = NetworkConnectivityMonitor(),
         interval: Duration? = .seconds(300),
         debounce: Duration = .seconds(2)
     ) {
         stopAutomaticSync()
-        var settings = AutomaticSync(interval: interval.map { max(.seconds(1), $0) }, debounce: max(.zero, debounce))
+        var settings = AutomaticSync(interval: interval.map { Self.clampedDelay($0) }, debounce: min(max(.zero, debounce), .seconds(3_600)))
         settings.listener = Task { [weak self] in
             for await online in monitor.updates() {
                 guard let self else { return }
@@ -124,6 +124,12 @@ extension OfflineStore {
         if let interval {
             delays.append(interval)
         }
-        return delays.min().map { max(.seconds(1), $0) }
+        return delays.min().map(Self.clampedDelay)
+    }
+
+    /// Keeps a wait between one second and one day, so a retry date far in the future (from a
+    /// damaged file, say) or a huge interval does not turn into a sleep that never ends.
+    static func clampedDelay(_ delay: Duration) -> Duration {
+        min(max(.seconds(1), delay), .seconds(86_400))
     }
 }
