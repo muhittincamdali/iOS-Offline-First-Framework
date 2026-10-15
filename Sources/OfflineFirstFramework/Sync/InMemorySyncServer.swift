@@ -203,7 +203,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     }
 
     private func remote(_ id: Record.ID, _ stored: Stored) -> RemoteChange<Record> {
-        RemoteChange(recordID: id, record: stored.record, revision: stored.revision, timestamp: stored.timestamp)
+        RemoteChange(recordID: id, record: stored.record, revision: stored.revision, timestamp: stored.timestamp,
+                     sequence: UInt64(stored.sequence))
     }
 
     /// 64 random bits as 16 hexadecimal digits.

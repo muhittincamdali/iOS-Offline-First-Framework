@@ -33,7 +33,7 @@ test('push and pull over HTTP', async () => {
   assert.match(revision, /^[0-9a-f]{16}\.1$/);
 
   const pulled = await (await fetch(`${base}/sync/notes/changes`)).json();
-  assert.deepEqual(pulled.changes, [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision, timestamp }]);
+  assert.deepEqual(pulled.changes, [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision, sequence: 1, timestamp }]);
   assert.match(pulled.token, /^[0-9a-f]{16}\.1$/);
   assert.equal(pulled.epoch, revision.split('.')[0]);
   assert.equal(pulled.hasMore, false);

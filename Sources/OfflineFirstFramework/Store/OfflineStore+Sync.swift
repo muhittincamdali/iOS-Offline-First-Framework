@@ -169,11 +169,21 @@ extension OfflineStore {
                     report.pushed += 1
                     entry.revision = revision
                     entry.history = state.history
+                    // The answer does not say where the write stands; its echo in a pull will.
+                    entry.sequence = nil
+                    entry.serverTimestamp = change.timestamp
                     if isCurrent { entry.pending = nil }
                 case .conflict(let current):
                     report.conflicts += 1
                     guard isCurrent, Self.isConsistent(current, for: entry.id) else { break }
                     observe(current.timestamp, in: &state)
+                    guard current.revision != entry.revision, !Self.isStale(current, comparedWith: entry, history: state.history) else {
+                        // The version the change is based on, or an older one (a lagging replica
+                        // answered): nothing to resolve; the change is pushed again later.
+                        fail(&entry, message: "The server answered with a conflict that names the same or an older version of the record.",
+                             report: &report)
+                        break
+                    }
                     entry = try resolve(entry, against: current, in: &state)
                 case .rejected(let reason, let current):
                     report.rejected += 1
@@ -277,26 +287,30 @@ extension OfflineStore {
     private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {
         guard Self.isConsistent(change, for: change.recordID) else { return }
         observe(change.timestamp, in: &state)
-        guard let entry = state.entries[change.recordID] else {
-            guard change.record != nil else { return }
-            report.pulled += 1
+        guard var entry = state.entries[change.recordID] else {
+            // A deletion is kept as a tombstone too, so an older version of the record that
+            // arrives later (a page out of order) does not bring it back.
+            if change.record != nil { report.pulled += 1 }
             Self.store(Self.entry(from: change, replacing: nil, in: &state, configuration: configuration), in: &state)
             return
         }
         // The same revision is the same version (a server never reuses one): the echo of a change
-        // this store pushed, or a record the server kept across a restart.
+        // this store pushed, or a record the server kept across a restart. It may tell where the
+        // version stands.
         guard entry.revision != change.revision else {
-            state.entries[change.recordID]?.history = state.history
+            entry.history = state.history
+            entry.sequence = change.sequence ?? entry.sequence
+            entry.serverTimestamp = change.timestamp ?? entry.serverTimestamp
+            state.entries[change.recordID] = entry
             return
         }
-        report.pulled += 1
         // A server version older than the one the store holds (a page out of order, a lagging
-        // replica, a deleted record's earlier version) never replaces it silently: the conflict
-        // resolver decides, and a local win is pushed on top of that version, so the server's
-        // revision check settles what is current. A version the store holds from an earlier
-        // server history is replaced whatever its timestamp: the server lost or replaced it.
-        let isOlder = entry.history == state.history && Self.isOlder(change, than: entry)
-        if entry.pending != nil || isOlder {
+        // replica, the earlier version of a deleted record) is skipped: the server already has
+        // something newer, and it comes in its turn.
+        guard !Self.isStale(change, comparedWith: entry, history: state.history) else { return }
+        report.pulled += 1
+        if entry.pending != nil {
+            // Changed on the device and on the server: a conflict for the resolver.
             report.conflicts += 1
             Self.store(try resolve(entry, against: change, in: &state), in: &state)
         } else {
@@ -330,8 +344,7 @@ extension OfflineStore {
         }
         // The local or merged version goes out again on top of the server's revision, under a
         // new change ID so the server does not answer it from an idempotency cache.
-        result.revision = remote.revision
-        result.history = state.history
+        Self.base(&result, on: remote, history: state.history)
         result.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
                                       attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
         return result

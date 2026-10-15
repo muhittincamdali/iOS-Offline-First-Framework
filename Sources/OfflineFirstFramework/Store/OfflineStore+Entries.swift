@@ -14,7 +14,17 @@ extension OfflineStore {
                       configuration: Configuration) -> StoredEntry<Record> {
         let timestamp = remote.timestamp ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
         return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
-                           position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history)
+                           position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
+                           sequence: remote.sequence, serverTimestamp: remote.timestamp)
+    }
+
+    /// Makes `remote` the server version `entry` is based on, without touching the record or
+    /// its pending change.
+    static func base(_ entry: inout StoredEntry<Record>, on remote: RemoteChange<Record>, history: UInt64) {
+        entry.revision = remote.revision
+        entry.history = history
+        entry.sequence = remote.sequence
+        entry.serverTimestamp = remote.timestamp
     }
 
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
@@ -27,10 +37,23 @@ extension OfflineStore {
         state.token = nil
     }
 
-    /// Whether `change` carries an older timestamp than the server version the store holds.
-    static func isOlder(_ change: RemoteChange<Record>, than entry: StoredEntry<Record>) -> Bool {
-        guard entry.revision != nil, let timestamp = change.timestamp else { return false }
-        return timestamp < entry.timestamp
+    /// Whether `change` is an older server version than the one `entry` is based on: a page out
+    /// of order, a lagging replica, the earlier version of a record whose deletion the store saw.
+    ///
+    /// The server's ``RemoteChange/sequence`` decides when both versions have one. Otherwise
+    /// the timestamps do, which matches the server's order as long as the devices resolve
+    /// conflicts by ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier
+    /// server history is never newer than the server's current one, and without either value
+    /// the store cannot tell, so the version counts as newer.
+    static func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, history: UInt64) -> Bool {
+        guard entry.revision != nil, entry.history == history else { return false }
+        if let incoming = change.sequence, let held = entry.sequence {
+            return incoming < held
+        }
+        if let incoming = change.timestamp, let held = entry.heldServerTimestamp {
+            return incoming < held
+        }
+        return false
     }
 
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
@@ -48,7 +71,8 @@ extension OfflineStore {
     static func pruneTombstones(in state: inout State) {
         let tombstones = state.entries.values.filter { $0.record == nil && $0.pending == nil }
         guard tombstones.count > maximumTombstones else { return }
-        for entry in tombstones.sorted(by: { $0.timestamp < $1.timestamp }).prefix(tombstones.count - maximumTombstones) {
+        let oldestFirst = tombstones.sorted { ($0.history, $0.sequence ?? 0, $0.timestamp) < ($1.history, $1.sequence ?? 0, $1.timestamp) }
+        for entry in oldestFirst.prefix(tombstones.count - maximumTombstones) {
             state.entries[entry.id] = nil
         }
     }

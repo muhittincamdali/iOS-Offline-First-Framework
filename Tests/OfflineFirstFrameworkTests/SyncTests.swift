@@ -126,6 +126,34 @@ struct SyncTests {
         #expect(await server.record("a")?.text == expected)
     }
 
+    /// Two devices with `.clientWins`. B's edit wins by that policy; A has no local change of
+    /// its own any more, so it takes B's version and pushes nothing.
+    @Test func aDeviceWithoutLocalChangesTakesTheServerVersionWhateverThePolicy() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        clock.advance(by: 10)
+        try await deviceB.save(Note(id: "x", text: "B edit"))
+        clock.advance(by: 10)
+        try await deviceA.save(Note(id: "x", text: "A edit"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        #expect(await server.record("x")?.text == "B edit")
+        let pushesBefore = await server.pushRequests
+
+        let report = try await deviceA.sync()
+        try await deviceA.sync()
+        #expect(report.conflicts == 0)
+        #expect(await server.pushRequests == pushesBefore)
+        #expect(await server.record("x")?.text == "B edit")
+        #expect(await deviceA.record("x")?.text == "B edit")
+    }
+
     @Test func mergeResolverPushesTheCombination() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let store = try makeStore(server) {

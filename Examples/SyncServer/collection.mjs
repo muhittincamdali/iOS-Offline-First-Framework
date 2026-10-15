@@ -157,7 +157,7 @@ export class Collection {
   }
 
   #remote(entry) {
-    const remote = { recordID: entry.recordID, revision: entry.revision, timestamp: entry.timestamp };
+    const remote = { recordID: entry.recordID, revision: entry.revision, sequence: entry.sequence, timestamp: entry.timestamp };
     if (entry.record) remote.record = entry.record;
     return remote;
   }

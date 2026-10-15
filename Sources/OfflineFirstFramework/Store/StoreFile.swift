@@ -32,11 +32,16 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// The server history (``OfflineStore/State/history``) ``revision`` belongs to. A version
     /// from an earlier history says nothing about the order of the server's current versions.
     var history: UInt64 = 0
+    /// The ``RemoteChange/sequence`` of the server version ``revision`` names, if known.
+    var sequence: UInt64? = nil
+    /// The timestamp of the server version ``revision`` names, if known. ``timestamp`` is the
+    /// local write's while a change is pending.
+    var serverTimestamp: HLCTimestamp? = nil
 }
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
-        case id, record, timestamp, revision, position, pending, wasSent, history
+        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, serverTimestamp
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
@@ -51,6 +56,14 @@ extension StoredEntry {
         pending = try container.decodeIfPresent(PendingWrite.self, forKey: .pending)
         wasSent = try container.decodeIfPresent(Bool.self, forKey: .wasSent) ?? false
         history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
+        sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
+        serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
+    }
+
+    /// The server version's timestamp. Files from before ``serverTimestamp`` know it only while
+    /// no local change is pending.
+    var heldServerTimestamp: HLCTimestamp? {
+        serverTimestamp ?? (pending == nil ? timestamp : nil)
     }
 }
 

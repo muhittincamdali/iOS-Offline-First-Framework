@@ -75,12 +75,21 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing.
     public let timestamp: HLCTimestamp?
 
+    /// Where this version stands in the server's order of writes, if the server numbers them:
+    /// a number that grows with every write the server stores, such as a global change counter
+    /// or a per-record version number. It may start over only together with a new
+    /// ``PullResponse/epoch``. With it the store recognises an older version that arrives late
+    /// (a page out of order, a lagging replica) by the server's order rather than by device
+    /// clocks.
+    public let sequence: UInt64?
+
     /// Creates a server record.
-    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?) {
+    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?, sequence: UInt64? = nil) {
         self.recordID = recordID
         self.record = record
         self.revision = revision
         self.timestamp = timestamp
+        self.sequence = sequence
     }
 }
 

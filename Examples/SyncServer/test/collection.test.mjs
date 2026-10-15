@@ -23,7 +23,7 @@ test('answers a stale base revision with the current record', () => {
   const stale = change({ record: { id: 'a', text: 'B' } });
   const answer = notes.push({ changes: [stale] }).outcomes[stale.id.toUpperCase()];
   assert.equal(answer.status, 'conflict');
-  assert.deepEqual(answer.current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: `${notes.epoch}.1`, timestamp });
+  assert.deepEqual(answer.current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: `${notes.epoch}.1`, sequence: 1, timestamp });
 
   const fresh = change({ record: { id: 'a', text: 'B' }, baseRevision: `${notes.epoch}.1` });
   assert.equal(notes.push({ changes: [fresh] }).outcomes[fresh.id.toUpperCase()].status, 'accepted');
@@ -43,7 +43,7 @@ test('deletes keep a revision so other devices learn about them', () => {
   notes.push({ changes: [change()] });
   notes.push({ changes: [change({ operation: 'delete', record: undefined, baseRevision: `${notes.epoch}.1` })] });
   const page = notes.changes(`${notes.epoch}.1`);
-  assert.deepEqual(page.changes, [{ recordID: 'a', revision: `${notes.epoch}.2`, timestamp }]);
+  assert.deepEqual(page.changes, [{ recordID: 'a', revision: `${notes.epoch}.2`, sequence: 2, timestamp }]);
 });
 
 test('rejects records the validator refuses', () => {
@@ -171,7 +171,7 @@ test('reads files written before revisions had an epoch', () => {
   const legacy = { epoch: '0123456789abcdef', revision: 2, records: [{ recordID: 'a', record: { id: 'a' }, revision: 2, timestamp }] };
   const notes = new Collection({ state: legacy });
   assert.equal(notes.sequence, 2);
-  assert.deepEqual(notes.changes(null).changes, [{ recordID: 'a', record: { id: 'a' }, revision: '2', timestamp }]);
+  assert.deepEqual(notes.changes(null).changes, [{ recordID: 'a', record: { id: 'a' }, revision: '2', sequence: 2, timestamp }]);
   const edit = change({ record: { id: 'a', text: 'new' }, baseRevision: '2' });
   assert.deepEqual(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.3` });
 });
