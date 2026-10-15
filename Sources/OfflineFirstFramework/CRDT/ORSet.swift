@@ -56,6 +56,7 @@ public struct ORSet<Element: Hashable & Codable & Sendable>: Mergeable, Codable,
         removals.formUnion(tags)
     }
 
+    /// Keeps every tag that neither set has removed.
     public func merged(with other: ORSet) -> ORSet {
         var result = ORSet()
         result.removals = removals.union(other.removals)

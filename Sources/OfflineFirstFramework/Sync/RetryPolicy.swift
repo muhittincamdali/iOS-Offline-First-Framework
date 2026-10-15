@@ -52,10 +52,12 @@ public struct RetryPolicy: Hashable, Sendable {
         attempts < maximumAttempts
     }
 
-    /// The wait after the `attempt`-th failure (1 for the first).
+    /// The wait after the `attempt`-th failure.
     ///
-    /// - Parameter random: A number in `0..<1`; values outside are clamped. The store passes a
-    ///   random number; tests pass a fixed one.
+    /// - Parameters:
+    ///   - attempt: The number of failures so far, 1 for the first. Values below 1 count as 1.
+    ///   - random: A number in `0..<1`; values outside are clamped. The store passes a random
+    ///     number; tests pass a fixed one.
     public func delay(afterAttempt attempt: Int, random: Double) -> Duration {
         let initial = initialDelay.seconds
         let maximum = maximumDelay.seconds

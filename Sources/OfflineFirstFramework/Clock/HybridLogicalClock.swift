@@ -28,10 +28,12 @@ public struct HLCTimestamp: Hashable, Comparable, Codable, Sendable, CustomStrin
         Date(timeIntervalSince1970: Double(wallTime) / 1000)
     }
 
+    /// The timestamp as `wallTime-counter-nodeID`.
     public var description: String {
         "\(wallTime)-\(counter)-\(nodeID)"
     }
 
+    /// Orders by wall time, then counter, then node ID.
     public static func < (lhs: HLCTimestamp, rhs: HLCTimestamp) -> Bool {
         if lhs.wallTime != rhs.wallTime { return lhs.wallTime < rhs.wallTime }
         if lhs.counter != rhs.counter { return lhs.counter < rhs.counter }

@@ -28,6 +28,7 @@ public struct LWWRegister<Value: Codable & Sendable & Equatable>: Mergeable, Cod
         self.timestamp = timestamp
     }
 
+    /// Keeps the write with the newer timestamp.
     public func merged(with other: LWWRegister) -> LWWRegister {
         other.timestamp > timestamp ? other : self
     }
@@ -70,6 +71,7 @@ public struct LWWMap<Key: Hashable & Codable & Sendable, Value: Codable & Sendab
         write(nil, forKey: key, timestamp: timestamp)
     }
 
+    /// Merges the register of every key.
     public func merged(with other: LWWMap) -> LWWMap {
         var result = self
         result.registers.merge(other.registers) { $0.merged(with: $1) }

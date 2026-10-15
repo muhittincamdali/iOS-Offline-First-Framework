@@ -98,8 +98,9 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
 
     /// Writes a record as another device would, with a new revision.
     ///
-    /// - Parameter date: When the other device made the change; the server's current time if
-    ///   `nil`.
+    /// - Parameters:
+    ///   - record: The record to store.
+    ///   - date: When the other device made the change; the server's current time if `nil`.
     @discardableResult
     public func write(_ record: Record, at date: Date? = nil) -> String {
         commit(record, id: record.id, timestamp: (try? clock.tick(at: date ?? now())) ?? clock.latest)

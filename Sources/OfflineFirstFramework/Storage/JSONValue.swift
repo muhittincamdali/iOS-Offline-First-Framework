@@ -3,14 +3,22 @@
 /// Whole numbers decode as ``integer(_:)`` so 64-bit identifiers keep every digit; other
 /// numbers decode as ``double(_:)``.
 public enum JSONValue: Hashable, Codable, Sendable {
+    /// `null`.
     case null
+    /// `true` or `false`.
     case bool(Bool)
+    /// A whole number that fits in 64 bits.
     case integer(Int64)
+    /// Any other number.
     case double(Double)
+    /// A string.
     case string(String)
+    /// An array.
     case array([JSONValue])
+    /// An object.
     case object([String: JSONValue])
 
+    /// Decodes any JSON value.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
@@ -30,6 +38,7 @@ public enum JSONValue: Hashable, Codable, Sendable {
         }
     }
 
+    /// Encodes the value as the JSON it holds.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
@@ -75,13 +84,20 @@ public enum JSONValue: Hashable, Codable, Sendable {
 
 extension JSONValue: ExpressibleByStringLiteral, ExpressibleByIntegerLiteral, ExpressibleByFloatLiteral,
     ExpressibleByBooleanLiteral, ExpressibleByArrayLiteral, ExpressibleByDictionaryLiteral, ExpressibleByNilLiteral {
+    /// Creates a ``string(_:)``.
     public init(stringLiteral value: String) { self = .string(value) }
+    /// Creates an ``integer(_:)``.
     public init(integerLiteral value: Int64) { self = .integer(value) }
+    /// Creates a ``double(_:)``.
     public init(floatLiteral value: Double) { self = .double(value) }
+    /// Creates a ``bool(_:)``.
     public init(booleanLiteral value: Bool) { self = .bool(value) }
+    /// Creates an ``array(_:)``.
     public init(arrayLiteral elements: JSONValue...) { self = .array(elements) }
+    /// Creates an ``object(_:)``; for a repeated key the last value wins.
     public init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .object(Dictionary(elements, uniquingKeysWith: { $1 }))
     }
+    /// Creates ``null``.
     public init(nilLiteral: ()) { self = .null }
 }

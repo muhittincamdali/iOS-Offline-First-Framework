@@ -33,6 +33,7 @@ public struct GCounter: Mergeable, Codable, Hashable {
         counts[node] = overflow ? .max : sum
     }
 
+    /// Keeps the larger count of every node.
     public func merged(with other: GCounter) -> GCounter {
         GCounter(counts: counts.merging(other.counts, uniquingKeysWith: max))
     }
@@ -75,6 +76,7 @@ public struct PNCounter: Mergeable, Codable, Hashable {
         decrements.increment(by: amount, node: node)
     }
 
+    /// Merges the increments and the decrements separately.
     public func merged(with other: PNCounter) -> PNCounter {
         var result = self
         result.increments = increments.merged(with: other.increments)
