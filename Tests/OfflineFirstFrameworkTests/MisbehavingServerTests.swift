@@ -240,7 +240,9 @@ struct MisbehavingServerTests {
     }
 
     @Test func tombstonesAreKeptUpToTheLimit() async throws {
-        let total = OfflineStore<Note>.maximumTombstones + 5
+        #expect(OfflineStore<Note>.Configuration().maximumTombstones == 10_000)
+        let limit = 50
+        let total = limit + 5
         let tombstones = (0..<total).map { index in
             StoredEntry<Note>(id: "n\(index)", record: nil, timestamp: HLCTimestamp(wallTime: Int64(index), nodeID: "x"),
                               revision: "\(index)", position: UInt64(index), pending: nil)
@@ -249,11 +251,13 @@ struct MisbehavingServerTests {
                                    lastSyncedAt: nil, nextSequence: UInt64(total), entries: tombstones)
         let storage = InMemoryStorage()
         try storage.write(StoreFileCoder.encode(file), to: "notes.store")
-        let store = try makeStore(ScriptedTransport(), storage: storage)
+        var configuration = makeConfiguration(clock: clock)
+        configuration.maximumTombstones = limit
+        let store = try OfflineStore<Note>(name: "notes", storage: storage, transport: ScriptedTransport(), configuration: configuration)
         #expect(await store.state.entries.count == total)
         try await store.sync()
         let entries = await store.state.entries
-        #expect(entries.count == OfflineStore<Note>.maximumTombstones)
+        #expect(entries.count == limit)
         #expect(entries["n0"] == nil)
         #expect(entries["n\(total - 1)"] != nil)
     }

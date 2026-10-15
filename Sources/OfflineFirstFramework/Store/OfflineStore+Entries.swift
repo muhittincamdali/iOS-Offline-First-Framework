@@ -65,15 +65,13 @@ extension OfflineStore {
         state.entries[entry.id] = isGone ? nil : entry
     }
 
-    /// Tombstones kept per store; the oldest are dropped first.
-    static var maximumTombstones: Int { 1_000 }
-
-    /// Drops the oldest tombstones beyond ``maximumTombstones``.
-    static func pruneTombstones(in state: inout State) {
+    /// Drops the oldest tombstones beyond `limit` (``Configuration/maximumTombstones``): those of
+    /// earlier server histories first, then by the server's sequence and the timestamp.
+    static func pruneTombstones(in state: inout State, limit: Int) {
         let tombstones = state.entries.values.filter { $0.record == nil && $0.pending == nil }
-        guard tombstones.count > maximumTombstones else { return }
+        guard tombstones.count > limit else { return }
         let oldestFirst = tombstones.sorted { ($0.history, $0.sequence ?? 0, $0.timestamp) < ($1.history, $1.sequence ?? 0, $1.timestamp) }
-        for entry in oldestFirst.prefix(tombstones.count - maximumTombstones) {
+        for entry in oldestFirst.prefix(tombstones.count - limit) {
             state.entries[entry.id] = nil
         }
     }

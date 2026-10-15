@@ -39,6 +39,12 @@ extension OfflineStore {
         /// Pull pages fetched in one sync; the rest waits for the next sync. Default: 100.
         public var maximumPullPages: Int
 
+        /// Deleted records the store remembers, so that an older version of one that arrives
+        /// late (a page out of order, a lagging replica) does not bring it back. Beyond the
+        /// limit the oldest are forgotten; such a late version could then return the record.
+        /// Each takes a few hundred bytes in the file. Default: 10,000.
+        public var maximumTombstones: Int
+
         /// How far ahead of the device clock a server timestamp may be. The store does not move
         /// its clock to a timestamp further ahead, and stores and compares such a timestamp as
         /// if it were at this limit. Default: 5 minutes.
@@ -71,6 +77,7 @@ extension OfflineStore {
             pushBatchSize: Int = 100,
             maximumPendingChanges: Int = 10_000,
             maximumPullPages: Int = 100,
+            maximumTombstones: Int = 10_000,
             maximumClockDrift: Duration = .seconds(300),
             corruptionPolicy: CorruptionPolicy = .fail,
             syncTimeout: Duration = .seconds(300),
@@ -86,6 +93,7 @@ extension OfflineStore {
             self.pushBatchSize = pushBatchSize
             self.maximumPendingChanges = maximumPendingChanges
             self.maximumPullPages = maximumPullPages
+            self.maximumTombstones = maximumTombstones
             self.maximumClockDrift = maximumClockDrift
             self.corruptionPolicy = corruptionPolicy
             self.syncTimeout = syncTimeout
@@ -100,6 +108,7 @@ extension OfflineStore {
             copy.pushBatchSize = min(max(1, pushBatchSize), 1_000)
             copy.maximumPendingChanges = max(1, maximumPendingChanges)
             copy.maximumPullPages = max(1, maximumPullPages)
+            copy.maximumTombstones = max(0, maximumTombstones)
             copy.maximumClockDrift = max(.zero, maximumClockDrift)
             copy.syncTimeout = min(max(.seconds(1), syncTimeout), .seconds(86_400))
             return copy

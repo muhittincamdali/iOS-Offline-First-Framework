@@ -235,7 +235,7 @@ extension OfflineStore {
                 }
                 Self.store(entry, in: &state)
             }
-            Self.pruneTombstones(in: &state)
+            Self.pruneTombstones(in: &state, limit: configuration.maximumTombstones)
         }
     }
 
@@ -313,7 +313,7 @@ extension OfflineStore {
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
                 }
-                Self.pruneTombstones(in: &state)
+                Self.pruneTombstones(in: &state, limit: configuration.maximumTombstones)
                 // A page without a token keeps the previous one.
                 state.token = response.token ?? state.token
             }
