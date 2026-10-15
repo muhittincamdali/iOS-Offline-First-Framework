@@ -47,6 +47,13 @@ extension OfflineStore {
         /// What happens when the store file cannot be read. Default: ``CorruptionPolicy/fail``.
         public var corruptionPolicy: CorruptionPolicy
 
+        /// The longest a sync may run, from one second to one day. When a sync runs longer, its
+        /// request is cancelled and ``OfflineStore/sync()`` throws `URLError(.timedOut)`; what
+        /// was stored so far stays, and the changes of a cancelled push count a failed attempt.
+        /// A server that never answers, or answers a byte at a time, cannot keep every caller
+        /// of ``OfflineStore/sync()`` and automatic sync waiting. Default: 5 minutes.
+        public var syncTimeout: Duration
+
         /// The current time. Replace it in tests.
         public var now: @Sendable () -> Date
 
@@ -66,6 +73,7 @@ extension OfflineStore {
             maximumPullPages: Int = 100,
             maximumClockDrift: Duration = .seconds(300),
             corruptionPolicy: CorruptionPolicy = .fail,
+            syncTimeout: Duration = .seconds(300),
             now: @escaping @Sendable () -> Date = { Date() },
             random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
         ) {
@@ -80,6 +88,7 @@ extension OfflineStore {
             self.maximumPullPages = maximumPullPages
             self.maximumClockDrift = maximumClockDrift
             self.corruptionPolicy = corruptionPolicy
+            self.syncTimeout = syncTimeout
             self.now = now
             self.random = random
         }
@@ -92,6 +101,7 @@ extension OfflineStore {
             copy.maximumPendingChanges = max(1, maximumPendingChanges)
             copy.maximumPullPages = max(1, maximumPullPages)
             copy.maximumClockDrift = max(.zero, maximumClockDrift)
+            copy.syncTimeout = min(max(.seconds(1), syncTimeout), .seconds(86_400))
             return copy
         }
     }

@@ -68,6 +68,41 @@ struct CancellationTests {
         #expect(await store.pendingChanges().isEmpty)
         #expect(await store.status == .idle)
     }
+
+    private func storeWithDeadline(_ transport: ScriptedTransport) throws -> OfflineStore<Note> {
+        var configuration = makeConfiguration(clock: clock)
+        configuration.syncTimeout = .seconds(1)
+        return try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport, configuration: configuration)
+    }
+
+    /// A server that never answers ends each sync at the deadline instead of keeping every
+    /// caller, and automatic sync, waiting.
+    @Test func aPullThatNeverAnswersEndsAtTheDeadline() async throws {
+        let transport = ScriptedTransport(pull: { _ in
+            try await Task.sleep(for: .seconds(3_600))
+            return PullResponse(changes: [], token: nil, hasMore: false)
+        })
+        let store = try storeWithDeadline(transport)
+        let start = ContinuousClock.now
+        await #expect(throws: URLError(.timedOut)) { try await store.sync() }
+        #expect(ContinuousClock.now - start < .seconds(30))
+        #expect(await store.status == .offline)
+        await #expect(throws: URLError(.timedOut)) { try await store.sync() }
+        #expect(await transport.pulls == 2)
+    }
+
+    @Test func aPushThatNeverAnswersCountsAFailedAttempt() async throws {
+        let transport = ScriptedTransport(push: { _ in
+            try await Task.sleep(for: .seconds(3_600))
+            return [:]
+        })
+        let store = try storeWithDeadline(transport)
+        try await store.save(Note(id: "a", text: "A"))
+        await #expect(throws: URLError(.timedOut)) { try await store.sync() }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 1)
+        #expect(pending.nextAttemptAt == clock.now.addingTimeInterval(10))
+    }
 }
 
 /// Suspends callers until ``open()``, whether or not their task was cancelled.

@@ -144,8 +144,9 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 /// Implement the two calls with your networking code (`URLSession`, a GraphQL client, a
 /// database SDK). Throw for a failure that is worth retrying, such as no connection or a 5xx
 /// status; answer ``PushOutcome/rejected(reason:current:)`` for a change that will never
-/// succeed. Both calls should stop when their task is cancelled: the store cancels a request
-/// when every caller of the sync gave up.
+/// succeed. Both calls must stop when their task is cancelled: the store cancels a request when
+/// every caller of the sync gave up, and when the sync runs past
+/// ``OfflineStore/Configuration/syncTimeout``.
 ///
 /// ```swift
 /// struct NotesAPI: SyncTransport {

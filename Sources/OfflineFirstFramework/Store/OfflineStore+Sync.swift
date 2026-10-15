@@ -53,8 +53,9 @@ extension OfflineStore {
         }
         setStatus(.syncing)
         do {
-            try await push(using: transport, report: &report)
-            try await pull(using: transport, report: &report)
+            let deadline = ContinuousClock.now + configuration.syncTimeout
+            try await push(using: transport, until: deadline, report: &report)
+            try await pull(using: transport, until: deadline, report: &report)
             breaker.recordSuccess()
             try update { $0.lastSyncedAt = configuration.now() }
             setStatus(.idle)
@@ -94,7 +95,8 @@ extension OfflineStore {
 
     // MARK: - Push
 
-    private func push(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
+    private func push(using transport: any SyncTransport<Record>, until deadline: ContinuousClock.Instant,
+                      report: inout SyncReport) async throws {
         var pushes: [Record.ID: Int] = [:]
         while true {
             try Task.checkCancellation()
@@ -107,7 +109,7 @@ extension OfflineStore {
             }
             let outcomes: [UUID: PushOutcome<Record>]
             do {
-                outcomes = try await transport.push(changes)
+                outcomes = try await Self.run(until: deadline) { try await transport.push(changes) }
             } catch {
                 inFlight.subtract(changes.map(\.recordID))
                 if error is CancellationError || Task.isCancelled { throw CancellationError() }
@@ -242,13 +244,14 @@ extension OfflineStore {
 
     // MARK: - Pull
 
-    private func pull(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
+    private func pull(using transport: any SyncTransport<Record>, until deadline: ContinuousClock.Instant,
+                      report: inout SyncReport) async throws {
         var historyChanged = false
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
             let token = state.token
             let generation = tokenGeneration
-            let response = try await transport.pull(since: token)
+            let response = try await Self.run(until: deadline) { try await transport.pull(since: token) }
             // The token was reset while the request was on its way (discardChange(for:),
             // resetChangeToken()): the page belongs to the old position, so it is dropped and the
             // pull starts again from the beginning.
@@ -426,6 +429,34 @@ extension OfflineStore {
                             sequence: change.sequence)
     }
 
+    /// Runs a transport call, or cancels it and throws `URLError(.timedOut)` once `deadline`
+    /// passes. The call ends when the transport honours the cancellation. When the sync itself
+    /// is cancelled, the call decides how it ends, as without a deadline: an answer that still
+    /// arrives is used.
+    static func run<T: Sendable>(until deadline: ContinuousClock.Instant,
+                                 _ request: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: DeadlineRace<T>.self) { group in
+            group.addTask { .answered(try await request()) }
+            group.addTask {
+                do {
+                    try await Task.sleep(until: deadline, clock: .continuous)
+                    return .timedOut
+                } catch {
+                    return .stopped
+                }
+            }
+            defer { group.cancelAll() }
+            while let result = try await group.next() {
+                switch result {
+                case .answered(let value): return value
+                case .timedOut: throw URLError(.timedOut)
+                case .stopped: continue
+                }
+            }
+            throw CancellationError()
+        }
+    }
+
     static func message(for error: any Error) -> String {
         let text = (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
         return String(text.prefix(maximumMessageLength))
@@ -439,4 +470,12 @@ extension OfflineStore {
         ]
         return offlineCodes.contains(error.code)
     }
+}
+
+/// The first of a transport call and its deadline.
+enum DeadlineRace<Value: Sendable>: Sendable {
+    case answered(Value)
+    case timedOut
+    /// The deadline's timer was cancelled because the sync was.
+    case stopped
 }
