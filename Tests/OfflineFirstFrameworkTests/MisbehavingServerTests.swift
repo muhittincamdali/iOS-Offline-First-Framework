@@ -104,4 +104,24 @@ struct MisbehavingServerTests {
         #expect(entries["n0"] == nil)
         #expect(entries["n\(total - 1)"] != nil)
     }
+
+    @Test func aRestartedServerSendsEverythingAgain() async throws {
+        let storage = InMemoryStorage()
+        let before = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        for id in ["a", "b", "c"] {
+            await before.write(Note(id: id, text: id))
+        }
+        let first = try makeStore(before, storage: storage)
+        try await first.sync()
+        #expect(try await first.sync().pulled == 0)
+
+        // A new instance starts at revision 0 again; the saved token belongs to the old one.
+        let restarted = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        await restarted.write(Note(id: "x", text: "written after the restart"))
+        let store = try makeStore(restarted, storage: storage)
+        let report = try await store.sync()
+        #expect(report.pulled == 1)
+        #expect(await store.record("x") != nil)
+        #expect(try await store.sync().pulled == 0)
+    }
 }

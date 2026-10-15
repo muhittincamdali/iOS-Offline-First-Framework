@@ -24,10 +24,10 @@ records and revisions.
 
 ## Endpoints
 
-| Request                                    | Body / answer                                                 |
-| ------------------------------------------ | ------------------------------------------------------------- |
-| `POST /sync/<collection>/push`             | `{"changes": [...]}` → `{"outcomes": {"<change ID>": {...}}}` |
-| `GET /sync/<collection>/changes?since=<n>` | → `{"changes": [...], "token": "<n>", "hasMore": false}`     |
+| Request                                        | Body / answer                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| `POST /sync/<collection>/push`                 | `{"changes": [...]}` → `{"outcomes": {"<change ID>": {...}}}` |
+| `GET /sync/<collection>/changes?since=<token>` | → `{"changes": [...], "token": "...", "hasMore": false}`      |
 
 A change is
 `{"id": "<UUID>", "recordID": "a", "operation": "upsert" | "delete", "record": {...},
@@ -45,6 +45,10 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
   current record.
 - The answers to the last 10,000 change IDs are remembered, so a push that is repeated after a
   lost answer is not applied twice.
+- A change token is `<epoch>.<revision>`. The epoch is created with the collection and saved
+  with `--data`. A server started without its data creates new epochs, and a token of another
+  epoch or past the newest revision starts the pull from the beginning, so clients get every
+  record again instead of waiting for revisions that never come.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
   collections, 100,000 records per collection (deleted ones included), record IDs of at most 256 characters, timestamps that a JavaScript number holds
   exactly. Requests outside them get status 400, 413 or 507.

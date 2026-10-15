@@ -29,14 +29,13 @@ test('push and pull over HTTP', async () => {
   assert.equal(pushed.status, 200);
   assert.deepEqual(await pushed.json(), { outcomes: { [id.toUpperCase()]: { status: 'accepted', revision: '1' } } });
 
-  const pulled = await fetch(`${base}/sync/notes/changes`);
-  assert.deepEqual(await pulled.json(), {
-    changes: [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision: '1', timestamp }],
-    token: '1',
-    hasMore: false,
-  });
-  const empty = await (await fetch(`${base}/sync/notes/changes?since=1`)).json();
+  const pulled = await (await fetch(`${base}/sync/notes/changes`)).json();
+  assert.deepEqual(pulled.changes, [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision: '1', timestamp }]);
+  assert.match(pulled.token, /^[0-9a-f]{16}\.1$/);
+  assert.equal(pulled.hasMore, false);
+  const empty = await (await fetch(`${base}/sync/notes/changes?since=${pulled.token}`)).json();
   assert.deepEqual(empty.changes, []);
+  assert.equal(empty.token, pulled.token);
 });
 
 test('collections are separate', async () => {

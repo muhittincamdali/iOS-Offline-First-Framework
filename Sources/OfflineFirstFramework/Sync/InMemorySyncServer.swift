@@ -5,7 +5,8 @@ import Foundation
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
 /// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
-/// connection.
+/// connection. Change tokens name the server instance, so a store that kept a token from an
+/// earlier instance (an app relaunched with a fresh demo server) pulls everything again.
 ///
 /// ```swift
 /// let server = InMemorySyncServer<Note>()
@@ -25,6 +26,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
 
     private var stored: [Record.ID: Stored] = [:]
     private var revision = 0
+    /// Identifies this instance in change tokens.
+    private let epoch = String(UUID().uuidString.prefix(8))
     private var clock: HybridLogicalClock
     private var answers: [UUID: PushOutcome<Record>] = [:]
     private var answerOrder: [UUID] = []
@@ -133,18 +136,28 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     public func pull(since token: String?) async throws -> PullResponse<Record> {
         pullRequests += 1
         try await simulateNetwork()
-        let after = token.flatMap(Int.init) ?? 0
+        let after = position(of: token)
         let changed = stored.filter { $0.value.revision > after }.sorted { $0.value.revision < $1.value.revision }
         let page = changed.prefix(pageSize)
-        let next = page.last?.value.revision ?? max(after, 0)
+        let next = page.last?.value.revision ?? after
         return PullResponse(
             changes: page.map { RemoteChange(recordID: $0.key, record: $0.value.record, revision: String($0.value.revision), timestamp: $0.value.timestamp) },
-            token: String(next),
+            token: "\(epoch).\(next)",
             hasMore: changed.count > page.count
         )
     }
 
     // MARK: - Internals
+
+    /// The revision a token stands for. A token of another instance, or one this instance has
+    /// not reached, starts from the beginning: the client then gets every record again instead
+    /// of waiting for revisions that may never come.
+    private func position(of token: String?) -> Int {
+        guard let token, let dot = token.firstIndex(of: "."), token[..<dot] == epoch,
+              let after = Int(token[token.index(after: dot)...]), (0...revision).contains(after)
+        else { return 0 }
+        return after
+    }
 
     private func handle(_ change: OutgoingChange<Record>) -> PushOutcome<Record> {
         let current = stored[change.recordID]

@@ -1,5 +1,6 @@
 // The sync logic of one collection: revisions, conflict checks, idempotent pushes and paged
 // pulls. It has no I/O, so the tests drive it directly.
+import { randomBytes } from 'node:crypto';
 
 export const LIMITS = Object.freeze({
   changesPerPush: 500,
@@ -13,6 +14,8 @@ export const LIMITS = Object.freeze({
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EPOCH = /^[0-9a-f]{16}$/;
+const TOKEN = /^([0-9a-f]{16})\.(\d{1,15})$/;
 
 export class ValidationError extends Error {}
 
@@ -67,6 +70,9 @@ export class Collection {
   #records = new Map(); // key -> { recordID, record, revision, timestamp }
   #revision = 0;
   #answers = new Map(); // change ID -> outcome, oldest first
+  // Names this collection's history in change tokens. A collection created empty (a restarted
+  // in-memory server) gets a new one, so tokens handed out before do not match.
+  #epoch = randomBytes(8).toString('hex');
 
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
@@ -80,6 +86,10 @@ export class Collection {
 
   get revision() {
     return this.#revision;
+  }
+
+  get epoch() {
+    return this.#epoch;
   }
 
   /** Applies a push body and returns `{ outcomes }`. */
@@ -96,22 +106,28 @@ export class Collection {
     return { outcomes };
   }
 
-  /** Returns changes after `token` (a revision number as a string), oldest first. */
+  /**
+   * Returns changes after `token` (`<epoch>.<revision>`), oldest first. A token of another
+   * epoch, or one ahead of this collection (a backup was restored), starts from the beginning,
+   * so the client gets every record again instead of waiting for revisions that never come.
+   */
   changes(token, limit = LIMITS.pageSize) {
-    const since = /^\d{1,15}$/.test(token ?? '') ? Number(token) : 0;
+    const match = TOKEN.exec(token ?? '');
+    const position = match && match[1] === this.#epoch ? Number(match[2]) : 0;
+    const since = position <= this.#revision ? position : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
     const changed = [...this.#records.values()].filter((entry) => entry.revision > since).sort((a, b) => a.revision - b.revision);
     const page = changed.slice(0, size);
     return {
       changes: page.map((entry) => this.#remote(entry)),
-      token: String(page.at(-1)?.revision ?? since),
+      token: `${this.#epoch}.${page.at(-1)?.revision ?? since}`,
       hasMore: changed.length > page.length,
     };
   }
 
   /** A plain object for saving to disk. */
   snapshot() {
-    return { revision: this.#revision, records: [...this.#records.values()] };
+    return { epoch: this.#epoch, revision: this.#revision, records: [...this.#records.values()] };
   }
 
   #apply(change) {
@@ -153,6 +169,8 @@ export class Collection {
   #restore(state) {
     check(isPlainObject(state) && Number.isSafeInteger(state.revision) && Array.isArray(state.records), 'invalid saved state');
     this.#revision = state.revision;
+    // Files saved before epochs existed get a new one; their clients pull everything once.
+    if (EPOCH.test(state.epoch ?? '')) this.#epoch = state.epoch;
     for (const entry of state.records) {
       validateRecordID(entry.recordID);
       this.#records.set(keyOf(entry.recordID), entry);

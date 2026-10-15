@@ -88,6 +88,11 @@ at most one per record, and a `token` the server understands as "after these". W
 `hasMore` is `true` the store asks again right away, up to
 ``OfflineStore/Configuration/maximumPullPages`` pages per sync.
 
+When the server cannot continue after a token, because it lost its data, was restored from a
+backup or the token belongs to another database, return changes from the beginning rather than
+an empty page: the store skips records whose revision it already has. The reference server puts
+an epoch in front of the revision (`"9f2c41d07ab35e18.43"`) to recognise such tokens.
+
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its

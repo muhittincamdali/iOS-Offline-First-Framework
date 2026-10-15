@@ -73,10 +73,29 @@ test('pages changes after a token', () => {
   const second = notes.changes(first.token, 2);
   assert.deepEqual(second.changes.map((c) => c.recordID), ['c']);
   assert.equal(second.hasMore, false);
-  assert.equal(notes.changes(second.token).token, '3');
-  // A token that is not a revision number starts from the beginning.
+  assert.equal(notes.changes(second.token).token, `${notes.epoch}.3`);
+  // A token that is not one of this collection's starts from the beginning.
   assert.equal(notes.changes('../../etc').changes.length, 3);
-  assert.equal(notes.changes('1', 1e9).changes.length, 2);
+  assert.equal(notes.changes(`${notes.epoch}.1`, 1e9).changes.length, 2);
+});
+
+test('starts from the beginning for a token of another epoch or one ahead', () => {
+  const before = new Collection();
+  for (const id of ['a', 'b', 'c']) before.push({ changes: [change({ recordID: id, record: { id } })] });
+  const oldToken = before.changes(null).token;
+  assert.deepEqual(before.changes(oldToken).changes, []);
+
+  // A restarted in-memory server: empty again, with a new epoch.
+  const restarted = new Collection();
+  restarted.push({ changes: [change({ recordID: 'x', record: { id: 'x' } })] });
+  assert.notEqual(restarted.epoch, before.epoch);
+  const answer = restarted.changes(oldToken);
+  assert.deepEqual(answer.changes.map((c) => c.recordID), ['x']);
+  assert.equal(answer.token, `${restarted.epoch}.1`);
+
+  // A plain revision number (tokens before epochs) and a position past the newest revision.
+  assert.equal(restarted.changes('42').changes.length, 1);
+  assert.equal(restarted.changes(`${restarted.epoch}.42`).changes.length, 1);
 });
 
 test('refuses malformed changes', () => {
@@ -117,5 +136,10 @@ test('round-trips through a snapshot', () => {
   notes.push({ changes: [change()] });
   const restored = new Collection({ state: JSON.parse(JSON.stringify(notes.snapshot())) });
   assert.deepEqual(restored.changes(null), notes.changes(null));
+  // The epoch is saved, so tokens stay valid across a restart with --data.
+  assert.equal(restored.epoch, notes.epoch);
+  assert.deepEqual(restored.changes(notes.changes(null).token).changes, []);
+  const { epoch, ...withoutEpoch } = notes.snapshot();
+  assert.notEqual(new Collection({ state: withoutEpoch }).epoch, epoch);
   assert.throws(() => new Collection({ state: { revision: 'x', records: [] } }), ValidationError);
 });
