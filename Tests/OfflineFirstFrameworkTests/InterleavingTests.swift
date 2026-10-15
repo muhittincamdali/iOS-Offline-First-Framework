@@ -171,6 +171,49 @@ struct InterleavingTests {
         #expect(await store.record("a")?.text == "server")
     }
 
+    /// A save made while a sync pulls, followed by `sync()`: the call must not return the
+    /// running sync's report before the save was pushed.
+    @Test func aSyncCalledDuringAPullPushesTheNewSave() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let gate = PullGate()
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { token in
+            await gate.enter()
+            return try await server.pull(since: token)
+        }
+        let store = try makeStore(transport)
+        let running = Task { try await store.sync() }
+        await gate.waitUntilEntered()
+        try await store.save(Note(id: "late", text: "saved during the pull"))
+        let mine = Task { try await store.sync() }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        _ = try await running.value
+        let report = try await mine.value
+        #expect(report.pushed == 1)
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await server.record("late") != nil)
+    }
+
+    /// Without new changes a call made during the pull still joins the running sync.
+    @Test func aSyncCalledDuringAPullWithoutNewChangesJoinsIt() async throws {
+        let gate = PullGate()
+        let transport = ScriptedTransport(pull: { token in
+            await gate.enter()
+            return PullResponse(changes: [], token: token, hasMore: false)
+        })
+        let store = try makeStore(transport)
+        let running = Task { try await store.sync() }
+        await gate.waitUntilEntered()
+        let mine = Task { try await store.sync() }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        _ = try await running.value
+        _ = try await mine.value
+        #expect(await transport.pulls == 1)
+    }
+
     @Test func resettingTheChangeTokenPullsEverythingAgain() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         for id in ["a", "b"] { await server.write(Note(id: id, text: id)) }

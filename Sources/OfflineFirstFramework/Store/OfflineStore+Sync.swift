@@ -10,11 +10,14 @@ extension OfflineStore {
 
     /// Pushes local changes, then pulls server changes.
     ///
-    /// Calls made while a sync runs wait for that sync and return its report. Cancelling the
-    /// calling task stops the sync after the current request when no other call waits for it;
-    /// what was applied so far stays. While other calls still wait, the sync goes on and the
-    /// cancelled call returns its report too. A call made after every caller of the running
-    /// sync was cancelled waits for that sync to stop and then starts a new one.
+    /// Calls made while a sync runs wait for that sync and return its report. A call made after
+    /// the running sync finished pushing, while local changes are due that it did not push
+    /// (saved during its pull, say), waits for it and then starts a new sync, so the call does
+    /// not return before its changes were pushed. Cancelling the calling task stops the sync
+    /// after the current request when no other call waits for it; what was applied so far
+    /// stays. While other calls still wait, the sync goes on and the cancelled call returns its
+    /// report too. A call made after every caller of the running sync was cancelled waits for
+    /// that sync to stop and then starts a new one.
     ///
     /// - Returns: What the sync did. Without a transport nothing happens and
     ///   ``SyncReport/skipped`` is `true`; while the ``CircuitBreaker`` is open, only changes
@@ -24,11 +27,11 @@ extension OfflineStore {
     @discardableResult
     public func sync() async throws -> SyncReport {
         while let running = activeSync {
-            if running.join() {
+            if running.join(needsPush: !dueChanges(excluding: [:]).isEmpty) {
                 return try await running.value()
             }
-            // Every caller of that sync was cancelled; let it stop before starting over, so two
-            // syncs never push at the same time.
+            // Every caller of that sync was cancelled, or it is past its push and changes wait;
+            // let it end before starting over, so two syncs never push at the same time.
             _ = await running.task.result
             if activeSync === running { activeSync = nil }
             try Task.checkCancellation()
@@ -63,6 +66,7 @@ extension OfflineStore {
         } catch {
             throw failed(with: error)
         }
+        activeSync?.finishPushing()
         guard mayPull else {
             report.skipped = true
             if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }

@@ -10,6 +10,7 @@ final class SharedSync: Sendable {
     private struct Callers {
         var waiting = 0
         var abandoned = false
+        var pushed = false
     }
 
     let task: Task<SyncReport, any Error>
@@ -20,13 +21,19 @@ final class SharedSync: Sendable {
     }
 
     /// Adds a caller, who then waits with ``value()``. Returns `false` when the run is
-    /// abandoned, because its result would be a `CancellationError` this caller did not cause.
-    func join() -> Bool {
+    /// abandoned, because its result would be a `CancellationError` this caller did not cause,
+    /// and when the caller has changes to push (`needsPush`) but the run is past its push.
+    func join(needsPush: Bool = false) -> Bool {
         callers.withLock { callers in
-            guard !callers.abandoned else { return false }
+            guard !callers.abandoned, !(needsPush && callers.pushed) else { return false }
             callers.waiting += 1
             return true
         }
+    }
+
+    /// Marks the end of the run's push; callers with changes to push no longer join it.
+    func finishPushing() {
+        callers.withLock { $0.pushed = true }
     }
 
     /// Waits for the run after ``join()`` returned `true`. Cancelling the calling task
