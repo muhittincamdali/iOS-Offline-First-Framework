@@ -145,6 +145,11 @@ extension OfflineStore {
                 switch outcomes[change.id] {
                 case nil:
                     if isCurrent { fail(&entry, message: "The server did not answer this change.", report: &report) }
+                case .accepted(let revision) where revision.utf8.count > Self.maximumRevisionLength:
+                    if isCurrent {
+                        fail(&entry, message: "The server answered with a revision of more than \(Self.maximumRevisionLength) bytes.",
+                             report: &report)
+                    }
                 case .accepted(let revision):
                     report.pushed += 1
                     entry.revision = revision
