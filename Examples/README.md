@@ -49,5 +49,5 @@ editing `project.yml`. The README screenshots come from
 
 ## SyncServer
 
-A reference server for `HTTPSyncTransport` in about 270 lines of JavaScript for Node 24, with
+A reference server for `HTTPSyncTransport` in about 280 lines of JavaScript for Node 24, with
 its own tests. See [SyncServer/README.md](SyncServer/README.md).

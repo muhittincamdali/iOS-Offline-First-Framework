@@ -39,7 +39,7 @@ dependencies.
   wrong device clock cannot make old edits win), server wins, client wins, your own merge, or
   conflict-free fields: `LWWRegister`, `LWWMap`, `GCounter`, `PNCounter` and `ORSet`.
 - **Any backend** — `HTTPSyncTransport` speaks a documented JSON protocol that the reference
-  server in [`Examples/SyncServer`](Examples/SyncServer) implements in about 270 lines of
+  server in [`Examples/SyncServer`](Examples/SyncServer) implements in about 280 lines of
   JavaScript; any other API fits behind `SyncTransport`, for example a REST API with ETags.
 - **Made for SwiftUI** — `SyncedCollection` is an `@Observable` model of a store; automatic
   sync runs when the device comes online and shortly after local edits, and one call syncs from
@@ -47,7 +47,7 @@ dependencies.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
 - **Tested against a real server** — 122 Swift Testing tests on macOS and an iPhone simulator,
-  14 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
+  15 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
   server over HTTP.
 
 ### What's included
