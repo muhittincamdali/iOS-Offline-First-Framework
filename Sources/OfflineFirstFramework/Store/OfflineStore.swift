@@ -320,6 +320,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         }
         entry.record = record
         entry.timestamp = timestamp
+        // A new local version is pushed on its own base; its conflict answer brings the current one.
+        entry.deferredRemote = nil
         entry.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
                                      attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
         state.entries[id] = entry

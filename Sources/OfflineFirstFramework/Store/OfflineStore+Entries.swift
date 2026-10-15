@@ -36,6 +36,20 @@ extension OfflineStore {
         state.serverEpoch = epoch
         state.token = nil
         state.quarantine.removeAll()
+        for (id, entry) in state.entries where entry.deferredRemote != nil {
+            state.entries[id]?.deferredRemote = nil
+        }
+    }
+
+    /// Whether `change` is an older server version than `other`, both of the current history.
+    static func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>) -> Bool {
+        if let incoming = change.sequence, let held = other.sequence {
+            return incoming < held
+        }
+        if let incoming = change.timestamp, let held = other.timestamp {
+            return incoming < held
+        }
+        return false
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out

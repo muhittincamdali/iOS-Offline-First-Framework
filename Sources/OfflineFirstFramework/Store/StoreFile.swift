@@ -11,6 +11,28 @@ struct PendingWrite: Codable, Hashable, Sendable {
     var lastError: String?
     /// Parked changes wait for ``OfflineStore/retryFailedChanges()``.
     var isParked: Bool
+    /// Whether this version was sent and no answer came back, so the server may have applied
+    /// it. Written before the request goes out. A pull does not resolve such a change: only
+    /// its next push, under the same change ID, can tell whether it was applied.
+    var isInDoubt = false
+}
+
+extension PendingWrite {
+    private enum CodingKeys: String, CodingKey {
+        case changeID, sequence, attempts, nextAttemptAt, lastError, isParked, isInDoubt
+    }
+
+    /// Files written before `isInDoubt` existed have no such key.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        changeID = try container.decode(UUID.self, forKey: .changeID)
+        sequence = try container.decode(UInt64.self, forKey: .sequence)
+        attempts = try container.decode(Int.self, forKey: .attempts)
+        nextAttemptAt = try container.decodeIfPresent(Date.self, forKey: .nextAttemptAt)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        isParked = try container.decode(Bool.self, forKey: .isParked)
+        isInDoubt = try container.decodeIfPresent(Bool.self, forKey: .isInDoubt) ?? false
+    }
 }
 
 /// One record of the store, with its sync state.
@@ -37,11 +59,15 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// The timestamp of the server version ``revision`` names, if known. ``timestamp`` is the
     /// local write's while a change is pending.
     var serverTimestamp: HLCTimestamp? = nil
+    /// The newest server version a pull brought while the pending change was in doubt
+    /// (``PendingWrite/isInDoubt``). It is newer than that change, so it replaces the record
+    /// once the next push shows the change was applied; a conflict answer makes it moot.
+    var deferredRemote: RemoteChange<Record>? = nil
 }
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
-        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, serverTimestamp
+        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, serverTimestamp, deferredRemote
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
@@ -58,6 +84,7 @@ extension StoredEntry {
         history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
         sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
         serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
+        deferredRemote = try container.decodeIfPresent(RemoteChange<Record>.self, forKey: .deferredRemote)
     }
 
     /// The server version's timestamp. Files from before ``serverTimestamp`` know it only while

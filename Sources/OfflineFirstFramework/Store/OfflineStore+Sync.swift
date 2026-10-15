@@ -126,7 +126,7 @@ extension OfflineStore {
             try Task.checkCancellation()
             let changes = dueChanges(excluding: pushes)
             guard !changes.isEmpty else { return }
-            try markSent(changes)
+            let firstSent = try markSent(changes)
             for change in changes {
                 pushes[change.recordID, default: 0] += 1
                 inFlight.insert(change.recordID)
@@ -139,7 +139,10 @@ extension OfflineStore {
                 if error is CancellationError || Task.isCancelled { throw CancellationError() }
                 // A failed write of the attempt count (a full disk) must not hide the reason the
                 // push failed; the attempt then counts again next time.
-                try? recordFailedAttempts(changes, message: Self.message(for: error), report: &report)
+                // A request that never left the device leaves a change in doubt only if an
+                // earlier push of it may have been applied.
+                try? recordFailedAttempts(changes, message: Self.message(for: error),
+                                          notInDoubt: Self.wasNeverSent(error) ? firstSent : [], report: &report)
                 throw error
             }
             inFlight.subtract(changes.map(\.recordID))
@@ -150,16 +153,33 @@ extension OfflineStore {
     /// Records in `changes` the server has not confirmed are marked as sent, and the mark is
     /// written before the request leaves: the server may apply a push whose answer never
     /// arrives, so from now on deleting the record has to go through the server.
-    private func markSent(_ changes: [OutgoingChange<Record>]) throws {
-        let unmarked = changes.map(\.recordID).filter { id in
-            guard let entry = state.entries[id] else { return false }
-            return entry.revision == nil && !entry.wasSent
+    ///
+    /// Each change is also marked as in doubt until its answer arrives, so a pull meanwhile, or
+    /// after a lost answer, leaves it to the next push instead of resolving it again under a new
+    /// change ID: the server may already have applied it, and resolving it again could put it
+    /// back over a newer write.
+    ///
+    /// - Returns: The changes sent for the first time, which were not in doubt before.
+    @discardableResult
+    private func markSent(_ changes: [OutgoingChange<Record>]) throws -> Set<UUID> {
+        let unmarked = changes.filter { change in
+            guard let entry = state.entries[change.recordID] else { return false }
+            return (entry.revision == nil && !entry.wasSent)
+                || (entry.pending?.changeID == change.id && entry.pending?.isInDoubt == false)
         }
-        guard !unmarked.isEmpty else { return }
-        try update { state in
-            for id in unmarked {
-                state.entries[id]?.wasSent = true
+        guard !unmarked.isEmpty else { return [] }
+        return try update { state in
+            var firstSent: Set<UUID> = []
+            for change in unmarked {
+                guard var entry = state.entries[change.recordID] else { continue }
+                if entry.revision == nil { entry.wasSent = true }
+                if entry.pending?.changeID == change.id, entry.pending?.isInDoubt == false {
+                    entry.pending?.isInDoubt = true
+                    firstSent.insert(change.id)
+                }
+                state.entries[change.recordID] = entry
             }
+            return firstSent
         }
     }
 
@@ -203,16 +223,34 @@ extension OfflineStore {
                     // The answer does not say where the write stands; its echo in a pull will.
                     entry.sequence = nil
                     entry.serverTimestamp = change.timestamp
-                    if isCurrent { entry.pending = nil }
+                    let deferred = entry.deferredRemote
+                    entry.deferredRemote = nil
+                    guard isCurrent else { break }
+                    entry.pending = nil
+                    // A pull brought a newer version while this change was in doubt; the change was
+                    // applied before it, so that version is the server's current one.
+                    if let deferred, deferred.revision != revision {
+                        report.pulled += 1
+                        entry = Self.entry(from: deferred, replacing: entry, in: &state, configuration: configuration)
+                    }
                 case .conflict(let current):
                     report.conflicts += 1
                     guard isCurrent else { break }
+                    // The server did not apply the change, so it is no longer in doubt.
+                    entry.pending?.isInDoubt = false
+                    let deferred = entry.deferredRemote
+                    entry.deferredRemote = nil
                     guard Self.isConsistent(current, for: entry.id) else {
                         fail(&entry, message: "The server answered with a conflict that names another record or breaks the limits.",
                              report: &report)
                         break
                     }
-                    let current = receive(current, in: &state)
+                    var current = receive(current, in: &state)
+                    // A repeated push is answered from the server's memory of change IDs, with the
+                    // version that was current then; a version pulled since is newer.
+                    if let deferred, deferred.revision != current.revision, !Self.isOlder(deferred, than: current) {
+                        current = deferred
+                    }
                     guard current.revision != entry.revision, !Self.isStale(current, comparedWith: entry, history: state.history) else {
                         // The version the change is based on, or an older one (a lagging replica
                         // answered): nothing to resolve; the change is pushed again later.
@@ -225,8 +263,15 @@ extension OfflineStore {
                 case .rejected(let reason, let current):
                     report.rejected += 1
                     guard isCurrent else { break }
+                    entry.pending?.isInDoubt = false
+                    let deferred = entry.deferredRemote
+                    entry.deferredRemote = nil
                     if let current, Self.isConsistent(current, for: entry.id) {
-                        entry = Self.entry(from: receive(current, in: &state), replacing: entry, in: &state, configuration: configuration)
+                        var current = receive(current, in: &state)
+                        if let deferred, deferred.revision != current.revision, !Self.isOlder(deferred, than: current) {
+                            current = deferred
+                        }
+                        entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
                     } else {
                         entry.pending?.isParked = true
                         entry.pending?.nextAttemptAt = nil
@@ -239,10 +284,12 @@ extension OfflineStore {
         }
     }
 
-    private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, report: inout SyncReport) throws {
+    private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, notInDoubt: Set<UUID>,
+                                      report: inout SyncReport) throws {
         try update { state in
             for change in changes {
                 guard var entry = state.entries[change.recordID], entry.pending?.changeID == change.id else { continue }
+                if notInDoubt.contains(change.id) { entry.pending?.isInDoubt = false }
                 fail(&entry, message: message, report: &report)
                 state.entries[change.recordID] = entry
             }
@@ -379,6 +426,18 @@ extension OfflineStore {
         // replica, the earlier version of a deleted record) is skipped: the server already has
         // something newer, and it comes in its turn.
         guard !Self.isStale(change, comparedWith: entry, history: state.history) else { return }
+        // A change whose push may have been applied waits for its next push, which learns its
+        // fate under the same change ID; resolving it here could put it back over this version.
+        // The version is kept, since the token moves past it: if the push shows the change was
+        // applied, this newer version replaces it.
+        if entry.pending?.isInDoubt == true {
+            if let deferred = entry.deferredRemote, deferred.revision == change.revision || Self.isOlder(change, than: deferred) {
+                return
+            }
+            entry.deferredRemote = change
+            state.entries[change.recordID] = entry
+            return
+        }
         report.pulled += 1
         if entry.pending != nil {
             // Changed on the device and on the server: a conflict for the resolver.
@@ -425,6 +484,7 @@ extension OfflineStore {
         var pending = entry.pending
             ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
         pending.changeID = UUID()
+        pending.isInDoubt = false
         if let pushesInThisSync {
             pending = conflictAttempt(pending, pushesInThisSync: pushesInThisSync, report: &report)
         }
@@ -512,6 +572,18 @@ extension OfflineStore {
     static func message(for error: any Error) -> String {
         let text = (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
         return String(text.prefix(maximumMessageLength))
+    }
+
+    /// Whether a push that failed with `error` certainly did not reach the server: the device had
+    /// no connection, or could not find or reach the host. After other errors, such as a lost
+    /// connection or a timeout, the server may have applied it.
+    static func wasNeverSent(_ error: any Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        let unsentCodes: Set<URLError.Code> = [
+            .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .dataNotAllowed,
+            .internationalRoamingOff, .callIsActive
+        ]
+        return unsentCodes.contains(error.code)
     }
 
     static func isConnectivityError(_ error: any Error) -> Bool {
