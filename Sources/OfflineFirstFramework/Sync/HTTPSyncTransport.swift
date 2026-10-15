@@ -105,8 +105,12 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
 
     public func pull(since token: String?) async throws -> PullResponse<Record> {
         var url = baseURL.appending(path: "changes")
-        if let token {
-            url.append(queryItems: [URLQueryItem(name: "since", value: token)])
+        // Encoded by hand: URLQueryItem leaves "+" as it is, and servers that decode the query
+        // as a form (URLSearchParams, the reference server) read it as a space.
+        if let token, let encoded = token.addingPercentEncoding(withAllowedCharacters: changeTokenCharacters),
+           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            components.percentEncodedQuery = "since=\(encoded)"
+            url = components.url ?? url
         }
         let request = try await makeRequest(url: url)
         let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
@@ -263,3 +267,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 }
+
+/// The characters a change token keeps unencoded in the query: the URL query characters without
+/// `+`, `&`, `=` and `;`, which form decoding would read as separators or a space.
+private let changeTokenCharacters = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&=;"))

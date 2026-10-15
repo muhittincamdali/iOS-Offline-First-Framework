@@ -212,6 +212,33 @@ struct MisbehavingServerTests {
         #expect(await server.record("a") == nil)
     }
 
+    /// Tokens that go round in a circle (A, B, A, ...) with "more follow" stop the pull at the
+    /// first repeat instead of costing a hundred requests and file writes on every sync.
+    @Test func changeTokensThatGoRoundInACircleStopThePull() async throws {
+        let storage = WriteCountingStorage()
+        let transport = ScriptedTransport(pull: { token in
+            PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "a"), revision: "1", timestamp: nil)],
+                         token: token == "A" ? "B" : "A", hasMore: true)
+        })
+        let store = try makeStore(transport, storage: storage)
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        #expect(await transport.pulls == 3)
+        #expect(storage.writes <= 3)
+        #expect(await store.state.token == "B")
+    }
+
+    /// A page that says more changes follow without moving the token is refused before any of
+    /// it is stored.
+    @Test func aPageThatDoesNotMoveTheTokenIsNotStored() async throws {
+        let transport = ScriptedTransport(pull: { token in
+            PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "A"), revision: "1", timestamp: nil)],
+                         token: token, hasMore: true)
+        })
+        let store = try makeStore(transport)
+        await #expect(throws: OfflineFirstError.pullTokenDidNotAdvance(token: nil)) { try await store.sync() }
+        #expect(await store.records().isEmpty)
+    }
+
     @Test func tombstonesAreKeptUpToTheLimit() async throws {
         let total = OfflineStore<Note>.maximumTombstones + 5
         let tombstones = (0..<total).map { index in

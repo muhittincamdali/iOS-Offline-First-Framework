@@ -267,9 +267,12 @@ extension OfflineStore {
     private func pull(using transport: any SyncTransport<Record>, until deadline: ContinuousClock.Instant,
                       report: inout SyncReport) async throws {
         var historyChanged = false
+        // The tokens this sync has pulled with since it last started from the beginning.
+        var requested: Set<String> = []
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
             let token = state.token
+            if let token { requested.insert(token) } else { requested.removeAll() }
             let generation = tokenGeneration
             let response = try await Self.run(until: deadline) { try await transport.pull(since: token) }
             // The token was reset while the request was on its way (discardChange(for:),
@@ -291,6 +294,8 @@ extension OfflineStore {
                     continue
                 }
             }
+            // A page is checked before it is stored, so a broken one changes nothing.
+            try Self.checkProgress(of: response, after: token, requested: requested)
             try update { state in
                 if epochChanged {
                     Self.beginHistory(epoch: response.epoch, in: &state)
@@ -309,11 +314,22 @@ extension OfflineStore {
                 state.token = response.token ?? state.token
             }
             guard response.hasMore else { return }
-            guard response.token != nil, response.token != token else {
-                throw OfflineFirstError.pullTokenDidNotAdvance(token: token)
-            }
         }
         report.hasMoreChanges = true
+    }
+
+    /// Throws when a page that says more changes follow would not move the pull forward: it
+    /// has no token, the same one, or one this sync pulled with before (the tokens go round in
+    /// a circle), which would repeat pages up to the page limit on every sync.
+    private static func checkProgress(of response: PullResponse<Record>, after token: String?, requested: Set<String>) throws {
+        guard response.hasMore else { return }
+        guard let next = response.token, next != token else {
+            throw OfflineFirstError.pullTokenDidNotAdvance(token: token)
+        }
+        guard !requested.contains(next) else {
+            throw OfflineFirstError.invalidServerResponse(
+                "The server sent the change token “\(next.prefix(100))” a second time in one sync, so the pull would go round in circles.")
+        }
     }
 
     /// Whether `epoch` names another server history than `known`. A server that reports no

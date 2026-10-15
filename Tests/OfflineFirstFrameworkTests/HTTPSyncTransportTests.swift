@@ -126,6 +126,21 @@ struct HTTPSyncTransportTests {
         #expect(second.token == "8")
     }
 
+    /// A "+" in a token must reach a server that decodes the query as a form as "+", not as a
+    /// space; "&" and "=" must not split the query.
+    @Test func changeTokensAreEncodedForFormDecoding() async throws {
+        let seen = OSAllocatedUnfairLock<(query: String?, since: String?)>(initialState: (nil, nil))
+        let transport = transport { request, _ in
+            let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "since" }?.value
+            seen.withLock { $0 = (request.url?.query(percentEncoded: true), since) }
+            return (200, Data(#"{"changes":[],"token":"x","hasMore":false}"#.utf8))
+        }
+        _ = try await transport.pull(since: "ab+c/d==&e")
+        let (query, since) = seen.withLock { $0 }
+        #expect(query == "since=ab%2Bc/d%3D%3D%26e")
+        #expect(since == "ab+c/d==&e")
+    }
+
     @Test func errorStatusesThrowWithTheStartOfTheBody() async {
         let transport = transport { _, _ in (503, Data(String(repeating: "busy ", count: 300).utf8)) }
         do {

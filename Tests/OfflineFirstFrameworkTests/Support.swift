@@ -41,6 +41,25 @@ final class FailingStorage: StorageBackend {
     func move(_ name: String, to newName: String) throws { try inner.move(name, to: newName) }
 }
 
+/// Storage that counts its writes.
+final class WriteCountingStorage: StorageBackend {
+    let inner = InMemoryStorage()
+    private let count = OSAllocatedUnfairLock(initialState: 0)
+
+    var writes: Int { count.withLock { $0 } }
+
+    func read(_ name: String) throws -> Data? { try inner.read(name) }
+
+    func write(_ data: Data, to name: String) throws {
+        count.withLock { $0 += 1 }
+        try inner.write(data, to: name)
+    }
+
+    func remove(_ name: String) throws { try inner.remove(name) }
+
+    func move(_ name: String, to newName: String) throws { try inner.move(name, to: newName) }
+}
+
 /// A transport whose answers the test writes.
 actor ScriptedTransport: SyncTransport {
     typealias PushHandler = @Sendable ([OutgoingChange<Note>]) async throws -> [UUID: PushOutcome<Note>]
