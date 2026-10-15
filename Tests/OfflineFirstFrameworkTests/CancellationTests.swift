@@ -41,4 +41,48 @@ struct CancellationTests {
         #expect(await server.record("a") == Note(id: "a", text: "A"))
         #expect(await store.pendingChanges().isEmpty)
     }
+
+    @Test func aCallAfterEveryCallerWasCancelledStartsANewSync() async throws {
+        let gate = Gate()
+        let transport = ScriptedTransport(push: { changes in
+            // Answers only when the test opens the gate, even after the sync was cancelled.
+            await gate.wait()
+            return Dictionary(uniqueKeysWithValues: changes.map { ($0.id, .accepted(revision: "1")) })
+        })
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: clock))
+        try await store.save(Note(id: "a", text: "A"))
+        let first = Task { try await store.sync() }
+        #expect(await eventually { await transport.pushed.count == 1 })
+        first.cancel()
+        // The cancelled sync is still waiting for its push when the second call arrives.
+        let second = Task { try await store.sync() }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.open()
+
+        await #expect(throws: CancellationError.self) { try await first.value }
+        let report = try await second.value
+        #expect(report.skipped == false)
+        #expect(await transport.pulls == 1)
+        #expect(await transport.pushed.count == 1)
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await store.status == .idle)
+    }
+}
+
+/// Suspends callers until ``open()``, whether or not their task was cancelled.
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
 }
