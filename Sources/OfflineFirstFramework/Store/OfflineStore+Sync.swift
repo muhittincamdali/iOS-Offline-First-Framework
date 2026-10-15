@@ -236,7 +236,12 @@ extension OfflineStore {
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
             let token = state.token
+            let generation = tokenGeneration
             let response = try await transport.pull(since: token)
+            // The token was reset while the request was on its way (discardChange(for:),
+            // resetChangeToken()): the page belongs to the old position, so it is dropped and the
+            // pull starts again from the beginning.
+            guard generation == tokenGeneration else { continue }
             if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
                 throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
             }

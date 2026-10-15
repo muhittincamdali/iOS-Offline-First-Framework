@@ -49,6 +49,9 @@ public actor OfflineStore<Record: SyncableRecord> {
     /// Records whose push is waiting for the server's answer.
     var inFlight: Set<Record.ID> = []
     var automaticSync: AutomaticSync?
+    /// Grows whenever the token is reset outside a pull, so a pull that was on its way at that
+    /// moment does not store its page and token over the reset.
+    var tokenGeneration: UInt64 = 0
 
     /// What the store is doing about sync.
     public internal(set) var status: SyncStatus = .idle
@@ -181,15 +184,28 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Drops the waiting change of record `id`. A record that was never sent is removed; for one
     /// the server may know, the local version is removed too and the next sync pulls all server
-    /// changes again from the start, which brings back the server's copy.
+    /// changes again from the start, which brings back the server's copy. That holds also when
+    /// a sync is pulling at that moment: its page is dropped and the pull starts over.
     public func discardChange(for id: Record.ID) throws {
         guard let entry = state.entries[id], entry.pending != nil, !inFlight.contains(id) else { return }
+        let reachedServer = entry.revision != nil || entry.wasSent
         try update { state in
             state.entries[id] = nil
-            if entry.revision != nil || entry.wasSent {
+            if reachedServer {
                 state.token = nil
             }
         }
+        if reachedServer { tokenGeneration &+= 1 }
+    }
+
+    /// Forgets the change token, so the next sync pulls every server change from the
+    /// beginning; a pull that is on its way starts over. Records and pending changes stay.
+    ///
+    /// Use it when the server can no longer continue after the token, for example when it
+    /// answers every pull with an error for it.
+    public func resetChangeToken() throws {
+        try update { $0.token = nil }
+        tokenGeneration &+= 1
     }
 
     // MARK: - Observing
