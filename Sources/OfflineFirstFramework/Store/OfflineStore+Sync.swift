@@ -170,6 +170,7 @@ extension OfflineStore {
                 }
                 Self.store(entry, in: &state)
             }
+            Self.pruneTombstones(in: &state)
         }
     }
 
@@ -214,6 +215,7 @@ extension OfflineStore {
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
                 }
+                Self.pruneTombstones(in: &state)
                 // A page without a token keeps the previous one.
                 state.token = response.token ?? state.token
             }
@@ -237,7 +239,11 @@ extension OfflineStore {
         // The same revision is the echo of a change this store pushed.
         guard entry.revision != change.revision else { return }
         report.pulled += 1
-        if entry.pending != nil {
+        // A server version older than the one the store holds (a page out of order, a lagging
+        // replica, a deleted record's earlier version) never replaces it silently: the conflict
+        // resolver decides, and a local win is pushed on top of that version, so the server's
+        // revision check settles what is current.
+        if entry.pending != nil || Self.isOlder(change, than: entry) {
             report.conflicts += 1
             Self.store(try resolve(entry, against: change, in: &state), in: &state)
         } else {
@@ -287,9 +293,30 @@ extension OfflineStore {
                            position: existing?.position ?? state.takeSequence(), pending: nil)
     }
 
-    /// Stores `entry`, or removes it when it is a deletion with nothing left to push.
+    /// Whether `change` carries an older timestamp than the server version the store holds.
+    static func isOlder(_ change: RemoteChange<Record>, than entry: StoredEntry<Record>) -> Bool {
+        guard entry.revision != nil, let timestamp = change.timestamp else { return false }
+        return timestamp < entry.timestamp
+    }
+
+    /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
+    /// server confirmed it (it has a revision), so an older version of the record that arrives
+    /// later is recognised; otherwise it is removed.
     static func store(_ entry: StoredEntry<Record>, in state: inout State) {
-        state.entries[entry.id] = entry.record == nil && entry.pending == nil ? nil : entry
+        let isGone = entry.record == nil && entry.pending == nil && entry.revision == nil
+        state.entries[entry.id] = isGone ? nil : entry
+    }
+
+    /// Tombstones kept per store; the oldest are dropped first.
+    static var maximumTombstones: Int { 1_000 }
+
+    /// Drops the oldest tombstones beyond ``maximumTombstones``.
+    static func pruneTombstones(in state: inout State) {
+        let tombstones = state.entries.values.filter { $0.record == nil && $0.pending == nil }
+        guard tombstones.count > maximumTombstones else { return }
+        for entry in tombstones.sorted(by: { $0.timestamp < $1.timestamp }).prefix(tombstones.count - maximumTombstones) {
+            state.entries[entry.id] = nil
+        }
     }
 
     /// A server record is ignored when its own ID differs from the ID it was sent for, or when

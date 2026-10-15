@@ -43,8 +43,8 @@ extension OfflineStore {
             byID[id]?.pending = pending
             sequence += 1
         }
-        // A tombstone without a pending delete has nothing left to do.
-        byID = byID.filter { $0.value.record != nil || $0.value.pending != nil }
+        // A deletion that is neither queued nor confirmed by the server has nothing left to do.
+        byID = byID.filter { $0.value.record != nil || $0.value.pending != nil || $0.value.revision != nil }
 
         let nodeID = file.nodeID.isEmpty ? UUID().uuidString : file.nodeID
         let clock = HybridLogicalClock(nodeID: nodeID, maximumDrift: configuration.maximumClockDrift, latest: file.clock)

@@ -4,8 +4,11 @@ Decide what happens when a record changed on the device and on the server since 
 
 ## Overview
 
-A conflict happens when the device pushes a change based on an old server revision, or when a
-pull brings a server change for a record that still has a local change waiting. The store hands
+A conflict happens when the device pushes a change based on an old server revision, when a
+pull brings a server change for a record that still has a local change waiting, or when a pull
+brings a version with an older timestamp than the one the store holds (a page out of order, a
+lagging replica, an earlier version of a record whose deletion the server confirmed). For that
+last case the store keeps confirmed deletions as tombstones, the newest 1,000 of them. The store hands
 both versions to its ``ConflictResolver`` as a ``Conflict`` and acts on the
 ``ConflictResolution``:
 

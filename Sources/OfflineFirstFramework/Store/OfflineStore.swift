@@ -251,6 +251,10 @@ public actor OfflineStore<Record: SyncableRecord> {
         }
         var entry = state.entries[id]
             ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil)
+        // A record saved again after its deletion reached the server is new to the list.
+        if entry.revision != nil, entry.record == nil, entry.pending == nil, record != nil {
+            entry.position = state.takeSequence()
+        }
         if entry.pending == nil {
             let waiting = state.entries.values.count { $0.pending != nil }
             guard waiting < configuration.maximumPendingChanges else {
