@@ -47,6 +47,26 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Your server over HTTP
+
+enum HTTPSample {
+    /// A store that syncs with a server speaking the HTTP sync protocol, such as the reference
+    /// server in Examples/SyncServer. `token` returns the current access token.
+    static func makeStore(token: @escaping @Sendable () async throws -> String) throws -> OfflineStore<Todo> {
+        let transport = HTTPSyncTransport<Todo>(
+            baseURL: URL(string: "http://localhost:8080/sync/todos")!,
+            headers: { ["Authorization": "Bearer \(try await token())"] }
+        )
+        let store = try OfflineStore<Todo>(name: "todos", transport: transport)
+        return store
+    }
+
+    /// Turns on automatic sync for the quick start store.
+    static func startSyncing() async {
+        await TodoStore.shared.startAutomaticSync()
+    }
+}
+
 // MARK: - Your own backend
 
 /// A transport for an existing REST API that versions records with ETags:
@@ -124,7 +144,7 @@ enum ReadmeSamples {
         return try OfflineStore<Todo>(name: "secure-todos", storage: storage, transport: transport, configuration: configuration)
     }
 
-    /// Two devices, one server: what the README's "How sync works" section describes.
+    /// Two devices, one server: the phone writes, the laptop receives the to-do.
     static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
         let server = InMemorySyncServer<Todo>()
         let phone = try OfflineStore<Todo>(name: "phone", storage: InMemoryStorage(), transport: server)
