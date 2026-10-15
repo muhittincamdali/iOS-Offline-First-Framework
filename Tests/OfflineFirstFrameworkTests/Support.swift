@@ -53,7 +53,7 @@ actor ScriptedTransport: SyncTransport {
 
     init(
         push: @escaping PushHandler = { changes in Dictionary(uniqueKeysWithValues: changes.map { ($0.id, .accepted(revision: "r-\($0.id)")) }) },
-        pull: @escaping PullHandler = { cursor in PullResponse(changes: [], cursor: cursor, hasMore: false) }
+        pull: @escaping PullHandler = { token in PullResponse(changes: [], token: token, hasMore: false) }
     ) {
         pushHandler = push
         pullHandler = pull
@@ -67,9 +67,9 @@ actor ScriptedTransport: SyncTransport {
         return try await pushHandler(changes)
     }
 
-    func pull(after cursor: String?) async throws -> PullResponse<Note> {
+    func pull(since token: String?) async throws -> PullResponse<Note> {
         pulls += 1
-        return try await pullHandler(cursor)
+        return try await pullHandler(token)
     }
 }
 

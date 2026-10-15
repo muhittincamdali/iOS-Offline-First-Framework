@@ -35,7 +35,7 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var schemaVersion: Int
     var nodeID: String
     var clock: HLCTimestamp?
-    var cursor: String?
+    var token: String?
     var lastSyncedAt: Date?
     var nextSequence: UInt64
     var entries: [StoredEntry<Record>]

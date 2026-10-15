@@ -109,27 +109,27 @@ struct HTTPSyncTransportTests {
         #expect(reason == "Too long")
     }
 
-    @Test func pullSendsTheCursorAndReadsThePage() async throws {
+    @Test func pullSendsTheTokenAndReadsThePage() async throws {
         let transport = transport { request, _ in
             let query = request.url?.query() ?? ""
-            let answer = query == "after=7"
-                ? #"{"changes": [{"recordID": "a", "revision": "8"}], "cursor": "8", "hasMore": false}"#
-                : #"{"changes": [{"recordID": "a", "record": {"id": "a", "text": "A"}, "revision": "7", "timestamp": {"wallTime": 5, "counter": 0, "nodeID": "x"}}], "cursor": "7", "hasMore": true}"#
+            let answer = query == "since=7"
+                ? #"{"changes": [{"recordID": "a", "revision": "8"}], "token": "8", "hasMore": false}"#
+                : #"{"changes": [{"recordID": "a", "record": {"id": "a", "text": "A"}, "revision": "7", "timestamp": {"wallTime": 5, "counter": 0, "nodeID": "x"}}], "token": "7", "hasMore": true}"#
             return (200, Data(answer.utf8))
         }
-        let first = try await transport.pull(after: nil)
+        let first = try await transport.pull(since: nil)
         #expect(first.changes.first?.record == Note(id: "a", text: "A"))
-        #expect(first.cursor == "7")
+        #expect(first.token == "7")
         #expect(first.hasMore)
-        let second = try await transport.pull(after: "7")
+        let second = try await transport.pull(since: "7")
         #expect(second.changes.first?.record == nil)
-        #expect(second.cursor == "8")
+        #expect(second.token == "8")
     }
 
     @Test func errorStatusesThrowWithTheStartOfTheBody() async {
         let transport = transport { _, _ in (503, Data(String(repeating: "busy ", count: 300).utf8)) }
         do {
-            _ = try await transport.pull(after: nil)
+            _ = try await transport.pull(since: nil)
             Issue.record("expected an error")
         } catch let HTTPSyncTransport<Note>.Failure.unexpectedStatus(code, body) {
             #expect(code == 503)
@@ -142,7 +142,7 @@ struct HTTPSyncTransportTests {
     @Test func oversizedResponsesAreNotLoaded() async {
         let transport = transport(maximumResponseSize: 64) { _, _ in (200, Data(repeating: UInt8(ascii: " "), count: 10_000)) }
         await #expect(throws: HTTPSyncTransport<Note>.Failure.responseTooLarge(limit: 64)) {
-            try await transport.pull(after: nil)
+            try await transport.pull(since: nil)
         }
     }
 
@@ -191,9 +191,9 @@ struct HTTPSyncTransportTests {
             }
             return try JSONEncoder().encode(JSONValue.object(["outcomes": .object(answer)]))
         }
-        let after = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "after" }?.value
-        let page = try await server.pull(after: after)
-        struct Page: Encodable { let changes: [RemoteChange<Note>]; let cursor: String?; let hasMore: Bool }
-        return try JSONEncoder().encode(Page(changes: page.changes, cursor: page.cursor, hasMore: page.hasMore))
+        let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "since" }?.value
+        let page = try await server.pull(since: since)
+        struct Page: Encodable { let changes: [RemoteChange<Note>]; let token: String?; let hasMore: Bool }
+        return try JSONEncoder().encode(Page(changes: page.changes, token: page.token, hasMore: page.hasMore))
     }
 }

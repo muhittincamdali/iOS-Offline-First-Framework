@@ -5,7 +5,7 @@ extension OfflineStore {
     static func load(name: String, storage: any StorageBackend, configuration: Configuration) throws -> StoreFile<Record> {
         let fileName = "\(name).store"
         let empty = StoreFile<Record>(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion,
-                                      nodeID: UUID().uuidString, clock: nil, cursor: nil, lastSyncedAt: nil,
+                                      nodeID: UUID().uuidString, clock: nil, token: nil, lastSyncedAt: nil,
                                       nextSequence: 0, entries: [])
         guard let data = try storage.read(fileName) else { return empty }
         do {
@@ -48,7 +48,7 @@ extension OfflineStore {
 
         let nodeID = file.nodeID.isEmpty ? UUID().uuidString : file.nodeID
         let clock = HybridLogicalClock(nodeID: nodeID, maximumDrift: configuration.maximumClockDrift, latest: file.clock)
-        return State(entries: byID, clock: clock, cursor: file.cursor, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence)
+        return State(entries: byID, clock: clock, token: file.token, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence)
     }
 }
 

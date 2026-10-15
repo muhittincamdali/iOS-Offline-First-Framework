@@ -105,15 +105,15 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     public let changes: [RemoteChange<Record>]
 
     /// The position after these changes. The store saves it and passes it to the next pull.
-    public let cursor: String?
+    public let token: String?
 
     /// Whether more changes follow; the store pulls again right away.
     public let hasMore: Bool
 
     /// Creates a page.
-    public init(changes: [RemoteChange<Record>], cursor: String?, hasMore: Bool) {
+    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool) {
         self.changes = changes
-        self.cursor = cursor
+        self.token = token
         self.hasMore = hasMore
     }
 }
@@ -131,8 +131,8 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 ///         // POST the changes, map each answer to a PushOutcome.
 ///     }
 ///
-///     func pull(after cursor: String?) async throws -> PullResponse<Note> {
-///         // GET /notes/changes?after=<cursor>
+///     func pull(since token: String?) async throws -> PullResponse<Note> {
+///         // GET /notes/changes?since=<token>
 ///     }
 /// }
 /// ```
@@ -146,6 +146,6 @@ public protocol SyncTransport<Record>: Sendable {
     /// outcome counts as a failed attempt and is retried later.
     func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>]
 
-    /// Returns server changes after `cursor`, which is `nil` on the first sync.
-    func pull(after cursor: String?) async throws -> PullResponse<Record>
+    /// Returns server changes after `token`, which is `nil` on the first sync.
+    func pull(since token: String?) async throws -> PullResponse<Record>
 }

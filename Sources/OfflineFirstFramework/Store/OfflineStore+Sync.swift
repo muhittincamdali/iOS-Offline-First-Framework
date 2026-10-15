@@ -178,18 +178,18 @@ extension OfflineStore {
     private func pull(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
-            let cursor = state.cursor
-            let response = try await transport.pull(after: cursor)
+            let token = state.token
+            let response = try await transport.pull(since: token)
             try update { state in
                 for change in response.changes {
                     try applyRemote(change, to: &state, report: &report)
                 }
-                // A page without a cursor keeps the previous one.
-                state.cursor = response.cursor ?? state.cursor
+                // A page without a token keeps the previous one.
+                state.token = response.token ?? state.token
             }
             guard response.hasMore else { return }
-            guard response.cursor != nil, response.cursor != cursor else {
-                throw OfflineFirstError.pullCursorDidNotAdvance(cursor: cursor)
+            guard response.token != nil, response.token != token else {
+                throw OfflineFirstError.pullTokenDidNotAdvance(token: token)
             }
         }
         report.hasMoreChanges = true

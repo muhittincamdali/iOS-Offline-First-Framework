@@ -73,9 +73,9 @@ struct ReadmeSamplesTests {
         #expect(reason == "Title is empty")
         #expect(outcomes[failing] == nil)
 
-        let first = try await api.pull(after: nil)
+        let first = try await api.pull(since: nil)
         #expect(first.changes.first?.record?.title == "Synced")
         #expect(first.hasMore)
-        #expect(try await api.pull(after: "c1").hasMore == false)
+        #expect(try await api.pull(since: "c1").hasMore == false)
     }
 }

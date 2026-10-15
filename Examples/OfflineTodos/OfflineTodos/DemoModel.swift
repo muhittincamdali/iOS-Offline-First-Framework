@@ -12,9 +12,9 @@ struct SwitchableTransport: SyncTransport {
         return try await base.push(changes)
     }
 
-    func pull(after cursor: String?) async throws -> PullResponse<Todo> {
+    func pull(since token: String?) async throws -> PullResponse<Todo> {
         guard connectivity.isOnline else { throw URLError(.notConnectedToInternet) }
-        return try await base.pull(after: cursor)
+        return try await base.pull(since: token)
     }
 }
 

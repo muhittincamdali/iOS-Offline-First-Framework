@@ -91,15 +91,15 @@ export class Collection {
     return { outcomes };
   }
 
-  /** Returns changes after `after` (a revision number as a string), oldest first. */
-  changes(after, limit = LIMITS.pageSize) {
-    const since = /^\d{1,15}$/.test(after ?? '') ? Number(after) : 0;
+  /** Returns changes after `token` (a revision number as a string), oldest first. */
+  changes(token, limit = LIMITS.pageSize) {
+    const since = /^\d{1,15}$/.test(token ?? '') ? Number(token) : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
     const changed = [...this.#records.values()].filter((entry) => entry.revision > since).sort((a, b) => a.revision - b.revision);
     const page = changed.slice(0, size);
     return {
       changes: page.map((entry) => this.#remote(entry)),
-      cursor: String(page.at(-1)?.revision ?? since),
+      token: String(page.at(-1)?.revision ?? since),
       hasMore: changed.length > page.length,
     };
   }

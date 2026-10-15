@@ -50,7 +50,7 @@ struct ContentView: View {
 // MARK: - Your own backend
 
 /// A transport for an existing REST API that versions records with ETags:
-/// `PUT /todos/<id>` and `DELETE /todos/<id>` with `If-Match`, `GET /todos?since=<cursor>`.
+/// `PUT /todos/<id>` and `DELETE /todos/<id>` with `If-Match`, `GET /todos?since=<token>`.
 struct TodoAPI: SyncTransport {
     var baseURL: URL
     var session = URLSession.shared
@@ -82,7 +82,7 @@ struct TodoAPI: SyncTransport {
         return outcomes
     }
 
-    func pull(after cursor: String?) async throws -> PullResponse<Todo> {
+    func pull(since token: String?) async throws -> PullResponse<Todo> {
         struct Page: Decodable {
             struct Item: Decodable { var id: UUID; var etag: String; var todo: Todo? }
             var items: [Item]
@@ -90,11 +90,11 @@ struct TodoAPI: SyncTransport {
             var more: Bool
         }
         var url = baseURL.appending(path: "todos")
-        if let cursor { url.append(queryItems: [URLQueryItem(name: "since", value: cursor)]) }
+        if let token { url.append(queryItems: [URLQueryItem(name: "since", value: token)]) }
         let (data, _) = try await session.data(from: url)
         let page = try JSONDecoder().decode(Page.self, from: data)
         let changes = page.items.map { RemoteChange(recordID: $0.id, record: $0.todo, revision: $0.etag, timestamp: nil) }
-        return PullResponse(changes: changes, cursor: page.next, hasMore: page.more)
+        return PullResponse(changes: changes, token: page.next, hasMore: page.more)
     }
 }
 

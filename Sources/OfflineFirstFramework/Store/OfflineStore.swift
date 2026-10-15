@@ -17,7 +17,7 @@ public actor OfflineStore<Record: SyncableRecord> {
     struct State: Sendable {
         var entries: [Record.ID: StoredEntry<Record>]
         var clock: HybridLogicalClock
-        var cursor: String?
+        var token: String?
         var lastSyncedAt: Date?
         var nextSequence: UInt64
 
@@ -181,7 +181,7 @@ public actor OfflineStore<Record: SyncableRecord> {
         try update { state in
             state.entries[id] = nil
             if entry.revision != nil {
-                state.cursor = nil
+                state.token = nil
             }
         }
     }
@@ -231,7 +231,7 @@ public actor OfflineStore<Record: SyncableRecord> {
         let entries = state.entries.values.sorted { $0.position < $1.position }
         let clock = state.clock.latest.wallTime == .min ? nil : state.clock.latest
         let file = StoreFile(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion, nodeID: nodeID,
-                             clock: clock, cursor: state.cursor, lastSyncedAt: state.lastSyncedAt,
+                             clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
                              nextSequence: state.nextSequence, entries: entries)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         try storage.write(data, to: fileName)

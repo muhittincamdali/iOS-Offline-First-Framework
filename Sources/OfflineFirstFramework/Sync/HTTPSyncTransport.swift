@@ -7,8 +7,8 @@ import Foundation
 /// of JavaScript):
 ///
 /// - `POST <baseURL>/push` with `{"changes": [...]}`, answered with `{"outcomes": {...}}`.
-/// - `GET <baseURL>/changes?after=<cursor>`, answered with
-///   `{"changes": [...], "cursor": "...", "hasMore": false}`.
+/// - `GET <baseURL>/changes?since=<token>`, answered with
+///   `{"changes": [...], "token": "...", "hasMore": false}`.
 ///
 /// ```swift
 /// let transport = HTTPSyncTransport<Note>(
@@ -93,14 +93,14 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         return outcomes
     }
 
-    public func pull(after cursor: String?) async throws -> PullResponse<Record> {
+    public func pull(since token: String?) async throws -> PullResponse<Record> {
         var url = baseURL.appending(path: "changes")
-        if let cursor {
-            url.append(queryItems: [URLQueryItem(name: "after", value: cursor)])
+        if let token {
+            url.append(queryItems: [URLQueryItem(name: "since", value: token)])
         }
         let request = try await makeRequest(url: url)
         let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
-        return PullResponse(changes: page.changes, cursor: page.cursor, hasMore: page.hasMore)
+        return PullResponse(changes: page.changes, token: page.token, hasMore: page.hasMore)
     }
 
     // MARK: - HTTP
@@ -189,7 +189,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
 
     private struct PullPage: Decodable {
         let changes: [RemoteChange<Record>]
-        let cursor: String?
+        let token: String?
         let hasMore: Bool
     }
 }

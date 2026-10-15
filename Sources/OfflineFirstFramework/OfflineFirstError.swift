@@ -37,12 +37,9 @@ public enum OfflineFirstError: Error, Equatable, Sendable {
     /// The store already holds the maximum number of unsynced changes.
     case outboxFull(limit: Int)
 
-    /// The server answered a pull with the cursor it was given and said more changes follow,
+    /// The server answered a pull with the token it was given and said more changes follow,
     /// which would repeat the same page forever.
-    case pullCursorDidNotAdvance(cursor: String?)
-
-    /// One sync pulled the maximum number of pages and the server still had more.
-    case tooManyPullPages(limit: Int)
+    case pullTokenDidNotAdvance(token: String?)
 
     /// The hybrid logical clock could not produce a timestamp.
     case clock(HybridLogicalClock.Failure)
@@ -73,10 +70,8 @@ extension OfflineFirstError: LocalizedError {
             "The migration to schema version \(version) failed: \(description)"
         case .outboxFull(let limit):
             "There are already \(limit) changes waiting to sync."
-        case .pullCursorDidNotAdvance(let cursor):
-            "The server returned the same sync cursor (\(cursor ?? "none")) and said more changes follow."
-        case .tooManyPullPages(let limit):
-            "The server still had changes after \(limit) pages; the rest will be pulled on the next sync."
+        case .pullTokenDidNotAdvance(let token):
+            "The server returned the same sync token (\(token ?? "none")) and said more changes follow."
         case .clock(let failure):
             "The sync clock failed: \(failure)."
         }

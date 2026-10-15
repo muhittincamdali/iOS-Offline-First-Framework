@@ -27,7 +27,7 @@ records and revisions.
 | Request                                    | Body / answer                                                 |
 | ------------------------------------------ | ------------------------------------------------------------- |
 | `POST /sync/<collection>/push`             | `{"changes": [...]}` → `{"outcomes": {"<change ID>": {...}}}` |
-| `GET /sync/<collection>/changes?after=<n>` | → `{"changes": [...], "cursor": "<n>", "hasMore": false}`     |
+| `GET /sync/<collection>/changes?since=<n>` | → `{"changes": [...], "token": "<n>", "hasMore": false}`     |
 
 A change is
 `{"id": "<UUID>", "recordID": "a", "operation": "upsert" | "delete", "record": {...},

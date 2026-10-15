@@ -3,8 +3,8 @@
 //   node server.mjs [--port 8080] [--data sync-data.json]
 //
 // POST /sync/<collection>/push      {"changes": [...]}  ->  {"outcomes": {...}}
-// GET  /sync/<collection>/changes?after=<cursor>&limit=<n>
-//                                   ->  {"changes": [...], "cursor": "...", "hasMore": false}
+// GET  /sync/<collection>/changes?since=<token>&limit=<n>
+//                                   ->  {"changes": [...], "token": "...", "hasMore": false}
 //
 // It keeps the data in memory and, with --data, in a JSON file written after every push.
 // It has no authentication: put it behind your own auth before you expose it.
@@ -75,7 +75,7 @@ export function createSyncServer({ collections = new Map(), save = async () => {
       } else {
         if (request.method !== 'GET') throw new HTTPError(405, 'use GET');
         const limit = url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined;
-        send(response, 200, collection(name).changes(url.searchParams.get('after'), limit));
+        send(response, 200, collection(name).changes(url.searchParams.get('since'), limit));
       }
     } catch (error) {
       if (error instanceof HTTPError) send(response, error.status, { error: error.message });

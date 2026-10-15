@@ -53,17 +53,17 @@ test('rejects records the validator refuses', () => {
   assert.equal(notes.revision, 0);
 });
 
-test('pages changes after a cursor', () => {
+test('pages changes after a token', () => {
   const notes = new Collection();
   for (const id of ['a', 'b', 'c']) notes.push({ changes: [change({ recordID: id, record: { id } })] });
   const first = notes.changes(null, 2);
   assert.deepEqual(first.changes.map((c) => c.recordID), ['a', 'b']);
   assert.equal(first.hasMore, true);
-  const second = notes.changes(first.cursor, 2);
+  const second = notes.changes(first.token, 2);
   assert.deepEqual(second.changes.map((c) => c.recordID), ['c']);
   assert.equal(second.hasMore, false);
-  assert.equal(notes.changes(second.cursor).cursor, '3');
-  // A cursor that is not a revision number starts from the beginning.
+  assert.equal(notes.changes(second.token).token, '3');
+  // A token that is not a revision number starts from the beginning.
   assert.equal(notes.changes('../../etc').changes.length, 3);
   assert.equal(notes.changes('1', 1e9).changes.length, 2);
 });

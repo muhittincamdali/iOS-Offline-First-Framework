@@ -200,7 +200,7 @@ struct SyncTests {
             }
             return try await server.push(changes)
         }
-        await transport.onPull { try await server.pull(after: $0) }
+        await transport.onPull { try await server.pull(since: $0) }
         try await store.save(Note(id: "a", text: "first"))
         let report = try await store.sync()
         #expect(report.conflicts == 0)
@@ -218,7 +218,7 @@ struct SyncTests {
             }
             return try await server.push(changes)
         }
-        await transport.onPull { try await server.pull(after: $0) }
+        await transport.onPull { try await server.pull(since: $0) }
         try await store.save(Note(id: "a", text: "short-lived"))
         try await store.sync()
         #expect(await server.record("a") == nil)
@@ -255,10 +255,10 @@ struct SyncTests {
         #expect(pending.lastError == "The server did not answer this change.")
     }
 
-    @Test func aCursorThatDoesNotMoveStopsThePull() async throws {
-        let transport = ScriptedTransport(pull: { cursor in PullResponse(changes: [], cursor: cursor, hasMore: true) })
+    @Test func aTokenThatDoesNotMoveStopsThePull() async throws {
+        let transport = ScriptedTransport(pull: { token in PullResponse(changes: [], token: token, hasMore: true) })
         let store = try makeStore(transport)
-        await #expect(throws: OfflineFirstError.pullCursorDidNotAdvance(cursor: nil)) {
+        await #expect(throws: OfflineFirstError.pullTokenDidNotAdvance(token: nil)) {
             try await store.sync()
         }
         #expect(await transport.pulls == 1)
@@ -287,7 +287,7 @@ struct SyncTests {
             PullResponse(changes: [
                 RemoteChange(recordID: "a", record: Note(id: "b", text: "mismatched"), revision: "1", timestamp: nil),
                 RemoteChange(recordID: "c", record: Note(id: "c", text: "fine"), revision: "2", timestamp: nil)
-            ], cursor: "2", hasMore: false)
+            ], token: "2", hasMore: false)
         })
         let store = try makeStore(transport)
         try await store.sync()
@@ -299,7 +299,7 @@ struct SyncTests {
             PullResponse(changes: [
                 RemoteChange(recordID: "a", record: Note(id: "a", text: "from the future"), revision: "1",
                              timestamp: HLCTimestamp(wallTime: .max, counter: .max, nodeID: "evil"))
-            ], cursor: "1", hasMore: false)
+            ], token: "1", hasMore: false)
         })
         let store = try makeStore(transport)
         try await store.sync()

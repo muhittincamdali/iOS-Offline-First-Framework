@@ -3,7 +3,7 @@ import Foundation
 /// A sync server that lives in memory, for tests, SwiftUI previews and demos.
 ///
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
-/// revision gets a conflict, pulls return changes after a cursor in pages, change IDs are
+/// revision gets a conflict, pulls return changes after a token in pages, change IDs are
 /// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
 /// connection.
 ///
@@ -130,16 +130,16 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         return outcomes
     }
 
-    public func pull(after cursor: String?) async throws -> PullResponse<Record> {
+    public func pull(since token: String?) async throws -> PullResponse<Record> {
         pullRequests += 1
         try await simulateNetwork()
-        let after = cursor.flatMap(Int.init) ?? 0
+        let after = token.flatMap(Int.init) ?? 0
         let changed = stored.filter { $0.value.revision > after }.sorted { $0.value.revision < $1.value.revision }
         let page = changed.prefix(pageSize)
         let next = page.last?.value.revision ?? max(after, 0)
         return PullResponse(
             changes: page.map { RemoteChange(recordID: $0.key, record: $0.value.record, revision: String($0.value.revision), timestamp: $0.value.timestamp) },
-            cursor: String(next),
+            token: String(next),
             hasMore: changed.count > page.count
         )
     }

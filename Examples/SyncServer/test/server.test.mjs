@@ -32,10 +32,10 @@ test('push and pull over HTTP', async () => {
   const pulled = await fetch(`${base}/sync/notes/changes`);
   assert.deepEqual(await pulled.json(), {
     changes: [{ recordID: 'a', record: { id: 'a', text: 'Hi' }, revision: '1', timestamp }],
-    cursor: '1',
+    token: '1',
     hasMore: false,
   });
-  const empty = await (await fetch(`${base}/sync/notes/changes?after=1`)).json();
+  const empty = await (await fetch(`${base}/sync/notes/changes?since=1`)).json();
   assert.deepEqual(empty.changes, []);
 });
 

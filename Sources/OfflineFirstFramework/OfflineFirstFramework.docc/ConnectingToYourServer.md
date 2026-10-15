@@ -38,8 +38,8 @@ struct TodoAPI: SyncTransport {
         // Send each change; answer .accepted, .conflict or .rejected per change ID.
     }
 
-    func pull(after cursor: String?) async throws -> PullResponse<Todo> {
-        // Return changes after the cursor, the next cursor and whether more follow.
+    func pull(since token: String?) async throws -> PullResponse<Todo> {
+        // Return changes after the token, the next token and whether more follow.
     }
 }
 ```
@@ -58,9 +58,9 @@ The rules that keep sync correct:
   remembers change IDs can answer from memory instead of applying the change twice.
 - **Deletions.** ``RemoteChange/record`` is `nil` for a deleted record. Keep deleted records
   (or their IDs and revisions) on the server, so pulls can tell other devices about them.
-- **Cursors.** ``PullResponse/cursor`` must move forward while ``PullResponse/hasMore`` is
-  `true`; a cursor that stays the same makes the sync fail with
-  ``OfflineFirstError/pullCursorDidNotAdvance(cursor:)`` instead of looping.
+- **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
+  `true`; a token that stays the same makes the sync fail with
+  ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
 - **Timestamps.** Send ``RemoteChange/timestamp`` back if you store it; without it,
   ``ConflictResolver/lastWriteWins`` lets the server's version win.
 

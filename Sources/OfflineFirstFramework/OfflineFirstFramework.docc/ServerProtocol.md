@@ -62,7 +62,7 @@ The answer has one outcome per change ID. A change without an outcome is retried
 
 ## Pull
 
-`GET <base>/changes` on the first sync, then `GET <base>/changes?after=<cursor>`.
+`GET <base>/changes` on the first sync, then `GET <base>/changes?since=<token>`.
 
 ```json
 {
@@ -78,13 +78,13 @@ The answer has one outcome per change ID. A change without an outcome is retried
       }
     }
   ],
-  "cursor": "43",
+  "token": "43",
   "hasMore": false
 }
 ```
 
 A change without `record` is a deletion; `timestamp` is optional. Return changes oldest first,
-at most one per record, and a `cursor` the server understands as "after these". While
+at most one per record, and a `token` the server understands as "after these". While
 `hasMore` is `true` the store asks again right away, up to
 ``OfflineStore/Configuration/maximumPullPages`` pages per sync.
 
