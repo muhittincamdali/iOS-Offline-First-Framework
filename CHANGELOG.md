@@ -22,12 +22,18 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
   queues every local write (one pending change per record, with an ID that changes with each
   edit) and syncs through a `SyncTransport`: pushes in batches with the server revision each
   change was based on, then pulls pages after a saved change token. Writes run on a copy of the
-  state that becomes current only after the file write succeeded. `save`, `save(contentsOf:)`,
-  `delete`, `records`, `pendingChanges`, `failedChanges`, `retryFailedChanges`,
-  `discardChange(for:)`, `sync`, `states()` and `Configuration` with defaults for every setting.
+  state that becomes current only after the file write succeeded. A record is marked as sent in
+  the file before its first push leaves, so deleting it after a lost answer or a crash still
+  reaches the server. Calls to `sync` while one runs share it; cancelling one of them stops it
+  only when no other call waits. `save`, `save(contentsOf:)`, `delete`, `records`,
+  `pendingChanges`, `failedChanges`, `retryFailedChanges`, `discardChange(for:)`, `sync`,
+  `states()` and `Configuration` with defaults for every setting.
 - Conflict handling: `ConflictResolver` with `lastWriteWins` (default), `serverWins`,
   `clientWins`, `merge(_:)` and `mergeable`; `Conflict` and `ConflictResolution`. Conflicts are
-  resolved when a push is refused and when a pull meets a local change that is still waiting.
+  resolved when a push is refused, when a pull meets a local change that is still waiting, and
+  when a pull brings an older version than the stored one (pages out of order, a lagging
+  replica). Deletions the server confirmed stay as tombstones, the newest 1,000 per store, so an
+  older version cannot bring a deleted record back.
 - Clocks: `HybridLogicalClock` and `HLCTimestamp` (total order, never backwards, refuses
   timestamps further ahead than a maximum drift); `VectorClock` with `compare(to:)`.
 - Conflict-free types: `LWWRegister`, `LWWMap`, `GCounter`, `PNCounter`, `ORSet` and the
@@ -50,9 +56,12 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
 - `OfflineFirstError` for every error the module throws.
 - `Examples/OfflineTodos`, an iOS and macOS app that shows offline edits, sync, conflicts from a
   second device and background refresh; `Examples/SyncServer`, a reference server for the HTTP
-  protocol in Node 24 with its own tests.
-- DocC documentation with six articles, and an end-to-end test suite that syncs two stores
-  through the reference server.
+  protocol in Node 24 with its own tests. Its change tokens, like those of
+  `InMemorySyncServer`, carry an epoch: after a restart without its data, clients pull
+  everything again instead of waiting for revisions that never come.
+- DocC documentation with six articles, an end-to-end test suite that syncs two stores
+  through the reference server, and a seeded test of random edits, deletes, restarts and lost
+  requests and answers on two devices that checks they converge with the server.
 
 ### Changed
 
