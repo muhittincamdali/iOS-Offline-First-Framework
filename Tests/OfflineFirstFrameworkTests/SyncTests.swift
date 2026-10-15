@@ -188,6 +188,32 @@ struct SyncTests {
         #expect(await deviceA.record("x")?.text == "B, written first")
     }
 
+    /// Two deletions are decided by the resolver too. With last write wins the newer one must
+    /// reach the server, so an edit made before it but pushed after it does not bring the record
+    /// back.
+    @Test func aNewerDeletionStaysWhenAnOlderEditArrivesLater() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        try await deviceA.delete("x")
+        try await deviceA.sync()
+        clock.advance(by: 1)
+        try await deviceA.save(Note(id: "x", text: "A, written again offline"))
+        clock.advance(by: 10)
+        try await deviceB.delete("x")
+        try await deviceB.sync()
+        try await deviceA.sync()
+        try await deviceB.sync()
+        #expect(await server.record("x") == nil)
+        #expect(await deviceA.record("x") == nil)
+        #expect(await deviceB.record("x") == nil)
+    }
+
     @Test func mergeResolverPushesTheCombination() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let store = try makeStore(server) {

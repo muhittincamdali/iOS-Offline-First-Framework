@@ -1,4 +1,7 @@
 /// Two versions of a record that changed on the device and on the server since the last sync.
+///
+/// Either version can be a deletion, and both can be: then ``ConflictResolver/lastWriteWins``
+/// keeps the newer deletion, so the server records when the record was last deleted.
 public struct Conflict<Record: SyncableRecord>: Sendable {
     /// The record both versions belong to.
     public let recordID: Record.ID

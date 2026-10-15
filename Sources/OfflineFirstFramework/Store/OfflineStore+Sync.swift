@@ -457,9 +457,8 @@ extension OfflineStore {
     ///   failed attempt.
     private func resolve(_ entry: StoredEntry<Record>, against remote: RemoteChange<Record>, in state: inout State,
                          pushesInThisSync: Int?, report: inout SyncReport) throws -> StoredEntry<Record> {
-        if entry.record == nil && remote.record == nil {
-            return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
-        }
+        // Two deletions are a conflict too: with last write wins the newer one has to stay on the
+        // server, or an older edit based on the older deletion would bring the record back.
         let conflict = Conflict(recordID: entry.id, local: entry.record, localTimestamp: entry.timestamp,
                                 remote: remote.record, remoteTimestamp: remote.timestamp)
         var result = entry
