@@ -77,8 +77,9 @@ public struct StoreState<Record: SyncableRecord>: Sendable {
 public enum CorruptionPolicy: Sendable {
     /// Throw the error from the initializer. The default.
     case fail
-    /// Rename the unreadable file to `<name>.store.corrupt-<milliseconds>` and start with an
-    /// empty store; the next sync pulls the server's data again. Local changes that had not
-    /// been pushed are lost. A store written by a newer schema version is never reset.
+    /// Rename the unreadable file (damaged, or larger than the storage backend reads) to
+    /// `<name>.store.corrupt-<milliseconds>` and start with an empty store; the next sync pulls
+    /// the server's data again. Local changes that had not been pushed stay only in the renamed
+    /// file. A store written by a newer schema version is never reset.
     case moveAsideAndStartEmpty
 }

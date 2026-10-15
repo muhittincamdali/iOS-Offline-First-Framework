@@ -7,8 +7,8 @@ extension OfflineStore {
         let empty = StoreFile<Record>(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion,
                                       nodeID: UUID().uuidString, clock: nil, token: nil, lastSyncedAt: nil,
                                       nextSequence: 0, entries: [])
-        guard let data = try storage.read(fileName) else { return empty }
         do {
+            guard let data = try storage.read(fileName) else { return empty }
             let plaintext = try configuration.encryption.open(data, name: name)
             return try StoreFileCoder.decode(plaintext, as: Record.self, name: name,
                                              schemaVersion: configuration.schemaVersion, migrations: configuration.migrations)
@@ -54,10 +54,12 @@ extension OfflineStore {
 }
 
 extension OfflineFirstError {
-    /// Errors after which ``CorruptionPolicy/moveAsideAndStartEmpty`` may reset the store.
+    /// Errors after which ``CorruptionPolicy/moveAsideAndStartEmpty`` may reset the store: the
+    /// file is damaged, or larger than the backend reads (written before writes were limited,
+    /// or the limit was lowered).
     var allowsReset: Bool {
         switch self {
-        case .corruptStore, .decryptionFailed: true
+        case .corruptStore, .decryptionFailed, .fileTooLarge: true
         default: false
         }
     }

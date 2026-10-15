@@ -45,7 +45,8 @@ public struct FileStore: StorageBackend {
     public let protection: Protection
 
     /// Files larger than this many bytes are not read, so a damaged or planted file cannot make
-    /// the app load an arbitrary amount of data into memory.
+    /// the app load an arbitrary amount of data into memory. Writes of more bytes fail too, so
+    /// a store never writes a file it could not open again.
     public let maximumFileSize: Int
 
     /// Creates a store in `directory`, creating the directory if needed.
@@ -101,6 +102,9 @@ public struct FileStore: StorageBackend {
 
     public func write(_ data: Data, to name: String) throws {
         let url = try url(for: name)
+        guard data.count <= maximumFileSize else {
+            throw OfflineFirstError.fileTooLarge(name: name, size: data.count, limit: maximumFileSize)
+        }
         do {
             try data.write(to: url, options: protection.writingOptions)
         } catch {

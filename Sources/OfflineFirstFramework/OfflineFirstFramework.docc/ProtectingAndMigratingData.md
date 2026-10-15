@@ -16,7 +16,9 @@ let store = try OfflineStore<Todo>(name: "todos", storage: storage, transport: t
 ``InMemoryStorage`` keeps everything in memory for tests and previews. Store and file names are
 checked by ``StorageName/validate(_:)``: letters, digits, `.`, `_` and `-` only, so a name can
 never point outside the directory. ``FileStore`` refuses to read files above
-``FileStore/maximumFileSize`` (256 MiB by default).
+``FileStore/maximumFileSize`` (256 MiB by default), and to write them, so a server that sends
+more data than that makes the sync fail with ``OfflineFirstError/fileTooLarge(name:size:limit:)``
+instead of leaving a file the store cannot open again.
 
 The store writes the whole file atomically after every change, and a change becomes visible
 only after the write succeeded. That keeps the file consistent after a crash or a full disk;
@@ -68,10 +70,10 @@ app version cannot drop fields it does not know.
 
 ## Damaged files
 
-If the file cannot be decoded or decrypted, the initializer throws by default. With
-``CorruptionPolicy/moveAsideAndStartEmpty`` the store renames the file to
-`<name>.store.corrupt-<milliseconds>` and starts empty; the next sync pulls the server's data,
-and local changes that had not been pushed are lost.
+If the file cannot be decoded or decrypted, or is larger than the backend reads, the initializer
+throws by default. With ``CorruptionPolicy/moveAsideAndStartEmpty`` the store renames the file
+to `<name>.store.corrupt-<milliseconds>` and starts empty; the next sync pulls the server's
+data, and local changes that had not been pushed stay only in the renamed file.
 
 When a file can be read but holds odd values, the store repairs what is safe to repair:
 duplicate record IDs (the last one wins), negative attempt counts, an empty device ID, and

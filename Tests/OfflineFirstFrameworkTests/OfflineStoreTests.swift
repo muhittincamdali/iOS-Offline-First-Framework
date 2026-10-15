@@ -127,6 +127,48 @@ struct OfflineStoreTests {
         #expect(storage.names == ["notes.store.corrupt-1700000000000"])
     }
 
+    /// A server that sends more data than the file may hold cannot make the store unopenable:
+    /// the page is not stored, the sync fails, and the store still opens.
+    @Test func aPullThatWouldOutgrowTheFileLimitIsNotStored() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try FileStore(directory: directory, protection: .none, maximumFileSize: 64 * 1024)
+        let page = (0..<2_000).map {
+            RemoteChange<Note>(recordID: "r\($0)", record: Note(id: "r\($0)", text: String(repeating: "x", count: 100)), revision: "1", timestamp: nil)
+        }
+        let transport = ScriptedTransport(pull: { token in
+            token == nil ? PullResponse(changes: page, token: "t1", hasMore: false) : PullResponse(changes: [], token: token, hasMore: false)
+        })
+        let store = try OfflineStore<Note>(name: "notes", storage: files, transport: transport, configuration: makeConfiguration(clock: clock))
+        try await store.save(Note(id: "mine", text: "kept"))
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        guard case .failed = await store.status else {
+            Issue.record("expected a failed status")
+            return
+        }
+        #expect(await store.state.token == nil)
+        #expect(await store.records() == [Note(id: "mine", text: "kept")])
+
+        let reopened = try OfflineStore<Note>(name: "notes", storage: files, configuration: makeConfiguration(clock: clock))
+        #expect(await reopened.records() == [Note(id: "mine", text: "kept")])
+        // The push before the pull went through and was stored.
+        #expect(await reopened.pendingChanges().isEmpty)
+    }
+
+    /// A file over the limit (written before writes were limited, or the limit was lowered)
+    /// is moved aside with `.moveAsideAndStartEmpty`, like a damaged one.
+    @Test func aFileOverTheLimitIsMovedAside() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let large = try FileStore(directory: directory, protection: .none)
+        try await makeStore(large).save(contentsOf: (0..<100).map { Note(id: "n\($0)", text: String(repeating: "x", count: 100)) })
+        let small = try FileStore(directory: directory, protection: .none, maximumFileSize: 1_024)
+        #expect(throws: OfflineFirstError.self) { try makeStore(small) }
+        let store = try makeStore(small) { $0.corruptionPolicy = .moveAsideAndStartEmpty }
+        #expect(await store.records().isEmpty)
+        #expect(try small.names() == ["notes.store.corrupt-1700000000000"])
+    }
+
     @Test func storesFromANewerSchemaAreNeverReset() throws {
         let storage = InMemoryStorage()
         try storage.write(Data(#"{"format":1,"schemaVersion":5,"nodeID":"x","nextSequence":0,"entries":[]}"#.utf8), to: "notes.store")

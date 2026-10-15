@@ -11,7 +11,8 @@ public protocol StorageBackend: Sendable {
     func read(_ name: String) throws -> Data?
 
     /// Replaces the bytes stored under `name`. The write must be atomic: after a crash the
-    /// old or the new bytes are stored, never a mix.
+    /// old or the new bytes are stored, never a mix. A backend that limits what it reads must
+    /// refuse to write more, so the store never writes a file it cannot open again.
     func write(_ data: Data, to name: String) throws
 
     /// Deletes the bytes stored under `name`. Deleting a missing name is not an error.
