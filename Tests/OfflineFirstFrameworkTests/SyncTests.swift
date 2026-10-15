@@ -154,6 +154,40 @@ struct SyncTests {
         #expect(await deviceA.record("x")?.text == "B edit")
     }
 
+    /// With `.clientWins` a version accepted after the store's own write can carry an older
+    /// timestamp. Until the echo of its own write tells where that write stands, the store
+    /// cannot order the two, so it takes the server's version instead of skipping it.
+    @Test func aNewerVersionWithAnOlderTimestampReplacesTheStoresOwnWrite() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let pullFails = OneShot()
+        let failNextPull = Flag()
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { token in
+            if await failNextPull.isSet, await pullFails.fire() { throw URLError(.networkConnectionLost) }
+            return try await server.pull(since: token)
+        }
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: transport,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        try await deviceB.save(Note(id: "x", text: "B, written first"))
+        clock.advance(by: 10)
+        try await deviceA.save(Note(id: "x", text: "A, written later"))
+        // A's push is accepted, but its pull fails, so A never sees the echo of its write.
+        await failNextPull.set()
+        await #expect(throws: URLError.self) { try await deviceA.sync() }
+        // B keeps its own version by policy and pushes it on top of A's.
+        try await deviceB.sync()
+        #expect(await server.record("x")?.text == "B, written first")
+
+        try await deviceA.sync()
+        #expect(await deviceA.record("x")?.text == "B, written first")
+    }
+
     @Test func mergeResolverPushesTheCombination() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let store = try makeStore(server) {
@@ -573,5 +607,14 @@ actor Counter {
     func next() -> Int {
         value += 1
         return value
+    }
+}
+
+/// A switch that tests turn on.
+actor Flag {
+    private(set) var isSet = false
+
+    func set() {
+        isSet = true
     }
 }

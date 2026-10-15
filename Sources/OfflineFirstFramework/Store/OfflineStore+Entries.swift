@@ -43,32 +43,36 @@ extension OfflineStore {
 
     /// Whether `change` is an older server version than `other`, both of the current history.
     static func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>) -> Bool {
-        if let incoming = change.sequence, let held = other.sequence {
-            return incoming < held
-        }
-        if let incoming = change.timestamp, let held = other.timestamp {
-            return incoming < held
-        }
-        return false
+        isOlder(change.sequence, change.timestamp, than: other.sequence, other.timestamp)
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out
     /// of order, a lagging replica, the earlier version of a record whose deletion the store saw.
     ///
-    /// The server's ``RemoteChange/sequence`` decides when both versions have one. Otherwise
-    /// the timestamps do, which matches the server's order as long as the devices resolve
-    /// conflicts by ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier
-    /// server history is never newer than the server's current one, and without either value
-    /// the store cannot tell, so the version counts as newer.
+    /// The server's ``RemoteChange/sequence`` decides when both versions have one. When only one
+    /// has it (the store holds its own accepted write, whose echo has not come), the order is
+    /// unknown. Only a server that sends no sequences is ordered by the timestamps, which
+    /// matches the server's order as long as the devices resolve conflicts by
+    /// ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier server history
+    /// is never newer than the server's current one. When the order is unknown, the version
+    /// counts as newer: the server sends its versions in order, so a newer one follows anyway.
     static func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, history: UInt64) -> Bool {
         guard entry.revision != nil, entry.history == history else { return false }
-        if let incoming = change.sequence, let held = entry.sequence {
+        return isOlder(change.sequence, change.timestamp, than: entry.sequence, entry.heldServerTimestamp)
+    }
+
+    /// Orders two server versions by sequence, or by timestamp when neither has a sequence.
+    private static func isOlder(_ sequence: UInt64?, _ timestamp: HLCTimestamp?, than heldSequence: UInt64?,
+                                _ heldTimestamp: HLCTimestamp?) -> Bool {
+        switch (sequence, heldSequence) {
+        case let (incoming?, held?):
             return incoming < held
+        case (nil, nil):
+            guard let timestamp, let heldTimestamp else { return false }
+            return timestamp < heldTimestamp
+        default:
+            return false
         }
-        if let incoming = change.timestamp, let held = entry.heldServerTimestamp {
-            return incoming < held
-        }
-        return false
     }
 
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
