@@ -91,4 +91,26 @@ struct AutomaticSyncTests {
         #expect(found)
         await store.stopAutomaticSync()
     }
+
+    @Test func aRetryDateFarInTheFutureFromADamagedFileDoesNotStopTheApp() async throws {
+        let storage = InMemoryStorage()
+        let failing = ScriptedTransport(push: { _ in [:] })
+        let first = try OfflineStore<Note>(name: "notes", storage: storage, transport: failing, configuration: makeConfiguration(clock: clock))
+        try await first.save(Note(id: "a", text: "A"))
+        _ = try? await first.sync()
+        let file = String(decoding: try #require(try storage.read("notes.store")), as: UTF8.self)
+        let damaged = file.replacing(/"nextAttemptAt":[-0-9.eE+]+/, with: #""nextAttemptAt":1e300"#)
+        #expect(damaged != file)
+        try storage.write(Data(damaged.utf8), to: "notes.store")
+
+        let server = InMemorySyncServer<Note>()
+        let store = try OfflineStore<Note>(name: "notes", storage: storage, transport: server, configuration: makeConfiguration(clock: clock))
+        await store.startAutomaticSync(monitor: SimulatedConnectivity(isOnline: true), interval: .seconds(300), debounce: .zero)
+        #expect(await eventually { await server.pullRequests == 1 })
+        // The next run is scheduled after the sync; computing its wait used to trap.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await store.isAutomaticSyncEnabled)
+        #expect(await store.pendingChanges().count == 1)
+        await store.stopAutomaticSync()
+    }
 }

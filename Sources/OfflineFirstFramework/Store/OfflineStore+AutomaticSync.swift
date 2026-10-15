@@ -120,16 +120,24 @@ extension OfflineStore {
         if case .open(let until) = breaker.state {
             dates = dates.map { max($0, until) }
         }
-        var delays = dates.map { Duration.seconds(max(0, $0.timeIntervalSince(now))) }
+        var delays = dates.map { Self.clampedDelay(seconds: $0.timeIntervalSince(now)) }
         if let interval {
-            delays.append(interval)
+            delays.append(Self.clampedDelay(interval))
         }
-        return delays.min().map(Self.clampedDelay)
+        return delays.min()
     }
 
     /// Keeps a wait between one second and one day, so a retry date far in the future (from a
     /// damaged file, say) or a huge interval does not turn into a sleep that never ends.
     static func clampedDelay(_ delay: Duration) -> Duration {
         min(max(.seconds(1), delay), .seconds(86_400))
+    }
+
+    /// The same limits for a wait in seconds. The value is clamped before it becomes a
+    /// `Duration`, because `Duration.seconds(_:)` traps for values like 1e300 that a damaged
+    /// file can produce; a value that is not a number waits the longest.
+    static func clampedDelay(seconds: Double) -> Duration {
+        guard !seconds.isNaN else { return .seconds(86_400) }
+        return .seconds(min(max(1, seconds), 86_400))
     }
 }

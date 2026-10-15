@@ -326,6 +326,11 @@ struct SyncTests {
         #expect(OfflineStore<Note>.clampedDelay(.seconds(-5)) == .seconds(1))
         #expect(OfflineStore<Note>.clampedDelay(.seconds(90)) == .seconds(90))
         #expect(OfflineStore<Note>.clampedDelay(.seconds(Int64.max)) == .seconds(86_400))
+        #expect(OfflineStore<Note>.clampedDelay(seconds: 1e300) == .seconds(86_400))
+        #expect(OfflineStore<Note>.clampedDelay(seconds: -1e300) == .seconds(1))
+        #expect(OfflineStore<Note>.clampedDelay(seconds: .infinity) == .seconds(86_400))
+        #expect(OfflineStore<Note>.clampedDelay(seconds: .nan) == .seconds(86_400))
+        #expect(OfflineStore<Note>.clampedDelay(seconds: 90) == .seconds(90))
     }
 
     @Test func farFutureServerTimestampsDoNotMoveTheClock() async throws {
