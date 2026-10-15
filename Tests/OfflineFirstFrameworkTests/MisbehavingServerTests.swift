@@ -116,12 +116,19 @@ struct MisbehavingServerTests {
         #expect(try await first.sync().pulled == 0)
 
         // A new instance starts at revision 0 again; the saved token belongs to the old one.
+        // It gets past the old token's revision 3, so only the epoch tells the two apart:
+        // reading the old token as a revision here would skip the first three writes.
         let restarted = InMemorySyncServer<Note>(now: { [clock] in clock.now })
-        await restarted.write(Note(id: "x", text: "written after the restart"))
+        let written = ["w", "x", "y", "z"]
+        for id in written {
+            await restarted.write(Note(id: id, text: "written after the restart"))
+        }
         let store = try makeStore(restarted, storage: storage)
         let report = try await store.sync()
-        #expect(report.pulled == 1)
-        #expect(await store.record("x") != nil)
+        #expect(report.pulled == written.count)
+        for id in written {
+            #expect(await store.record(id) != nil)
+        }
         #expect(try await store.sync().pulled == 0)
     }
 }
