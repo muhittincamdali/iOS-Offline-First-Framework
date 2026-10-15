@@ -70,7 +70,8 @@ The answer has one outcome per change ID. A change without an outcome is retried
     {
       "recordID": "C2D6...",
       "record": { "id": "C2D6...", "title": "Buy oat milk", "isDone": false },
-      "revision": "43",
+      "revision": "9f2c41d07ab35e18.43",
+      "sequence": 43,
       "timestamp": {
         "wallTime": 1760000005000,
         "counter": 0,
@@ -78,24 +79,42 @@ The answer has one outcome per change ID. A change without an outcome is retried
       }
     }
   ],
-  "token": "43",
-  "hasMore": false
+  "token": "9f2c41d07ab35e18.43",
+  "hasMore": false,
+  "epoch": "9f2c41d07ab35e18"
 }
 ```
 
-A change without `record` is a deletion; `timestamp` is optional. Return changes oldest first,
-at most one per record, and a `token` the server understands as "after these". While
-`hasMore` is `true` the store asks again right away, up to
-``OfflineStore/Configuration/maximumPullPages`` pages per sync.
+A change without `record` is a deletion. `timestamp`, `sequence` and `epoch` are optional.
+Return changes oldest first, at most one per record, and a `token` the server understands as
+"after these". While `hasMore` is `true` the store asks again right away, up to
+``OfflineStore/Configuration/maximumPullPages`` pages per sync; the token of such a page must
+differ from every token the store pulled with in this sync, or the sync fails. The token is
+sent percent-encoded, `+` as `%2B`.
+
+| Field       | Meaning                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.        |
+| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.  |
+| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced.                       |
+| `timestamp` | The timestamp the change was pushed with; the store counts one more than five minutes ahead as at that limit. |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than
-an empty page: the store skips records whose revision it already has. The reference server puts
-an epoch in front of the revision (`"9f2c41d07ab35e18.43"`) to recognise such tokens.
+an empty page, and report a new epoch: the store then pulls everything again, skips records
+whose revision it already has, and keeps its pending changes. The reference server creates a
+new epoch on every start and puts it in front of its revisions and tokens
+(`"9f2c41d07ab35e18.43"`).
+
+A change the app cannot decode, for example a field of another type, is set aside in
+``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. A
+push outcome that cannot be read leaves only its own change unanswered.
 
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its
 ``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes.
 The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB and
-pushes at 500 changes, and accepts only timestamps that a JavaScript number holds exactly.
+pushes at 500 changes, accepts only timestamps that a JavaScript number holds exactly, stores a
+pushed timestamp more than five minutes ahead of its clock at that limit, and saves the answers
+to the last 10,000 change IDs with its data.

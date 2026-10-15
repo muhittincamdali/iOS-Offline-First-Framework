@@ -34,6 +34,7 @@ watchOS 10 and visionOS 1.
 ### Essentials
 
 - <doc:GettingStarted>
+- <doc:GuaranteesAndLimits>
 - ``OfflineStore``
 - ``SyncableRecord``
 - ``SyncedCollection``
@@ -49,6 +50,7 @@ watchOS 10 and visionOS 1.
 - ``RemoteChange``
 - ``PushOutcome``
 - ``PullResponse``
+- ``QuarantinedChange``
 
 ### Conflicts
 

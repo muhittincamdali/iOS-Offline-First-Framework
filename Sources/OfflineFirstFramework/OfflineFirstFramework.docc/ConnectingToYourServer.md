@@ -47,22 +47,38 @@ struct TodoAPI: SyncTransport {
 The rules that keep sync correct:
 
 - **Revisions.** Every server write needs a new revision string (a version number, an ETag,
-  an update timestamp). ``OutgoingChange/baseRevision`` is the revision the device last saw; if
-  the server's revision differs, answer ``PushOutcome/conflict(current:)`` with the server's
-  record instead of overwriting it.
+  an update timestamp), and a revision must never name two versions of a record, also after a
+  restart or a restore from a backup: put an ID of the server's run in front of a counter, as
+  the reference servers do. ``OutgoingChange/baseRevision`` is the revision the device last
+  saw; if the server's revision differs, answer ``PushOutcome/conflict(current:)`` with the
+  server's record instead of overwriting it.
+- **Order and history.** Send ``RemoteChange/sequence``, a number that grows with every write,
+  so the store recognises older versions that arrive late without trusting device clocks, and
+  ``PullResponse/epoch``, which changes when the server lost or replaced its data, so the store
+  pulls everything again. Give the transport a ``SyncTransport/serverIdentity`` (the HTTP
+  transport uses its URL), so a store opened with another server does not send it the old
+  server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
   change out of the answer to retry only that change. Answer
   ``PushOutcome/rejected(reason:current:)`` only when the change can never succeed.
 - **Idempotency.** ``OutgoingChange/id`` stays the same when the store retries the same version
   of a change. If the answer to a push is lost, the store sends it again; a server that
-  remembers change IDs can answer from memory instead of applying the change twice.
+  remembers change IDs can answer from memory instead of applying the change twice. Keep that
+  memory across restarts: until the answer arrives the store treats the change as in doubt and
+  learns from it whether the server applied the change.
 - **Deletions.** ``RemoteChange/record`` is `nil` for a deleted record. Keep deleted records
   (or their IDs and revisions) on the server, so pulls can tell other devices about them.
 - **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
   `true`; a token that stays the same makes the sync fail with
   ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
 - **Timestamps.** Send ``RemoteChange/timestamp`` back if you store it; without it,
-  ``ConflictResolver/lastWriteWins`` lets the server's version win.
+  ``ConflictResolver/lastWriteWins`` lets the server's version win. Store a timestamp far ahead
+  of the server's clock at a limit, as the reference servers do with five minutes.
+- **Cancellation.** Stop both calls when their task is cancelled. The store cancels a request
+  when every caller gave up and when the sync runs past
+  ``OfflineStore/Configuration/syncTimeout``.
+
+<doc:GuaranteesAndLimits> lists what the store guarantees when a server follows these rules.
 
 The example app's `ReadmeSamples.swift` contains a complete transport for an ETag-based REST
 API (`PUT` and `DELETE` with `If-Match`, `412` for conflicts, `422` for rejections), and the

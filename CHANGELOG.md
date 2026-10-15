@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Fixes for the data-integrity findings of two audits of 2.0.0, each with a test that failed
+before the fix. The documentation article "Guarantees and limits" and a section of the README
+now state what the store promises and what it needs from the server.
+
+### Fixed
+
+- A server restart or a restore from a backup could reuse a revision. A device's older offline
+  edit was then accepted over a newer write without a conflict, and a full pull skipped the
+  changed record as an echo. The reference servers now put an epoch in every revision; the
+  store pulls everything again when the epoch or the server changes, keeping pending changes.
+- The conflict resolver was asked about server versions older than the stored one and about
+  records without a local change: `.serverWins` rolled records back and brought deleted ones
+  back, `.clientWins` made passive devices overwrite accepted writes. Older versions are now
+  skipped, ordered by the server's `sequence` (or the timestamps), and only a real local change
+  meets the resolver.
+- The deletion of a record the store never held was not kept, so an older page could create
+  the record. Two deletions now go to the resolver, so the newer one stays.
+- A timestamp years ahead won every last-write-wins conflict on every device. Timestamps more
+  than `maximumClockDrift` ahead now count as at that limit, in the store and in the reference
+  servers.
+- `discardChange(for:)` during a pull lost its token reset, and the server's copy never came
+  back.
+- A change whose push answer was lost could be resolved again by a pull and pushed over a newer
+  write. It now stays in doubt until its next push shows whether the server applied it.
+- After its own accepted write, the store could skip the server's newer version when that
+  version had an older timestamp, and keep its own copy for good.
+- A server that answered every push with a conflict kept the store pushing forever. Conflicts
+  now count as failed attempts with backoff and parking; a conflict answer for another record
+  counts too.
+- One record the app could not decode stopped every pull, and one unknown push outcome failed
+  the whole push. Such changes are now set aside in `quarantinedChanges()` and the rest goes on.
+- A server could grow the store file past the size it reads, after which the store did not
+  open again. `FileStore` now refuses such writes, and `.moveAsideAndStartEmpty` recovers a file
+  that is too large.
+- Change tokens that went round in a circle cost 100 requests per sync, a page whose token did
+  not move was stored before the check, and `+` in a token reached form-decoding servers as a
+  space.
+- `sync()` called while a sync was pulling returned without pushing a change saved just before.
+- Two store instances on one file silently dropped each other's saved records; the second
+  instance's write now throws `OfflineFirstError.storeChangedElsewhere(name:)`.
+- A transport that reported its cancellation as `URLError(.cancelled)` counted a failed attempt,
+  and a full disk while counting an attempt hid the transport's error.
+
+### Added
+
+- `RemoteChange.sequence`, `PullResponse.epoch`, `PullResponse.quarantined`,
+  `SyncTransport.serverIdentity` (default `nil`) and `QuarantinedChange`.
+- `OfflineStore.resetChangeToken()`, `quarantinedChanges()`, `SyncReport.quarantined`,
+  `Configuration.syncTimeout` (5 minutes) and `Configuration.maximumTombstones` (10,000).
+- `InMemorySyncServer.restart()`.
+
+### Changed
+
+- The circuit breaker now pauses pulls only; changes that are due are still pushed, and
+  `SyncReport.skipped` means the pull was skipped.
+- `OfflineFirstError` has the new case `storeChangedElsewhere(name:)`; a `switch` over it without
+  `default` needs that case.
+- `HTTPSyncTransport.Failure.unknownOutcome` is no longer thrown.
+- The reference server starts a new epoch on every start, also with `--data`, so each client
+  pulls everything once after a restart, and it saves the answers to change IDs with its data.
+
 ## [2.0.0] - 2026-10-15
 
 A rewrite. Version 1.0.0's manifest declared a missing `Resources` folder and unsafe compiler

@@ -46,9 +46,10 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 142 Swift Testing tests on macOS and an iPhone simulator,
-  16 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
-  server over HTTP.
+- **Tested against a real server** — 195 Swift Testing tests on macOS and an iPhone simulator,
+  among them a property test that runs every conflict policy through lost requests, restarts and
+  stale pages, 19 Node tests for the server, and an end-to-end suite in CI that syncs two stores
+  through the server over HTTP.
 
 ### What's included
 
@@ -318,6 +319,30 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Guarantees and limits
+
+The store keeps these promises for every conflict policy, through lost requests, lost answers,
+app and server restarts and stale pages, as long as the server follows the
+[protocol](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md):
+
+- A save or delete is in the file before it returns, and a queued change is pushed until the
+  server answers it. A retry keeps the change ID, so the server applies it once.
+- A stale copy never replaces a write the server accepted: the resolver is asked only when a
+  record changed on the device and on the server, and an older server version is skipped.
+- Deleted records stay deleted. A server that lost its data, or another server, makes the store
+  pull everything again and keep its pending changes. A record the app cannot decode is set
+  aside in `quarantinedChanges()` instead of stopping the pull.
+- A clock that runs ahead, a server that answers every push with a conflict and a server that
+  never answers have a bounded effect: timestamps count at most five minutes ahead, retries
+  back off and are parked, and a sync ends after `syncTimeout`.
+
+The server must never give the same revision to two versions of a record, should send an
+`epoch` and a `sequence`, and must remember change IDs across restarts. Limits: writes a server
+lost in a restore are not uploaded again, one store instance per file, the whole file is
+written on every change, and deletions beyond 10,000 are forgotten.
+[Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+has the full list.
+
 ## Demo
 
 | Synced                                                      | Offline, two changes waiting                                   |
@@ -388,8 +413,8 @@ The reference server needs Node 24 or later.
   pending change with an ID that changes with every local edit.
 - A sync pushes pending changes in batches (oldest first, with the revision they were based on),
   applies each outcome, then pulls pages of server changes after the saved change token.
-  Conflicts from either side go to the `ConflictResolver`. Edits made while a push is on its way
-  are kept and pushed next.
+  A record that changed on the device and on the server goes to the `ConflictResolver`; an older
+  server version is skipped. Edits made while a push is on its way are kept and pushed next.
 - `Sync/` holds the transport protocol, the HTTP and in-memory transports, retry policy,
   circuit breaker and connectivity; `Storage/` the file and Keychain stores, encryption and
   migrations; `Clock/` and `CRDT/` the value types for ordering and merging; `SwiftUI/` the

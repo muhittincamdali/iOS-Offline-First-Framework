@@ -4,13 +4,17 @@ Decide what happens when a record changed on the device and on the server since 
 
 ## Overview
 
-A conflict happens when the device pushes a change based on an old server revision, when a
-pull brings a server change for a record that still has a local change waiting, or when a pull
-brings a version with an older timestamp than the one the store holds (a page out of order, a
-lagging replica, an earlier version of a record whose deletion the server confirmed). For that
-last case the store keeps confirmed deletions as tombstones, the newest 1,000 of them. The store hands
-both versions to its ``ConflictResolver`` as a ``Conflict`` and acts on the
-``ConflictResolution``:
+A conflict happens only when a record changed on the device and on the server: the device pushes
+a change based on an old server revision, or a pull brings a newer server version of a record
+that still has a local change waiting. Both changes can be deletions. A server version older
+than the one the store holds (a page out of order, a lagging replica, an earlier version of a
+deleted record) is not a conflict: the store skips it, whatever the resolver, and a record
+without a local change simply takes the server's newer version. The store tells older from
+newer by the server's ``RemoteChange/sequence``, or by the timestamps when the server sends
+none (see <doc:ServerProtocol>), and keeps deletions as tombstones, the newest
+``OfflineStore/Configuration/maximumTombstones`` of them, so an older version of a deleted
+record does not bring it back. The store hands both versions to its ``ConflictResolver`` as a
+``Conflict`` and acts on the ``ConflictResolution``:
 
 - ``ConflictResolution/keepRemote``: the server's version replaces the local one, and the local
   change is dropped.
@@ -41,9 +45,9 @@ Last write wins compares hybrid logical clock timestamps, not plain dates. A
 every timestamp it receives, and orders writes from the same millisecond by a counter and the
 device ID, so all devices agree on the winner. A server timestamp more than
 ``OfflineStore/Configuration/maximumClockDrift`` ahead of the device clock does not move the
-clock, so one wrong timestamp cannot push every later local write into the future. A device
-whose own clock runs ahead still stamps its writes with that time and wins conflicts against
-edits made before it; if devices with wrong clocks are a concern, use
+clock, and the store compares it as if it were at that limit, so one wrong timestamp cannot
+win every later conflict. A device whose own clock runs ahead still stamps its writes with that
+time and wins the conflicts it resolves itself; if devices with wrong clocks are a concern, use
 ``ConflictResolver/serverWins`` or a merge.
 
 ## Merging fields
