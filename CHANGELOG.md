@@ -73,8 +73,9 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
 - Store and file names are limited to letters, digits, `.`, `_` and `-`, so they cannot point
   outside the storage directory (SwiftPersistence's `FileStore` joined any name onto its path).
 - Bounded memory and loops against misbehaving servers and damaged files: outbox size, pull
-  pages per sync, pushes per record per sync, HTTP response size, file size, server message
-  length, remembered change IDs in the servers.
+  pages per sync, pushes per record per sync, HTTP response size, file size, server message,
+  revision and change token length, remembered change IDs in the servers, and automatic sync
+  waits between one second and one day.
 - Arithmetic that could trap on decoded or extreme values saturates or is checked instead:
   counters, clock values, retry delays (including `Int.min` attempts), date conversion of NaN
   and infinite values, and sequence numbers in a damaged store file.

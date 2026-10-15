@@ -46,7 +46,7 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 119 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 122 Swift Testing tests on macOS and an iPhone simulator,
   14 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
   server over HTTP.
 
@@ -395,8 +395,8 @@ The reference server needs Node 24 or later.
   migrations; `Clock/` and `CRDT/` the value types for ordering and merging; `SwiftUI/` the
   observable model. Only `OfflineStore`, `InMemorySyncServer` and `SyncedCollection` are
   reference types.
-- The store guards against misbehaving servers and damaged files: bounded queue, page and
-  response sizes, a change token that must move, at most three pushes per record and sync,
+- The store guards against misbehaving servers and damaged files: bounded queue, page,
+  response, revision and change token sizes, a change token that must move, at most three pushes per record and sync,
   ignored records whose ID does not match, timestamps beyond the allowed clock drift, and file
   names that cannot leave their directory. The tests cover each of these.
 - The whole file is rewritten on every change, which suits collections up to tens of thousands
