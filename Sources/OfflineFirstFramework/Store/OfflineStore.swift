@@ -42,6 +42,7 @@ public actor OfflineStore<Record: SyncableRecord> {
     var activeSync: Task<SyncReport, any Error>?
     /// Records whose push is waiting for the server's answer.
     var inFlight: Set<Record.ID> = []
+    var automaticSync: AutomaticSync?
 
     /// What the store is doing about sync.
     public internal(set) var status: SyncStatus = .idle
@@ -141,6 +142,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                 try Self.write(record, id: record.id, into: &state, configuration: configuration)
             }
         }
+        localChangeDidHappen()
     }
 
     /// Deletes the record with `id` and queues the deletion for the server. A record the
@@ -155,6 +157,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                 state.entries[id] = nil
             }
         }
+        if reachedServer { localChangeDidHappen() }
     }
 
     /// Puts parked changes back in the queue with a fresh attempt count.
@@ -167,6 +170,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                 state.entries[id]?.pending?.nextAttemptAt = nil
             }
         }
+        localChangeDidHappen()
     }
 
     /// Drops the waiting change of record `id`. A record the server has never seen is removed;
