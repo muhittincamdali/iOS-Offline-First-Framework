@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
+<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,7 +51,7 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 195 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 217 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts und veraltete Seiten schickt, 19 Node-Tests für den Server und eine
   End-to-End-Testsuite in der CI, die zwei Stores über HTTP durch den Server synchronisiert.
@@ -337,19 +337,22 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   ausstehende Änderung wird übertragen, bis der Server sie beantwortet. Eine Wiederholung behält
   die Änderungs-ID, sodass der Server sie nur einmal anwendet.
 - Eine veraltete Kopie ersetzt nie einen Schreibvorgang, den der Server angenommen hat: Der
-  Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf dem Server geändert hat,
-  und eine ältere Serverversion wird übersprungen.
+  Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf einem anderen Gerät
+  geändert hat, und eine ältere Serverversion wird übersprungen, auch direkt nachdem der Server
+  den eigenen Schreibvorgang des Geräts angenommen hat.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein anderer
   Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben. Ein
   Datensatz, den die App nicht dekodieren kann, wird in `quarantinedChanges()` zurückgestellt,
   statt den Abruf anzuhalten.
-- Eine vorgehende Uhr, ein Server, der jede Übertragung mit einem Konflikt beantwortet, und ein
-  Server, der nie antwortet, wirken nur begrenzt: Zeitstempel zählen höchstens fünf Minuten im
-  Voraus, Wiederholungen warten und werden geparkt, und eine Synchronisierung endet nach
-  `syncTimeout`.
+- Eine vorgehende oder zurückgestellte Uhr, ein Server, der jede Übertragung mit einem Konflikt
+  beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
+  wirken nur begrenzt: Ein Zeitstempel zählt höchstens fünf Minuten über die neueste Zeit des
+  Geräts hinaus, Wiederholungen warten und werden geparkt, eine Synchronisierung endet nach
+  `syncTimeout`, und Synchronisierungen warten, solange die Datei nicht geschrieben werden kann.
 
 Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`
-und eine `sequence` senden und muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen:
+(nie wieder eine frühere), eine `sequence` und die übertragenen Zeitstempel unverändert senden
+und muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen:
 Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht erneut
 hochgeladen, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben,
 und Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält

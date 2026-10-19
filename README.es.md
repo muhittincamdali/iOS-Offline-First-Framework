@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
+<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,7 +51,7 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 195 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 217 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas una prueba de propiedades que somete cada política de conflictos a solicitudes
   perdidas, reinicios y páginas obsoletas, 19 pruebas de Node para el servidor y un conjunto de
   pruebas de extremo a extremo en CI que sincroniza dos almacenes a través del servidor por HTTP.
@@ -336,17 +336,21 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   se envía hasta que el servidor lo responde. Un reintento conserva el ID del cambio, así que el
   servidor lo aplica una sola vez.
 - Una copia obsoleta nunca reemplaza una escritura que el servidor aceptó: al resolutor solo se le
-  pregunta cuando un registro cambió en el dispositivo y en el servidor, y una versión más antigua
-  del servidor se omite.
+  pregunta cuando un registro cambió en el dispositivo y en otro dispositivo, y una versión más
+  antigua del servidor se omite, también justo después de que se aceptara la escritura del propio
+  dispositivo.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
   que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes. Un registro que la
   app no puede decodificar se aparta en `quarantinedChanges()` en lugar de detener la descarga.
-- Un reloj adelantado, un servidor que responde cada envío con un conflicto y un servidor que nunca
-  responde tienen un efecto acotado: las marcas de tiempo cuentan como mucho cinco minutos por
-  delante, los reintentos esperan y se aparcan, y una sincronización termina tras `syncTimeout`.
+- Un reloj adelantado o retrasado a mano, un servidor que responde cada envío con un conflicto, un
+  servidor que nunca responde y un archivo que no se puede escribir tienen un efecto acotado: una
+  marca de tiempo cuenta como mucho cinco minutos por delante de la hora más reciente que conoce
+  el dispositivo, los reintentos esperan y se aparcan, una sincronización termina tras
+  `syncTimeout` y las sincronizaciones esperan mientras no se pueda escribir el archivo.
 
 El servidor nunca debe dar la misma revisión a dos versiones de un registro, debería enviar un
-`epoch` y un `sequence`, y debe recordar los IDs de cambio a través de los reinicios. Límites: las
+`epoch` (nunca uno anterior de nuevo), un `sequence` y las marcas de tiempo recibidas sin cambios,
+y debe recordar los IDs de cambio a través de los reinicios. Límites: las
 escrituras que un servidor perdió en una restauración no se vuelven a subir, una sola instancia
 del almacén por archivo, el archivo entero se escribe en cada cambio y los borrados más allá de
 10.000 se olvidan. [Garantías y límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la lista completa.

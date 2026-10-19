@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
+<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,7 +51,7 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 195 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 217 testes de Swift Testing no macOS e em um simulador de
   iPhone, entre eles um teste de propriedades que submete cada política de conflito a solicitações
   perdidas, reinícios e páginas desatualizadas, 19 testes de Node para o servidor e uma suíte de
   testes de ponta a ponta na CI que sincroniza dois stores por meio do servidor via HTTP.
@@ -336,18 +336,21 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   fila é enviada até o servidor respondê-la. Uma nova tentativa mantém o ID da alteração, então o
   servidor a aplica uma única vez.
 - Uma cópia desatualizada nunca substitui uma gravação que o servidor aceitou: o resolvedor só é
-  consultado quando um registro mudou no dispositivo e no servidor, e uma versão mais antiga do
-  servidor é ignorada.
+  consultado quando um registro mudou no dispositivo e em outro dispositivo, e uma versão mais
+  antiga do servidor é ignorada, também logo depois de o servidor aceitar a gravação do próprio
+  dispositivo.
 - Registros excluídos continuam excluídos. Um servidor que perdeu seus dados, ou outro servidor,
   faz o store ler tudo de novo, mantendo suas alterações pendentes. Um registro que o app não
   consegue decodificar é separado em `quarantinedChanges()` em vez de interromper a leitura.
-- Um relógio adiantado, um servidor que responde a cada envio com um conflito e um servidor que
-  nunca responde têm efeito limitado: os carimbos de data/hora contam no máximo cinco minutos à
-  frente, as novas tentativas esperam e são estacionadas, e uma sincronização termina após
-  `syncTimeout`.
+- Um relógio adiantado ou atrasado à mão, um servidor que responde a cada envio com um conflito,
+  um servidor que nunca responde e um arquivo que não pode ser gravado têm efeito limitado: um
+  carimbo de data/hora conta no máximo cinco minutos além da hora mais recente que o dispositivo
+  conhece, as novas tentativas esperam e são estacionadas, uma sincronização termina após
+  `syncTimeout` e as sincronizações esperam enquanto o arquivo não puder ser gravado.
 
 O servidor nunca deve dar a mesma revisão a duas versões de um registro, deveria enviar um `epoch`
-e um `sequence`, e precisa lembrar os IDs de alteração entre reinícios. Limites: gravações que um
+(sem nunca voltar a um anterior), um `sequence` e os carimbos de data/hora recebidos sem alteração,
+e precisa lembrar os IDs de alteração entre reinícios. Limites: gravações que um
 servidor perdeu em uma restauração não são enviadas de novo, uma única instância do store por
 arquivo, o arquivo inteiro é gravado a cada alteração, e exclusões além de 10.000 são esquecidas.
 [Garantias e limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) traz a lista completa.

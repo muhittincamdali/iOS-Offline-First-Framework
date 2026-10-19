@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@80cd225fad47ea26faacad6b16d91d16e1ab049a status=reviewed -->
+<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg" alt="Offline-First Framework: オフラインでも動き続け、サーバーと同期する Swift アプリ向けのローカルストア。"></picture></p>
@@ -33,7 +33,7 @@
 - **任意のバックエンド** — `HTTPSyncTransport` は、文書化された JSON プロトコルを使います。[`Examples/SyncServer`](Examples/SyncServer) のリファレンスサーバーは、約 280 行の JavaScript でこのプロトコルを実装しています。ほかの API も `SyncTransport` の背後に置けます。たとえば ETag を使う REST API です。
 - **SwiftUI 向けに設計** — `SyncedCollection` はストアの `@Observable` モデルです。自動同期は、デバイスがオンラインになったときとローカルでの編集の直後に実行され、バックグラウンドリフレッシュのタスクからは 1 回の呼び出しで同期できます。
 - **保存データを保護** — Keychain に保管したキーによる AES-GCM のファイル暗号化、データ保護クラス、レコードスキーマのマイグレーション、破損したファイルに対するポリシーを備えています。
-- **実際のサーバーに対してテスト済み** — macOS と iPhone シミュレータで 195 件の Swift Testing テスト（すべての競合ポリシーをリクエストの消失、再起動、古いページにさらすプロパティテストを含む）、サーバー用の 19 件の Node テスト、そして CI では 2 つのストアを HTTP 経由でサーバーを通して同期するエンドツーエンドのテストスイートを実行しています。
+- **実際のサーバーに対してテスト済み** — macOS と iPhone シミュレータで 217 件の Swift Testing テスト（すべての競合ポリシーをリクエストの消失、再起動、古いページにさらすプロパティテストを含む）、サーバー用の 19 件の Node テスト、そして CI では 2 つのストアを HTTP 経由でサーバーを通して同期するエンドツーエンドのテストスイートを実行しています。
 
 ### 含まれるもの
 
@@ -285,11 +285,11 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 サーバーが[プロトコル](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)に従っている限り、ストアはどの競合ポリシーでも、リクエストの消失、応答の消失、アプリとサーバーの再起動、古いページがあっても、次の約束を守ります。
 
 - 保存や削除は呼び出しが戻る前にファイルに書き込まれ、キューに入った変更はサーバーが応答するまでプッシュされます。再試行では変更 ID が変わらないため、サーバーはそれを一度だけ適用します。
-- 古いコピーが、サーバーが受け入れた書き込みを置き換えることはありません。リゾルバーが呼ばれるのはレコードがデバイスとサーバーの両方で変更された場合だけで、サーバーの古いバージョンはスキップされます。
+- 古いコピーが、サーバーが受け入れた書き込みを置き換えることはありません。リゾルバーが呼ばれるのはレコードがこのデバイスと別のデバイスの両方で変更された場合だけで、サーバーの古いバージョンは、デバイス自身の書き込みが受け入れられた直後でもスキップされます。
 - 削除されたレコードは削除されたままです。データを失ったサーバーや別のサーバーに対しては、ストアが保留中の変更を残したまますべてを最初から取得し直します。アプリがデコードできないレコードは取得を止めず、`quarantinedChanges()` に取り分けられます。
-- 進んだ時計、すべてのプッシュに競合で応答するサーバー、まったく応答しないサーバーの影響は限られます。タイムスタンプは最大でも 5 分先として扱われ、再試行は間隔を空けたうえで保留され、同期は `syncTimeout` が過ぎると終了します。
+- 進んだ時計や戻された時計、すべてのプッシュに競合で応答するサーバー、まったく応答しないサーバー、書き込めないファイルの影響は限られます。タイムスタンプはデバイスが知る最新の時刻より最大でも 5 分先として扱われ、再試行は間隔を空けたうえで保留され、同期は `syncTimeout` が過ぎると終了し、ファイルに書き込めない間は同期が待機します。
 
-サーバーは同じ revision をレコードの 2 つのバージョンに与えてはならず、`epoch` と `sequence` を送るべきで、変更 ID を再起動後も覚えておく必要があります。制限: サーバーがバックアップからの復元で失った書き込みは再アップロードされない、1 つのファイルにつきストアのインスタンスは 1 つ、変更のたびにファイル全体が書き込まれる、10,000 件を超える削除は忘れられる。完全な一覧は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
+サーバーは同じ revision をレコードの 2 つのバージョンに与えてはならず、`epoch`（以前のものには戻らないこと）、`sequence`、プッシュされたタイムスタンプをそのまま送るべきで、変更 ID を再起動後も覚えておく必要があります。制限: サーバーがバックアップからの復元で失った書き込みは再アップロードされない、1 つのファイルにつきストアのインスタンスは 1 つ、変更のたびにファイル全体が書き込まれる、10,000 件を超える削除は忘れられる。完全な一覧は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
 
 ## デモ
 
