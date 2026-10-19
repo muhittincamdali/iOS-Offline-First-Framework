@@ -68,7 +68,7 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// ETag, as long as the server never gives the same string to two different versions of
     /// the record, not even after a restart or a restore from a backup: the store treats an
     /// equal revision as the same version. The reference servers put their ``PullResponse/epoch``
-    /// in front of a counter (`"9f2c41d07ab35e18.43"`).
+    /// in front of a counter (`"00064a1f3c2b9e18.43"`).
     public let revision: String
 
     /// When the record was last changed, if the server keeps the timestamps it receives.
@@ -128,10 +128,13 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 
     /// Names the server's history of the records, if the server reports it. A server that may
     /// have lost or replaced its data (an in-memory server that restarted, a restore from a
-    /// backup, a different database) reports a new epoch. The store then pulls everything again
-    /// from the start and keeps its own pending changes. An epoch is never reported again after
-    /// a newer one: the store refuses a page that names an epoch it has left, since only a stale
-    /// replica or cache sends one.
+    /// backup, a different database) reports a new epoch, later than every earlier one: longer,
+    /// or as long and greater byte by byte, such as a counter or the start time in fixed-width
+    /// digits. The store pulls everything again from the start once a pull from the beginning
+    /// reports the later epoch too, and keeps its own pending changes. It refuses a page that
+    /// names an earlier epoch than its own, since only a stale replica or cache sends one; when
+    /// the server keeps answering with that epoch for eight syncs in a row, or after
+    /// ``OfflineStore/resetChangeToken()``, the store follows it.
     public let epoch: String?
 
     /// Changes in this page the transport could not read, for example a record that does not

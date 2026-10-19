@@ -179,8 +179,10 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var history: UInt64? = nil
     /// Server changes set aside; `nil` when there are none.
     var quarantine: [QuarantinedChange]? = nil
-    /// Epochs of the server the store has left; `nil` when there are none.
-    var previousEpochs: [String]? = nil
+    /// An earlier epoch the last syncs refused; `nil` when there is none.
+    var epochRefusal: EpochRefusal? = nil
+    /// `true` after ``OfflineStore/resetChangeToken()`` until the server reports an epoch.
+    var takesNextEpoch: Bool? = nil
 }
 
 /// The two fields read before the rest of the file, to pick the migrations.

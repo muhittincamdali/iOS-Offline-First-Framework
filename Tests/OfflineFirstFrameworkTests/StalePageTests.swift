@@ -138,10 +138,10 @@ struct StalePageTests {
         #expect(await store.record("a")?.text == "mine, newer")
     }
 
-    /// A replica or cache that still answers from before a server restart: its page names the
-    /// epoch the store left, and its versions would roll every record back. The store refuses
-    /// it, also after the app restarted.
-    @Test func aPageFromAnEpochTheStoreLeftIsRefused() async throws {
+    /// A replica or cache that still answers from before a server restart: its page names an
+    /// earlier epoch than the store's, and its versions would roll every record back. The store
+    /// refuses it, also after the app restarted.
+    @Test func aPageFromAnEarlierEpochIsRefused() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let transport = await forwarding(to: server)
         let storage = InMemoryStorage()
@@ -157,7 +157,6 @@ struct StalePageTests {
         #expect(await server.record("a")?.text == "v2")
 
         store = try makeStore(transport, storage: storage)
-        try await store.resetChangeToken()
         await answerNextPull(of: transport, with: beforeRestart, from: server)
         await #expect(throws: OfflineFirstError.self) { try await store.sync() }
         #expect(await store.record("a")?.text == "v2")

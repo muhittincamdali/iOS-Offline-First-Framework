@@ -30,14 +30,18 @@ device's own write.
   the store holds (a page out of order, a lagging replica, a stale cache) is skipped and never
   pushed back, also right after the store's own write was accepted: until its echo arrives,
   the store knows the write is newer than every version up to the one it replaced, its own
-  earlier accepted writes included, and keeps that in its file. A page that names a server
-  epoch the store has left is refused.
+  earlier accepted writes included, and keeps that in its file. A page that names an earlier
+  server epoch than the store's is refused.
 - **Deleted records stay deleted.** Deletions are kept as tombstones, also for records the store
   never held, so an older version that arrives later does not bring a record back.
-- **A server that lost or replaced its data does not mix histories.** A new
+- **A server that lost or replaced its data does not mix histories.** A later
   ``PullResponse/epoch``, or a transport with another ``SyncTransport/serverIdentity``, makes the
   store pull everything again from the beginning. Pending changes stay and are pushed against
-  the server's current versions.
+  the server's current versions. A later epoch counts once the pull from the beginning reports
+  it too, so one page from another deployment behind the same URL does not move the store.
+- **A refused epoch does not stop the store for good.** When the server keeps answering with an
+  earlier epoch than the store's, eight syncs in a row, the store takes it as the server's
+  history; ``OfflineStore/resetChangeToken()`` takes the next epoch at once.
 - **A pull either moves forward or fails visibly.** A page is checked before it is stored: a
   token that does not move or goes round in a circle fails the sync, and the token never moves
   past a page that was not stored. A change the app cannot read is set aside in
@@ -66,10 +70,12 @@ device's own write.
 - Never give the same revision to two versions of a record, also after a restart or a restore
   from a backup. The reference servers put an epoch that is new on every start in front of a
   counter.
-- Report an ``PullResponse/epoch`` that changes whenever its history may have changed, and never
-  an earlier one again, and a ``RemoteChange/sequence`` that grows with every write. Without a
-  sequence the store orders versions by their timestamps, which matches the server's order only
-  while the devices resolve conflicts by last write wins or a merge.
+- Report an ``PullResponse/epoch`` that changes whenever its history may have changed, to a
+  later one: longer, or as long and greater byte by byte (a counter, or the start time in
+  fixed-width digits, as the reference servers do). Report a ``RemoteChange/sequence`` that
+  grows with every write. Without a sequence the store orders versions by their timestamps,
+  which matches the server's order only while the devices resolve conflicts by last write wins
+  or a merge.
 - Send back the ``RemoteChange/timestamp`` a change was pushed with. The store recognises a
   write of its own whose answer was lost by that timestamp; without it, a change made after a
   lost answer is taken for a conflict with the device's own earlier write.

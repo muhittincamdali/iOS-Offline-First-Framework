@@ -28,9 +28,11 @@ public actor OfflineStore<Record: SyncableRecord> {
         var history: UInt64
         /// Server changes set aside, oldest first.
         var quarantine: [QuarantinedChange] = []
-        /// Epochs of the server the store has left, oldest first. A page that names one comes
-        /// from a stale replica or cache.
-        var previousEpochs: [String] = []
+        /// An earlier epoch than ``serverEpoch`` that the last syncs in a row refused.
+        var epochRefusal: EpochRefusal? = nil
+        /// Set by ``OfflineStore/resetChangeToken()``: the next epoch the server reports is taken
+        /// whatever its order.
+        var takesNextEpoch = false
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -225,15 +227,21 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Forgets the change token, so the next sync pulls every server change from the
     /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
-    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
+    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again. The
+    /// next ``PullResponse/epoch`` the server reports is taken whatever its order: when it
+    /// differs from the store's, a new server history starts.
     ///
     /// Use it when the server can no longer continue after the token, for example when it
-    /// answers every pull with an error for it, or after an app update that can read records
-    /// the store set aside.
+    /// answers every pull with an error for it; after an app update that can read records the
+    /// store set aside; or when the store refuses the server's pages as coming from an earlier
+    /// epoch because it took a later one from elsewhere (another deployment behind the same
+    /// URL). Without it, the store follows such a server after eight syncs in a row.
     public func resetChangeToken() throws {
         try update { state in
             state.token = nil
             state.quarantine.removeAll()
+            state.epochRefusal = nil
+            state.takesNextEpoch = true
         }
         tokenGeneration &+= 1
     }
@@ -294,7 +302,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
                              serverEpoch: state.serverEpoch, history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
-                             previousEpochs: state.previousEpochs.isEmpty ? nil : state.previousEpochs)
+                             epochRefusal: state.epochRefusal, takesNextEpoch: state.takesNextEpoch ? true : nil)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         guard let fileKey else {
             try storage.write(data, to: fileName)

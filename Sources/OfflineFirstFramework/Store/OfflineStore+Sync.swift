@@ -109,10 +109,9 @@ extension OfflineStore {
     private func bind(to transport: any SyncTransport<Record>) throws {
         guard let identity = transport.serverIdentity, identity != state.serverIdentity else { return }
         try update { state in
+            // Another server's epochs say nothing about this one's: its first one is taken.
             if state.serverIdentity != nil {
                 Self.beginHistory(epoch: nil, in: &state)
-                // Another server's epochs say nothing about this one's.
-                state.previousEpochs.removeAll()
             }
             state.serverIdentity = identity
         }

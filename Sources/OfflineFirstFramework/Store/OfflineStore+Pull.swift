@@ -7,32 +7,31 @@ extension OfflineStore {
         var historyChanged = false
         // The tokens this sync has pulled with since it last started from the beginning.
         var requested: Set<String> = []
+        // A later epoch a page reported, until a pull from the beginning reports it too.
+        var unconfirmed: String?
         for _ in 0..<configuration.maximumPullPages {
             try Task.checkCancellation()
-            let token = state.token
-            if let token { requested.insert(token) } else { requested.removeAll() }
+            let token = unconfirmed == nil ? state.token : nil
+            if let token { requested.insert(token) } else if unconfirmed == nil { requested.removeAll() }
             let generation = tokenGeneration
             let response = try await Self.run(until: deadline) { try await transport.pull(since: token) }
             // The token was reset while the request was on its way (discardChange(for:),
             // resetChangeToken()): the page belongs to the old position, so it is dropped and the
             // pull starts again from the beginning.
-            guard generation == tokenGeneration else { continue }
+            guard generation == tokenGeneration else {
+                unconfirmed = nil
+                continue
+            }
             if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
                 throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
             }
-            // A server reports a new epoch when its history changes and never goes back to an
-            // earlier one; a page of a history the store left comes from a stale replica or
-            // cache, and its versions would roll records back.
-            if let epoch = response.epoch, state.previousEpochs.contains(epoch) {
-                throw OfflineFirstError.invalidServerResponse(
-                    "The server answered from an earlier history (epoch “\(epoch.prefix(100))”), as a stale replica or cache would.")
-            }
-            let epochChanged = try Self.isNewEpoch(response.epoch, after: state.serverEpoch)
-            if epochChanged {
+            guard let startsHistory = try startsHistory(with: response, unconfirmed: &unconfirmed) else { continue }
+            if startsHistory {
                 guard !historyChanged else {
                     throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
                 }
                 historyChanged = true
+                requested.removeAll()
                 if token != nil {
                     // The page answers a token of the old history; start over from the beginning.
                     try update { Self.beginHistory(epoch: response.epoch, in: &$0) }
@@ -42,11 +41,14 @@ extension OfflineStore {
             // A page is checked before it is stored, so a broken one changes nothing.
             try Self.checkProgress(of: response, after: token, requested: requested)
             try update { state in
-                if epochChanged {
+                if startsHistory {
                     Self.beginHistory(epoch: response.epoch, in: &state)
-                } else if state.serverEpoch == nil {
-                    // The first epoch the server reports, for example after an update of the server.
-                    state.serverEpoch = response.epoch
+                } else if let epoch = response.epoch {
+                    // The store's epoch, or the first one the server reports (a new store, an
+                    // update of the server): an earlier epoch refused before is no longer current.
+                    state.serverEpoch = epoch
+                    state.epochRefusal = nil
+                    state.takesNextEpoch = false
                 }
                 for change in response.quarantined {
                     Self.quarantine(change, in: &state, report: &report)
@@ -63,6 +65,39 @@ extension OfflineStore {
         report.hasMoreChanges = true
     }
 
+    /// Whether `response` starts a new server history, or `nil` when the page is dropped and the
+    /// pull goes on. A later epoch counts once a pull from the beginning reports it too; until
+    /// then `unconfirmed` holds it. An earlier epoch is refused (``takeOrRefuse(_:)``).
+    private func startsHistory(with response: PullResponse<Record>, unconfirmed: inout String?) throws -> Bool? {
+        let standing = try Self.standing(of: response.epoch, in: state)
+        guard let epoch = response.epoch, standing != .current, standing != .first else {
+            // A later epoch that the pull from the beginning does not report again came from
+            // somewhere else (another deployment behind the same URL, a misdirected request):
+            // the store stays in its history and goes on after its own token.
+            guard unconfirmed == nil else {
+                unconfirmed = nil
+                return nil
+            }
+            return false
+        }
+        switch standing {
+        case .later:
+            guard let waiting = unconfirmed else {
+                unconfirmed = epoch
+                return nil
+            }
+            guard waiting == epoch else {
+                throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
+            }
+        case .earlier:
+            try takeOrRefuse(epoch)
+        case .other, .current, .first:
+            break
+        }
+        unconfirmed = nil
+        return true
+    }
+
     /// Throws when a page that says more changes follow would not move the pull forward: it
     /// has no token, the same one, or one this sync pulled with before (the tokens go round in
     /// a circle), which would repeat pages up to the page limit on every sync.
@@ -75,16 +110,6 @@ extension OfflineStore {
             throw OfflineFirstError.invalidServerResponse(
                 "The server sent the change token “\(next.prefix(100))” a second time in one sync, so the pull would go round in circles.")
         }
-    }
-
-    /// Whether `epoch` names another server history than `known`. A server that reports no
-    /// epoch, or the first one, does not change the history.
-    private static func isNewEpoch(_ epoch: String?, after known: String?) throws -> Bool {
-        guard let epoch else { return false }
-        guard epoch.utf8.count <= maximumRevisionLength else {
-            throw OfflineFirstError.invalidServerResponse("The epoch has more than \(maximumRevisionLength) bytes.")
-        }
-        return known.map { $0 != epoch } ?? false
     }
 
     private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {

@@ -70,7 +70,7 @@ The answer has one outcome per change ID. A change without an outcome is retried
     {
       "recordID": "C2D6...",
       "record": { "id": "C2D6...", "title": "Buy oat milk", "isDone": false },
-      "revision": "9f2c41d07ab35e18.43",
+      "revision": "00064a1f3c2b9e18.43",
       "sequence": 43,
       "timestamp": {
         "wallTime": 1760000005000,
@@ -79,9 +79,9 @@ The answer has one outcome per change ID. A change without an outcome is retried
       }
     }
   ],
-  "token": "9f2c41d07ab35e18.43",
+  "token": "00064a1f3c2b9e18.43",
   "hasMore": false,
-  "epoch": "9f2c41d07ab35e18"
+  "epoch": "00064a1f3c2b9e18"
 }
 ```
 
@@ -96,15 +96,17 @@ sent percent-encoded, `+` as `%2B`.
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                   |
 | `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.                                             |
-| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced; never go back to an old one.                                     |
+| `epoch`     | Names the server's history. Change it to a later one whenever the data may have been lost or replaced: longer, or as long and greater byte by byte.      |
 | `timestamp` | The timestamp the change was pushed with, unchanged, also when it is far ahead: the store knows its own writes by it and limits how far ahead it counts. |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than
 an empty page, and report a new epoch: the store then pulls everything again, skips records
 whose revision it already has, and keeps its pending changes. The reference server creates a
-new epoch on every start and puts it in front of its revisions and tokens
-(`"9f2c41d07ab35e18.43"`).
+later epoch on every start, 16 hexadecimal digits of the time in microseconds, and puts it in
+front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). A page that names an earlier
+epoch than the store's is refused, as a stale replica or cache sends; a later one counts once
+the pull from the beginning that the store makes next reports it too.
 
 A change the app cannot decode, for example a field of another type, is set aside in
 ``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. A
