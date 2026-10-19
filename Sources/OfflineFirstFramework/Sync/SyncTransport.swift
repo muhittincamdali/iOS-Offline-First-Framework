@@ -157,7 +157,7 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 /// pulls everything again, for example after an app update that reads the record.
 public struct QuarantinedChange: Codable, Hashable, Sendable {
     /// The record's ID as JSON, for example `"C2D6"` with its quotes, or `null` when the
-    /// change had none.
+    /// change had none or one that does not decode as the record's ID type.
     public let recordID: String
 
     /// The server's revision of the change, if it could be read.

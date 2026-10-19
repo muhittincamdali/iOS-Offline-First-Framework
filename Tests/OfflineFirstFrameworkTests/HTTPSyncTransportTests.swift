@@ -208,6 +208,30 @@ struct HTTPSyncTransportTests {
         #expect(await store.quarantinedChanges() == [entry])
     }
 
+    /// A record nested 500 levels deep, half a kilobyte of brackets in place of a text, and a
+    /// record ID nested as deep: both changes are set aside, without decoding their depth on
+    /// the task's stack, and the sync goes on.
+    @Test func aDeeplyNestedChangeIsQuarantinedWithoutReadingItsDepth() async throws {
+        let depth = 500
+        let nested = String(repeating: "[", count: depth) + String(repeating: "]", count: depth)
+        let transport = transport { request, _ in
+            if request.httpMethod == "POST" { return (200, Data(#"{"outcomes":{}}"#.utf8)) }
+            let page = #"{"changes":[{"recordID":"deep","record":{"id":"deep","text":"# + nested + #"},"revision":"1"},"#
+                + #"{"recordID":"# + nested + #","revision":"2"},"#
+                + #"{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"3"}],"token":"t1","hasMore":false}"#
+            return (200, Data(page.utf8))
+        }
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: TestClock()))
+        let report = try await store.sync()
+        #expect(report.pulled == 1)
+        #expect(report.quarantined == 2)
+        #expect(await store.quarantinedChanges().map(\.recordID) == [#""deep""#, "null"])
+        #expect(await store.quarantinedChanges().map(\.revision) == ["1", "2"])
+        #expect(await store.record("ok") == Note(id: "ok", text: "fine"))
+        #expect(await store.state.token == "t1")
+    }
+
     /// A server whose pulls keep failing opens the circuit breaker, but local edits are still
     /// pushed: the breaker pauses pulls only.
     @Test func failingPullsDoNotStopPushes() async throws {

@@ -241,14 +241,21 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         case readable(RemoteChange<Record>)
         case unreadable(QuarantinedChange)
 
+        private enum Field: String, CodingKey {
+            case recordID, revision
+        }
+
+        /// Of a change that cannot be read, only the record ID and the revision are read, each
+        /// as the type it should have. Reading the rest as a generic JSON value would recurse as
+        /// deep as the server nests it, and a few hundred levels, about a kilobyte of brackets,
+        /// overflow the stack of the task that decodes the page and end the process.
         init(from decoder: any Decoder) throws {
             do {
                 self = .readable(try RemoteChange<Record>(from: decoder))
             } catch {
-                let raw = try? JSONValue(from: decoder)
-                let recordID = raw?["recordID"].flatMap { try? JSONEncoder().encode($0) }.map { String(decoding: $0, as: UTF8.self) }
-                var revision: String?
-                if case .string(let value)? = raw?["revision"] { revision = value }
+                let fields = try? decoder.container(keyedBy: Field.self)
+                let recordID = (try? fields?.decode(Record.ID.self, forKey: .recordID)).map(OfflineStore<Record>.describe)
+                let revision = try? fields?.decode(String.self, forKey: .revision)
                 self = .unreadable(QuarantinedChange(recordID: recordID ?? "null", revision: revision, reason: Self.describe(error)))
             }
         }
