@@ -92,12 +92,12 @@ Return changes oldest first, at most one per record, and a `token` the server un
 differ from every token the store pulled with in this sync, or the sync fails. The token is
 sent percent-encoded, `+` as `%2B`.
 
-| Field       | Meaning                                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                      |
-| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.                                |
-| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced; never go back to an old one.                        |
-| `timestamp` | The timestamp the change was pushed with, unchanged: the store knows its own writes by it. Over five minutes ahead counts as at that limit. |
+| Field       | Meaning                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                   |
+| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.                                             |
+| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced; never go back to an old one.                                     |
+| `timestamp` | The timestamp the change was pushed with, unchanged, also when it is far ahead: the store knows its own writes by it and limits how far ahead it counts. |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than
@@ -115,6 +115,6 @@ push outcome that cannot be read leaves only its own change unanswered.
 Any status outside 200–299 counts as a failed attempt and the store retries with its
 ``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes.
 The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB and
-pushes at 500 changes, accepts only timestamps that a JavaScript number holds exactly, stores a
-pushed timestamp more than five minutes ahead of its clock at that limit, and saves the answers
-to the last 10,000 change IDs with its data.
+pushes at 500 changes, accepts only timestamps that a JavaScript number holds exactly, keeps
+pushed timestamps as they were sent, and saves the answers to the last 10,000 change IDs with
+its data.

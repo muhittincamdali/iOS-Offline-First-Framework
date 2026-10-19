@@ -79,13 +79,15 @@ struct ClockSkewTests {
         #expect(await store.state.entries["y"]?.timestamp.wallTime == nowMilliseconds)
     }
 
-    @Test func theInMemoryServerMovesPushedTimestampsFromTheFutureBack() async throws {
+    /// The pushing device recognises its own write by the exact timestamp, so the server keeps
+    /// it; the drift limit is the devices' to apply.
+    @Test func theInMemoryServerKeepsPushedTimestampsAsTheyWereSent() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let future = HLCTimestamp(wallTime: nowMilliseconds + 86_400_000, counter: 1, nodeID: "broken")
         let change = OutgoingChange<Note>(id: UUID(), recordID: "x", operation: .upsert(Note(id: "x", text: "X")), timestamp: future, baseRevision: nil)
         _ = try await server.push([change])
         let stored = try #require(try await server.pull(since: nil).changes.first?.timestamp)
-        #expect(stored == HLCTimestamp(wallTime: nowMilliseconds + 300_000, counter: 1, nodeID: "broken"))
+        #expect(stored == future)
     }
 
     /// X edits offline, then its clock is set back, by ten minutes or a day; Y edits an hour
@@ -115,6 +117,41 @@ struct ClockSkewTests {
         #expect(await x.record("r")?.text == "Y newer edit")
         #expect(await y.record("r")?.text == "Y newer edit")
         #expect(await x.pendingChanges().isEmpty)
+    }
+
+    /// The device clock is ten minutes ahead of the server's. The server applies a push whose
+    /// answer is lost, and the user edits again. The reference server keeps the timestamp as it
+    /// was pushed, so the store recognises its own write in the conflict answer: the newest edit
+    /// goes out on top of it, and server wins does not drop it.
+    @Test func aLostAnswerOnADeviceAheadOfTheServerIsTheDevicesOwnWrite() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let device = TestClock()
+        device.advance(by: 600)
+        let answerLost = OneShot()
+        let losesAnswers = OSAllocatedUnfairLock(initialState: false)
+        let transport = ScriptedTransport()
+        await transport.onPush { changes in
+            let outcomes = try await server.push(changes)
+            if losesAnswers.withLock({ $0 }), await answerLost.fire() { throw URLError(.networkConnectionLost) }
+            return outcomes
+        }
+        await transport.onPull { try await server.pull(since: $0) }
+        let store = try makeStore(transport, clock: device, resolver: .serverWins)
+        try await store.save(Note(id: "a", text: "v0"))
+        try await store.sync()
+        try await store.save(Note(id: "a", text: "v1"))
+        losesAnswers.withLock { $0 = true }
+        await #expect(throws: URLError.self) { try await store.sync() }
+        #expect(await server.record("a")?.text == "v1")
+
+        try await store.save(Note(id: "a", text: "v2 newest"))
+        device.advance(by: 30)
+        clock.advance(by: 30)
+        let report = try await store.sync()
+        #expect(report.conflicts == 0)
+        #expect(await server.record("a")?.text == "v2 newest")
+        #expect(await store.record("a")?.text == "v2 newest")
+        #expect(await store.pendingChanges().isEmpty)
     }
 
     /// A push fails while the device clock is a year ahead (a game's time travel), so its retry

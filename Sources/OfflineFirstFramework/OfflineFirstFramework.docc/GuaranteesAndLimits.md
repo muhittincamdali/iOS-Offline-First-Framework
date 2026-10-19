@@ -44,10 +44,10 @@ device's own write.
   ``OfflineStore/quarantinedChanges()`` and the rest of the page is used.
 - **A wrong clock has a bounded effect.** When last write wins weighs a server version against a
   local write, a timestamp more than ``OfflineStore/Configuration/maximumClockDrift`` ahead of
-  the device clock counts as if it were at that limit, and the reference servers store pushed
-  timestamps the same way. A write from a device whose clock runs ahead therefore beats later
-  edits on other devices for at most that long; on that device itself, its own edits still win
-  the conflicts it resolves. The limit counts from the newest timestamp the store holds when
+  the device clock counts as if it were at that limit; the server keeps the timestamp as it was
+  pushed, so the device that wrote it still recognises it. A write from a device whose clock
+  runs ahead therefore beats later edits on other devices for at most that long; on that device
+  itself, its own edits still win the conflicts it resolves. The limit counts from the newest timestamp the store holds when
   that is later than the device clock, so a device whose clock was set back still takes a newer
   edit from another device as newer than its own older one. Server versions are never ordered
   by a timestamp beyond the limit, so one stamped far ahead does not hide later versions.

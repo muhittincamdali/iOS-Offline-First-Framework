@@ -192,16 +192,9 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
             return .rejected(reason: reason, current: current.map { remote(change.recordID, $0) })
         }
         _ = try? clock.receive(change.timestamp, at: now())
-        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: clamped(change.timestamp)))
-    }
-
-    /// A pushed timestamp more than five minutes ahead of the server's clock is stored at that
-    /// limit, so a device with a wrong clock cannot make its write look newer than every later
-    /// one.
-    private func clamped(_ timestamp: HLCTimestamp) -> HLCTimestamp {
-        let (limit, overflow) = HybridLogicalClock.milliseconds(since1970: now()).addingReportingOverflow(clock.maximumDrift)
-        guard !overflow, timestamp.wallTime > limit else { return timestamp }
-        return HLCTimestamp(wallTime: limit, counter: timestamp.counter, nodeID: timestamp.nodeID)
+        // The timestamp is kept as it was pushed: the device recognises its own write by it
+        // after a lost answer. Devices count one too far ahead as at their drift limit.
+        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: change.timestamp))
     }
 
     private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp) -> String {

@@ -176,9 +176,14 @@ test('reads files written before revisions had an epoch', () => {
   assert.deepEqual(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.3` });
 });
 
-test('stores a timestamp from the future at five minutes ahead of the server clock', () => {
-  const notes = new Collection({ now: () => 1_700_000_000_000 });
-  const broken = { wallTime: 4_000_000_000_000, counter: 3, nodeID: 'broken' };
-  notes.push({ changes: [change({ timestamp: broken })] });
-  assert.deepEqual(notes.changes(null).changes[0].timestamp, { ...broken, wallTime: 1_700_000_000_000 + LIMITS.clockDriftMs });
+test('keeps a timestamp from the future as it was pushed', () => {
+  // The pushing device recognises its own write by the exact timestamp after a lost answer;
+  // devices count a timestamp that is too far ahead as at their drift limit themselves.
+  const notes = new Collection();
+  const ahead = { wallTime: 4_000_000_000_000, counter: 3, nodeID: 'ahead' };
+  const pushed = change({ timestamp: ahead });
+  notes.push({ changes: [pushed] });
+  assert.deepEqual(notes.changes(null).changes[0].timestamp, ahead);
+  const conflict = notes.push({ changes: [change({ record: { id: 'a', text: 'B' } })] }).outcomes;
+  assert.deepEqual(Object.values(conflict)[0].current.timestamp, ahead);
 });
