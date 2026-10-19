@@ -46,10 +46,16 @@ extension OfflineStore {
     // MARK: - Time limits
 
     /// The latest wall time, in milliseconds, a server timestamp may carry:
-    /// ``Configuration/maximumClockDrift`` after the device clock.
+    /// ``Configuration/maximumClockDrift`` after the device clock, or after the newest timestamp
+    /// the store wrote or took in when that is later. Counting from the newest timestamp keeps
+    /// the limit above every local write, so a device whose clock was set back does not move
+    /// other devices' later edits below its own earlier ones. The newest timestamp is itself at
+    /// most the drift ahead of the device clock when it was taken in, so the limit is never more
+    /// than twice the drift ahead of the latest time the device clock showed.
     static func driftLimit(of state: State, configuration: Configuration) -> Int64 {
         let now = HybridLogicalClock.milliseconds(since1970: configuration.now())
-        let (limit, overflow) = now.addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
+        let (limit, overflow) = max(now, state.clock.latest.wallTime)
+            .addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
         return overflow ? .max : limit
     }
 

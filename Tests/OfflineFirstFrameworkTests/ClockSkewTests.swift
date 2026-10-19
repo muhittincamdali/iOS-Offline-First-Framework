@@ -87,4 +87,33 @@ struct ClockSkewTests {
         let stored = try #require(try await server.pull(since: nil).changes.first?.timestamp)
         #expect(stored == HLCTimestamp(wallTime: nowMilliseconds + 300_000, counter: 1, nodeID: "broken"))
     }
+
+    /// X edits offline, then its clock is set back, by ten minutes or a day; Y edits an hour
+    /// later. The drift limit must not push Y's newer edit below X's older one, or last write
+    /// wins would put X's edit back on the server.
+    @Test(arguments: [600.0, 86_400.0])
+    func aDeviceWhoseClockWasSetBackDoesNotOverwriteANewerEdit(setBack: TimeInterval) async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let xClock = TestClock()
+        let x = try makeStore(server, name: "x", clock: xClock)
+        let y = try makeStore(server, name: "y")
+        try await x.save(Note(id: "r", text: "v0"))
+        try await x.sync()
+        try await y.sync()
+
+        clock.advance(by: 10)
+        xClock.advance(by: 10)
+        try await x.save(Note(id: "r", text: "X older edit"))
+        xClock.advance(by: -setBack)
+        clock.advance(by: 3_600)
+        try await y.save(Note(id: "r", text: "Y newer edit"))
+        try await y.sync()
+
+        try await x.sync()
+        try await y.sync()
+        #expect(await server.record("r")?.text == "Y newer edit")
+        #expect(await x.record("r")?.text == "Y newer edit")
+        #expect(await y.record("r")?.text == "Y newer edit")
+        #expect(await x.pendingChanges().isEmpty)
+    }
 }
