@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A sync server that lives in memory, for tests, SwiftUI previews and demos.
 ///
@@ -6,9 +7,9 @@ import Foundation
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
 /// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
 /// connection. Revisions and change tokens start with an epoch that is new for every instance
-/// and every ``restart()``, so a revision is never handed out twice, and a store that kept a
-/// token from an earlier instance (an app relaunched with a fresh demo server) pulls everything
-/// again.
+/// and every ``restart()``, and later than every earlier one, so a revision is never handed out
+/// twice, a store that kept a token from an earlier instance (an app relaunched with a fresh demo
+/// server) pulls everything again, and a page answered from before a restart is recognised.
 ///
 /// ```swift
 /// let server = InMemorySyncServer<Note>()
@@ -111,8 +112,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
 
     /// Simulates a restart of a server that keeps its records and the change IDs it answered.
     ///
-    /// The server starts a new epoch: change tokens handed out before make the next pull start
-    /// from the beginning, and writes from now on get revisions that the earlier run never
+    /// The server starts a new, later epoch: change tokens handed out before make the next pull
+    /// start from the beginning, and writes from now on get revisions that the earlier run never
     /// handed out, so a push based on a revision from before the restart is still checked
     /// against the record's current revision.
     public func restart() {
@@ -209,9 +210,16 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
                      sequence: UInt64(stored.sequence))
     }
 
-    /// 64 random bits as 16 hexadecimal digits.
+    /// A new epoch, later than every earlier one of this process: the time in microseconds
+    /// since 1970, or one more than the last epoch when that is later, as 16 hexadecimal
+    /// digits, so the order of the texts is the order of the numbers.
     private static func makeEpoch() -> String {
-        String(format: "%016llx", UInt64.random(in: .min ... .max))
+        let microseconds = UInt64(max(0, Date().timeIntervalSince1970 * 1_000_000))
+        let epoch = lastEpoch.withLock { last in
+            last = max(last &+ 1, microseconds)
+            return last
+        }
+        return String(format: "%016llx", epoch)
     }
 
     private func remember(_ answer: PushOutcome<Record>, for changeID: UUID) {
@@ -229,3 +237,6 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         guard isOnline else { throw URLError(.notConnectedToInternet) }
     }
 }
+
+/// The last epoch an ``InMemorySyncServer`` of this process handed out.
+private let lastEpoch = OSAllocatedUnfairLock(initialState: UInt64(0))

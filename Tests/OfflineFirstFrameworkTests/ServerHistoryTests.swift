@@ -25,6 +25,20 @@ struct ServerHistoryTests {
         #expect(Set([first, afterRestart, otherInstance]).count == 3)
     }
 
+    /// Every restart and every new instance reports a later epoch of the same length, so its
+    /// text order is the order of the restarts.
+    @Test func everyRestartOfTheInMemoryServerReportsALaterEpoch() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        var epochs: [String] = []
+        for _ in 0..<20 {
+            epochs.append(try #require(try await server.pull(since: nil).epoch))
+            await server.restart()
+        }
+        epochs.append(try #require(try await InMemorySyncServer<Note>().pull(since: nil).epoch))
+        #expect(epochs.allSatisfy { $0.utf8.count == 16 })
+        #expect(zip(epochs, epochs.dropFirst()).allSatisfy { $0 < $1 })
+    }
+
     /// A restarted server (new instance, data lost) counts from one again. Device A still holds
     /// the record's revision from before; its older offline edit must not replace B's newer
     /// write, which the new server accepted.

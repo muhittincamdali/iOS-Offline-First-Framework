@@ -132,12 +132,12 @@ test('remembers a bounded number of change IDs', () => {
   assert.equal(notes.push({ changes: [first] }).outcomes[first.id.toUpperCase()].status, 'conflict');
 });
 
-test('round-trips through a snapshot with a new epoch', () => {
+test('round-trips through a snapshot with a later epoch', () => {
   const notes = new Collection();
   const first = change();
   notes.push({ changes: [first] });
   const restored = new Collection({ state: JSON.parse(JSON.stringify(notes.snapshot())) });
-  assert.notEqual(restored.epoch, notes.epoch);
+  assert.ok(restored.epoch > notes.epoch);
   assert.deepEqual(restored.changes(null).changes, notes.changes(null).changes);
   // A token from before the restart starts the pull from the beginning.
   assert.deepEqual(restored.changes(notes.changes(null).token).changes.map((c) => c.recordID), ['a']);
@@ -186,4 +186,13 @@ test('keeps a timestamp from the future as it was pushed', () => {
   assert.deepEqual(notes.changes(null).changes[0].timestamp, ahead);
   const conflict = notes.push({ changes: [change({ record: { id: 'a', text: 'B' } })] }).outcomes;
   assert.deepEqual(Object.values(conflict)[0].current.timestamp, ahead);
+});
+
+test('gives every start a later epoch of 16 hexadecimal digits', () => {
+  const epochs = Array.from({ length: 50 }, () => new Collection().epoch);
+  for (const epoch of epochs) assert.match(epoch, /^[0-9a-f]{16}$/);
+  for (let index = 1; index < epochs.length; index += 1) assert.ok(epochs[index] > epochs[index - 1]);
+  // A saved file from a clock that was ahead: the new epoch is later than the saved one too.
+  const ahead = new Collection({ state: { epoch: '7000000000000000', sequence: 0, records: [] } });
+  assert.equal(ahead.epoch, '7000000000000001');
 });

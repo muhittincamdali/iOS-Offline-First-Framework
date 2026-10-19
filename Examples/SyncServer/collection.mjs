@@ -1,6 +1,5 @@
 // The sync logic of one collection: revisions, conflict checks, idempotent pushes and paged
 // pulls. It has no I/O, so the tests drive it directly.
-import { randomBytes } from 'node:crypto';
 
 export const LIMITS = Object.freeze({
   changesPerPush: 500,
@@ -17,6 +16,21 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOKEN = /^([0-9a-f]{16})\.(\d{1,15})$/;
 
 export class ValidationError extends Error {}
+
+/** The last epoch handed out in this process, as a number. */
+let lastEpoch = 0n;
+
+/**
+ * A new epoch, later than every earlier one: the time in microseconds since 1970, or one more
+ * than the last epoch of this process or `after` (the epoch of a saved file) when that is
+ * later, as 16 hexadecimal digits. Devices compare epochs, so a page from a stale replica of an
+ * earlier run can be told from a new history.
+ */
+function nextEpoch(after = 0n) {
+  const candidates = [BigInt(Date.now()) * 1000n, lastEpoch + 1n, after + 1n];
+  lastEpoch = candidates.reduce((a, b) => (a > b ? a : b));
+  return lastEpoch.toString(16).padStart(16, '0');
+}
 
 /** Map key for a record ID (a JSON string or number). */
 function keyOf(recordID) {
@@ -72,8 +86,9 @@ export class Collection {
   // Names this run of the collection in revisions and change tokens. Every start gets a new one,
   // also a start from saved data: the file may be an older backup, so the writes after it were
   // lost and their revisions and token positions would be handed out again. With a new epoch a
-  // revision is never reused, and a token from before starts the pull from the beginning.
-  #epoch = randomBytes(8).toString('hex');
+  // revision is never reused, and a token from before starts the pull from the beginning. Each
+  // epoch is later than the ones before it (see nextEpoch).
+  #epoch = nextEpoch();
 
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
@@ -129,7 +144,7 @@ export class Collection {
 
   /** A plain object for saving to disk: the records and the remembered answers. */
   snapshot() {
-    return { sequence: this.#sequence, records: [...this.#records.values()], answers: [...this.#answers] };
+    return { epoch: this.#epoch, sequence: this.#sequence, records: [...this.#records.values()], answers: [...this.#answers] };
   }
 
   #apply(change) {
@@ -178,6 +193,10 @@ export class Collection {
     const sequence = state.sequence ?? state.revision;
     check(Number.isSafeInteger(sequence) && sequence >= 0 && Array.isArray(state.records), 'invalid saved state');
     this.#sequence = sequence;
+    // The new epoch is also later than the saved one, should the clock have gone back since.
+    if (typeof state.epoch === 'string' && /^[0-9a-f]{16}$/.test(state.epoch)) {
+      this.#epoch = nextEpoch(BigInt(`0x${state.epoch}`));
+    }
     for (const saved of state.records) {
       check(isPlainObject(saved), 'invalid saved record');
       validateRecordID(saved.recordID);

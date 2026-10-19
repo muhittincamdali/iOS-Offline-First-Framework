@@ -45,6 +45,9 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
   backup, and the writes after it would otherwise get revisions that devices already hold for
   other versions. So a revision is never handed out twice, and a push based on a revision from
   before the restart is checked against the record's current revision.
+- Each epoch is later than the ones before: 16 hexadecimal digits of the start time in
+  microseconds, or one more than the last epoch (also the one saved with `--data`) when that is
+  later.
 - A change whose `baseRevision` is not the record's current revision gets a conflict with the
   current record.
 - The answers to the last 10,000 change IDs are remembered, and saved with `--data`, so a push
