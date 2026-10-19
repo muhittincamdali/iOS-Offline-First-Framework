@@ -30,6 +30,9 @@ struct InterleavingTests {
 
         storage.setFailing(false)
         await transport.onPull { try await server.pull(since: $0) }
+        // After a failed write the store waits for the retry delay before it syncs again.
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        clock.advance(by: 10)
         #expect(try await store.sync().pulled == 1)
         #expect(await store.records() == [Note(id: "a", text: "A")])
         #expect(await store.state.token != nil)

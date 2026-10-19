@@ -23,7 +23,9 @@ extension OfflineStore {
     ///   ``SyncReport/skipped`` is `true`; while the ``CircuitBreaker`` is open, only changes
     ///   that are due are pushed, and ``SyncReport/skipped`` is `true` too.
     /// - Throws: The transport's error, or an ``OfflineFirstError``. Changes that failed are
-    ///   retried by a later sync, following the ``RetryPolicy``.
+    ///   retried by a later sync, following the ``RetryPolicy``. After the store file could not
+    ///   be written, syncs throw that error without a request until the ``RetryPolicy`` delay
+    ///   for the failed writes in a row has passed; a write that succeeds ends the wait.
     @discardableResult
     public func sync() async throws -> SyncReport {
         while let running = activeSync {
@@ -48,6 +50,9 @@ extension OfflineStore {
         guard let transport else {
             report.skipped = true
             return report
+        }
+        if let wait = storageWait, wait.until > configuration.now() {
+            throw failed(with: wait.error)
         }
         try bind(to: transport)
         // The circuit breaker pauses pulls only. Due changes are pushed anyway: each waits for

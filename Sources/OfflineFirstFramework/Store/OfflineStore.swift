@@ -61,6 +61,8 @@ public actor OfflineStore<Record: SyncableRecord> {
     let fileKey: String?
     /// The file's generation when this store last read or wrote it.
     var fileGeneration: UInt64
+    /// Set while the file cannot be written; see ``StorageWait``.
+    var storageWait: StorageWait?
 
     /// What the store is doing about sync.
     public internal(set) var status: SyncStatus = .idle
@@ -271,7 +273,14 @@ public actor OfflineStore<Record: SyncableRecord> {
     func update<T>(_ body: (inout State) throws -> T) throws -> T {
         var copy = state
         let result = try body(&copy)
-        try persist(copy)
+        do {
+            try persist(copy)
+        } catch {
+            storageWait = StorageWait(after: storageWait, error: error, retryPolicy: configuration.retryPolicy,
+                                      now: configuration.now(), random: configuration.random())
+            throw error
+        }
+        storageWait = nil
         state = copy
         notifyObservers()
         return result

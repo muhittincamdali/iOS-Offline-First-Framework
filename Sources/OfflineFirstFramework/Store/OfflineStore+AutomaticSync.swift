@@ -9,6 +9,8 @@ struct AutomaticSync {
     var isOnline = false
     var isRunning = false
     var needsAnotherRun = false
+    /// Automatic syncs in a row that threw; the next one waits as the ``RetryPolicy`` says.
+    var failures = 0
 }
 
 extension OfflineStore {
@@ -19,7 +21,9 @@ extension OfflineStore {
     /// await store.startAutomaticSync()
     /// ```
     ///
-    /// Errors are not thrown here; they show up in ``status`` and ``StoreState/status``. Calling
+    /// Errors are not thrown here; they show up in ``status`` and ``StoreState/status``. After
+    /// failed syncs the next one waits at least the ``RetryPolicy`` delay for the failures in a
+    /// row, unless the device comes online again or a local change happens. Calling
     /// it again replaces the previous settings. Automatic sync runs while the app runs; for
     /// sync in the background, call ``sync()`` from a background task (see the documentation
     /// article "Syncing in the background").
@@ -96,9 +100,20 @@ extension OfflineStore {
         guard let settings = automaticSync, settings.isOnline, !settings.isRunning else { return }
         automaticSync?.isRunning = true
         automaticSync?.needsAnotherRun = false
-        _ = try? await sync()
+        let succeeded: Bool
+        do {
+            try await sync()
+            succeeded = true
+        } catch {
+            succeeded = error is CancellationError
+        }
         guard automaticSync != nil else { return }
         automaticSync?.isRunning = false
+        if succeeded {
+            automaticSync?.failures = 0
+        } else if let failures = automaticSync?.failures, failures < .max {
+            automaticSync?.failures = failures + 1
+        }
         if automaticSync?.needsAnotherRun == true {
             scheduleAutomaticSync(after: settings.debounce)
         } else if let next = nextAutomaticSyncDelay(interval: settings.interval) {
@@ -107,7 +122,10 @@ extension OfflineStore {
     }
 
     /// The wait until the earliest of: the next interval, the next due retry, the end of a
-    /// circuit breaker pause.
+    /// circuit breaker pause. After a failed sync it is at least the ``RetryPolicy`` delay for
+    /// the failures in a row, and while the file cannot be written it lasts until the
+    /// ``StorageWait`` ends: a failure that no attempt count records (an answer the store could
+    /// not write, say) must not turn into a sync every second.
     private func nextAutomaticSyncDelay(interval: Duration?) -> Duration? {
         let now = configuration.now()
         // A change still waiting without a retry date was pushed the maximum number of times in
@@ -120,11 +138,18 @@ extension OfflineStore {
         if case .open(let until) = breaker.state {
             dates = dates.map { max($0, until) }
         }
+        if let wait = storageWait {
+            dates = dates.map { max($0, wait.until) }
+        }
         var delays = dates.map { Self.clampedDelay(seconds: $0.timeIntervalSince(now)) }
         if let interval {
             delays.append(Self.clampedDelay(interval))
         }
-        return delays.min()
+        guard let earliest = delays.min() else { return nil }
+        let failures = automaticSync?.failures ?? 0
+        guard failures > 0 else { return earliest }
+        let backoff = configuration.retryPolicy.delay(afterAttempt: failures, random: configuration.random())
+        return max(earliest, Self.clampedDelay(backoff))
     }
 
     /// Keeps a wait between one second and one day, so a retry date far in the future (from a

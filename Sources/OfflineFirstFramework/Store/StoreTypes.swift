@@ -89,3 +89,24 @@ public enum CorruptionPolicy: Sendable {
     /// file. A store written by a newer schema version is never reset.
     case moveAsideAndStartEmpty
 }
+
+/// Failed writes of the store file in a row, and when a sync may run again.
+///
+/// A sync that cannot store what the server answered would only repeat its requests: a change
+/// whose answer was lost is in doubt, so it goes out again without a write of its own, and the
+/// attempt the failed write should have counted never reaches the file. While the wait lasts,
+/// ``OfflineStore/sync()`` throws the write error without a request; the wait grows with the
+/// ``RetryPolicy``, and the next write that succeeds ends it. It lives in memory only, since
+/// it is about the file.
+struct StorageWait {
+    var failures: Int
+    var until: Date
+    var error: any Error
+
+    init(after previous: StorageWait?, error: any Error, retryPolicy: RetryPolicy, now: Date, random: Double) {
+        let previousFailures = previous?.failures ?? 0
+        failures = previousFailures == .max ? .max : previousFailures + 1
+        until = now.addingTimeInterval(retryPolicy.delay(afterAttempt: failures, random: random).seconds)
+        self.error = error
+    }
+}
