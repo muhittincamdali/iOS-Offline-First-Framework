@@ -218,21 +218,7 @@ extension OfflineStore {
                     }
                 case .accepted(let revision):
                     report.pushed += 1
-                    entry.revision = revision
-                    entry.history = state.history
-                    // The answer does not say where the write stands; its echo in a pull will.
-                    entry.sequence = nil
-                    entry.serverTimestamp = change.timestamp
-                    let deferred = entry.deferredRemote
-                    entry.deferredRemote = nil
-                    guard isCurrent else { break }
-                    entry.pending = nil
-                    // A pull brought a newer version while this change was in doubt; the change was
-                    // applied before it, so that version is the server's current one.
-                    if let deferred, deferred.revision != revision {
-                        report.pulled += 1
-                        entry = Self.entry(from: deferred, replacing: entry, in: &state, configuration: configuration)
-                    }
+                    accept(change, as: revision, into: &entry, isCurrent: isCurrent, in: &state, report: &report)
                 case .conflict(let current):
                     report.conflicts += 1
                     guard isCurrent else { break }
@@ -277,6 +263,29 @@ extension OfflineStore {
                 Self.store(entry, in: &state)
             }
             Self.pruneTombstones(in: &state, limit: configuration.maximumTombstones)
+        }
+    }
+
+    /// The server stored `change` as `revision`.
+    private func accept(_ change: OutgoingChange<Record>, as revision: String, into entry: inout StoredEntry<Record>, isCurrent: Bool,
+                        in state: inout State, report: inout SyncReport) {
+        // The answer does not say where the write stands; its echo in a pull will. Until then
+        // every version up to the one it replaced is known to be older.
+        let replaced = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
+        entry.revision = revision
+        entry.history = state.history
+        entry.sequence = nil
+        entry.minimumSequence = replaced
+        entry.serverTimestamp = change.timestamp
+        let deferred = entry.deferredRemote
+        entry.deferredRemote = nil
+        guard isCurrent else { return }
+        entry.pending = nil
+        // A pull brought a newer version while this change was in doubt; the change was
+        // applied before it, so that version is the server's current one.
+        if let deferred, deferred.revision != revision {
+            report.pulled += 1
+            entry = Self.entry(from: deferred, replacing: entry, in: &state, configuration: configuration)
         }
     }
 
@@ -420,7 +429,10 @@ extension OfflineStore {
         // version stands.
         guard entry.revision != change.revision else {
             entry.history = state.history
-            entry.sequence = change.sequence ?? entry.sequence
+            if let sequence = change.sequence {
+                entry.sequence = sequence
+                entry.minimumSequence = nil
+            }
             entry.serverTimestamp = Self.orderable(change.timestamp, below: Self.driftLimit(of: state, configuration: configuration))
             state.entries[change.recordID] = entry
             return

@@ -72,7 +72,8 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     public let revision: String
 
     /// When the record was last changed, if the server keeps the timestamps it receives.
-    /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing. A
+    /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing. Keep it
+    /// as it was pushed: the store recognises a version it wrote itself by the node ID in it. A
     /// timestamp further ahead than ``OfflineStore/Configuration/maximumClockDrift`` counts as at
     /// that limit when last write wins weighs it against a local write, and does not order the
     /// server's versions.

@@ -26,6 +26,7 @@ extension OfflineStore {
         entry.revision = remote.revision
         entry.history = state.history
         entry.sequence = remote.sequence
+        entry.minimumSequence = nil
         entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
@@ -80,40 +81,45 @@ extension OfflineStore {
     /// Whether `change` is an older server version than `other`, both of the current history.
     func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>, in state: State) -> Bool {
         let limit = Self.driftLimit(of: state, configuration: configuration)
-        return Self.isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
-                            than: other.sequence, Self.orderable(other.timestamp, below: limit))
+        return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
+                       than: other.sequence, nil, Self.orderable(other.timestamp, below: limit))
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out
     /// of order, a lagging replica, the earlier version of a record whose deletion the store saw.
     ///
-    /// The server's ``RemoteChange/sequence`` decides when both versions have one. When only one
-    /// has it (the store holds its own accepted write, whose echo has not come), the order is
-    /// unknown. Only a server that sends no sequences is ordered by the timestamps, which
-    /// matches the server's order as long as the devices resolve conflicts by
-    /// ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier server history
-    /// is never newer than the server's current one. When the order is unknown, the version
-    /// counts as newer: the server sends its versions in order, so a newer one follows anyway.
+    /// The server's ``RemoteChange/sequence`` decides when both versions have one. Until the echo
+    /// of the store's own accepted write arrives, the store knows only that the write is newer
+    /// than every version up to the one it replaced (``StoredEntry/minimumSequence``), and newer
+    /// than every earlier write of this store. Only a server that sends no sequences is ordered
+    /// by the timestamps, which matches the server's order as long as the devices resolve
+    /// conflicts by ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier
+    /// server history is never newer than the server's current one. When the order is unknown,
+    /// the version counts as newer: the server sends its versions in order, so a newer one
+    /// follows anyway.
     func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, in state: State) -> Bool {
         guard entry.revision != nil, entry.history == state.history else { return false }
         let limit = Self.driftLimit(of: state, configuration: configuration)
-        return Self.isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
-                            than: entry.sequence, entry.serverTimestamp)
+        return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
+                       than: entry.sequence, entry.minimumSequence, entry.serverTimestamp)
     }
 
-    /// Orders two server versions by sequence, or by timestamp when neither has a sequence. The
-    /// timestamps are ``orderable(_:below:)`` ones.
-    private static func isOlder(_ sequence: UInt64?, _ timestamp: HLCTimestamp?, than heldSequence: UInt64?,
-                                _ heldTimestamp: HLCTimestamp?) -> Bool {
-        switch (sequence, heldSequence) {
-        case let (incoming?, held?):
-            return incoming < held
-        case (nil, nil):
-            guard let timestamp, let heldTimestamp else { return false }
-            return timestamp < heldTimestamp
-        default:
-            return false
+    /// Orders two server versions. `heldMinimum` is a sequence the second version is known to
+    /// follow; the timestamps are ``orderable(_:below:)`` ones.
+    private func isOlder(_ sequence: UInt64?, _ timestamp: HLCTimestamp?, than heldSequence: UInt64?, _ heldMinimum: UInt64?,
+                         _ heldTimestamp: HLCTimestamp?) -> Bool {
+        if let sequence {
+            if let heldSequence { return sequence < heldSequence }
+            if let heldMinimum, sequence <= heldMinimum { return true }
         }
+        guard let timestamp, let heldTimestamp else { return false }
+        // This store's clock never goes back and it pushes one change of a record after the
+        // other, so its earlier write is older on any server.
+        if timestamp.nodeID == nodeID, heldTimestamp.nodeID == nodeID {
+            return timestamp < heldTimestamp
+        }
+        guard sequence == nil, heldSequence == nil else { return false }
+        return timestamp < heldTimestamp
     }
 
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
@@ -129,7 +135,10 @@ extension OfflineStore {
     static func pruneTombstones(in state: inout State, limit: Int) {
         let tombstones = state.entries.values.filter { $0.record == nil && $0.pending == nil }
         guard tombstones.count > limit else { return }
-        let oldestFirst = tombstones.sorted { ($0.history, $0.sequence ?? 0, $0.timestamp) < ($1.history, $1.sequence ?? 0, $1.timestamp) }
+        let oldestFirst = tombstones.sorted {
+            ($0.history, $0.sequence ?? $0.minimumSequence ?? 0, $0.timestamp)
+                < ($1.history, $1.sequence ?? $1.minimumSequence ?? 0, $1.timestamp)
+        }
         for entry in oldestFirst.prefix(tombstones.count - limit) {
             state.entries[entry.id] = nil
         }

@@ -56,6 +56,11 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     var history: UInt64 = 0
     /// The ``RemoteChange/sequence`` of the server version ``revision`` names, if known.
     var sequence: UInt64? = nil
+    /// Every server version of the record whose sequence is at most this one is older than
+    /// the version ``revision`` names. Set when the server accepted the store's own write on top
+    /// of a version whose sequence the store knew; the write's echo in a pull tells its own
+    /// ``sequence``.
+    var minimumSequence: UInt64? = nil
     /// The timestamp of the server version ``revision`` names, if the server sent one the store
     /// can order versions by: not further ahead than the drift limit when it arrived (see
     /// ``OfflineStore/Configuration/maximumClockDrift``). `nil` says nothing about the order.
@@ -69,7 +74,8 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
-        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, serverTimestamp, deferredRemote
+        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, serverTimestamp,
+             deferredRemote
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
@@ -87,6 +93,7 @@ extension StoredEntry {
         wasSent = try container.decodeIfPresent(Bool.self, forKey: .wasSent) ?? false
         history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
         sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
+        minimumSequence = try container.decodeIfPresent(UInt64.self, forKey: .minimumSequence)
         if container.contains(.serverTimestamp) {
             serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
         } else {
@@ -106,6 +113,7 @@ extension StoredEntry {
         try container.encode(wasSent, forKey: .wasSent)
         try container.encode(history, forKey: .history)
         try container.encodeIfPresent(sequence, forKey: .sequence)
+        try container.encodeIfPresent(minimumSequence, forKey: .minimumSequence)
         // Written also when it is nil, so a file tells a server version without a timestamp
         // from a file of a version before the key existed.
         if let serverTimestamp {
