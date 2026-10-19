@@ -56,8 +56,10 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     var history: UInt64 = 0
     /// The ``RemoteChange/sequence`` of the server version ``revision`` names, if known.
     var sequence: UInt64? = nil
-    /// The timestamp of the server version ``revision`` names, if known. ``timestamp`` is the
-    /// local write's while a change is pending.
+    /// The timestamp of the server version ``revision`` names, if the server sent one the store
+    /// can order versions by: not further ahead than the drift limit when it arrived (see
+    /// ``OfflineStore/Configuration/maximumClockDrift``). `nil` says nothing about the order.
+    /// ``timestamp`` is the local write's while a change is pending.
     var serverTimestamp: HLCTimestamp? = nil
     /// The newest server version a pull brought while the pending change was in doubt
     /// (``PendingWrite/isInDoubt``). It is newer than that change, so it replaces the record
@@ -71,7 +73,9 @@ extension StoredEntry {
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
-    /// Files written before `history` existed belong to the first history.
+    /// Files written before `history` existed belong to the first history. Files written before
+    /// `serverTimestamp` existed kept the server's timestamp as ``timestamp`` while no change
+    /// was pending; newer files always write the key, `null` when the server sent none.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Record.ID.self, forKey: .id)
@@ -83,14 +87,33 @@ extension StoredEntry {
         wasSent = try container.decodeIfPresent(Bool.self, forKey: .wasSent) ?? false
         history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
         sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
-        serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
+        if container.contains(.serverTimestamp) {
+            serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
+        } else {
+            serverTimestamp = pending == nil ? timestamp : nil
+        }
         deferredRemote = try container.decodeIfPresent(RemoteChange<Record>.self, forKey: .deferredRemote)
     }
 
-    /// The server version's timestamp. Files from before ``serverTimestamp`` know it only while
-    /// no local change is pending.
-    var heldServerTimestamp: HLCTimestamp? {
-        serverTimestamp ?? (pending == nil ? timestamp : nil)
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(record, forKey: .record)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encodeIfPresent(revision, forKey: .revision)
+        try container.encode(position, forKey: .position)
+        try container.encodeIfPresent(pending, forKey: .pending)
+        try container.encode(wasSent, forKey: .wasSent)
+        try container.encode(history, forKey: .history)
+        try container.encodeIfPresent(sequence, forKey: .sequence)
+        // Written also when it is nil, so a file tells a server version without a timestamp
+        // from a file of a version before the key existed.
+        if let serverTimestamp {
+            try container.encode(serverTimestamp, forKey: .serverTimestamp)
+        } else {
+            try container.encodeNil(forKey: .serverTimestamp)
+        }
+        try container.encodeIfPresent(deferredRemote, forKey: .deferredRemote)
     }
 }
 

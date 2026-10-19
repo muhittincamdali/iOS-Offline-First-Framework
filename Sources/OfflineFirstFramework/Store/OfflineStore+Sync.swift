@@ -245,13 +245,11 @@ extension OfflineStore {
                              report: &report)
                         break
                     }
-                    var current = receive(current, in: &state)
+                    receive(current, in: &state)
                     // A repeated push is answered from the server's memory of change IDs, with the
                     // version that was current then; a version pulled since is newer.
-                    if let deferred, deferred.revision != current.revision, !Self.isOlder(deferred, than: current) {
-                        current = deferred
-                    }
-                    guard current.revision != entry.revision, !Self.isStale(current, comparedWith: entry, history: state.history) else {
+                    let current = newer(deferred, than: current, in: state)
+                    guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state) else {
                         // The version the change is based on, or an older one (a lagging replica
                         // answered): nothing to resolve; the change is pushed again later.
                         fail(&entry, message: "The server answered with a conflict that names the same or an older version of the record.",
@@ -267,11 +265,9 @@ extension OfflineStore {
                     let deferred = entry.deferredRemote
                     entry.deferredRemote = nil
                     if let current, Self.isConsistent(current, for: entry.id) {
-                        var current = receive(current, in: &state)
-                        if let deferred, deferred.revision != current.revision, !Self.isOlder(deferred, than: current) {
-                            current = deferred
-                        }
-                        entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
+                        receive(current, in: &state)
+                        entry = Self.entry(from: newer(deferred, than: current, in: state), replacing: entry, in: &state,
+                                           configuration: configuration)
                     } else {
                         entry.pending?.isParked = true
                         entry.pending?.nextAttemptAt = nil
@@ -282,6 +278,13 @@ extension OfflineStore {
             }
             Self.pruneTombstones(in: &state, limit: configuration.maximumTombstones)
         }
+    }
+
+    /// `deferred`, the version a pull brought while the change was in doubt, when it is not
+    /// older than `current`; otherwise `current`.
+    private func newer(_ deferred: RemoteChange<Record>?, than current: RemoteChange<Record>, in state: State) -> RemoteChange<Record> {
+        guard let deferred, deferred.revision != current.revision, !isOlder(deferred, than: current, in: state) else { return current }
+        return deferred
     }
 
     private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, notInDoubt: Set<UUID>,
@@ -404,7 +407,7 @@ extension OfflineStore {
             let recordID = Self.describe(change.recordID)
             state.quarantine.removeAll { $0.recordID == recordID }
         }
-        let change = receive(change, in: &state)
+        receive(change, in: &state)
         guard var entry = state.entries[change.recordID] else {
             // A deletion is kept as a tombstone too, so an older version of the record that
             // arrives later (a page out of order) does not bring it back.
@@ -418,20 +421,20 @@ extension OfflineStore {
         guard entry.revision != change.revision else {
             entry.history = state.history
             entry.sequence = change.sequence ?? entry.sequence
-            entry.serverTimestamp = change.timestamp ?? entry.serverTimestamp
+            entry.serverTimestamp = Self.orderable(change.timestamp, below: Self.driftLimit(of: state, configuration: configuration))
             state.entries[change.recordID] = entry
             return
         }
         // A server version older than the one the store holds (a page out of order, a lagging
         // replica, the earlier version of a deleted record) is skipped: the server already has
         // something newer, and it comes in its turn.
-        guard !Self.isStale(change, comparedWith: entry, history: state.history) else { return }
+        guard !isStale(change, comparedWith: entry, in: state) else { return }
         // A change whose push may have been applied waits for its next push, which learns its
         // fate under the same change ID; resolving it here could put it back over this version.
         // The version is kept, since the token moves past it: if the push shows the change was
         // applied, this newer version replaces it.
         if entry.pending?.isInDoubt == true {
-            if let deferred = entry.deferredRemote, deferred.revision == change.revision || Self.isOlder(change, than: deferred) {
+            if let deferred = entry.deferredRemote, deferred.revision == change.revision || isOlder(change, than: deferred, in: state) {
                 return
             }
             entry.deferredRemote = change
@@ -459,8 +462,9 @@ extension OfflineStore {
                          pushesInThisSync: Int?, report: inout SyncReport) throws -> StoredEntry<Record> {
         // Two deletions are a conflict too: with last write wins the newer one has to stay on the
         // server, or an older edit based on the older deletion would bring the record back.
+        let limit = Self.driftLimit(of: state, configuration: configuration)
         let conflict = Conflict(recordID: entry.id, local: entry.record, localTimestamp: entry.timestamp,
-                                remote: remote.record, remoteTimestamp: remote.timestamp)
+                                remote: remote.record, remoteTimestamp: Self.clamped(remote.timestamp, to: limit))
         var result = entry
         switch configuration.conflictResolver.resolve(conflict) {
         case .keepRemote:
@@ -479,7 +483,7 @@ extension OfflineStore {
         }
         // The local or merged version goes out again on top of the server's revision, under a
         // new change ID so the server does not answer it from an idempotency cache.
-        Self.base(&result, on: remote, history: state.history)
+        Self.base(&result, on: remote, in: state, configuration: configuration)
         var pending = entry.pending
             ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
         pending.changeID = UUID()
@@ -520,24 +524,13 @@ extension OfflineStore {
 
     // MARK: - Helpers
 
-    /// Moves the clock past a server version's timestamp (one too far in the future is ignored)
-    /// and returns the version with its timestamp no further ahead of the device clock than
-    /// ``Configuration/maximumClockDrift``.
-    ///
-    /// A device with a wrong clock, or a hostile one, could otherwise stamp a write years ahead:
-    /// it would win every last-write-wins comparison and look newer than every later edit, on
-    /// every device that stores it. Moved back to the limit, it counts as a write from a device
-    /// that is at most that far ahead.
-    private func receive(_ change: RemoteChange<Record>, in state: inout State) -> RemoteChange<Record> {
-        guard let timestamp = change.timestamp else { return change }
-        let now = configuration.now()
-        _ = try? state.clock.receive(timestamp, at: now)
-        let (limit, overflow) = HybridLogicalClock.milliseconds(since1970: now)
-            .addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
-        guard !overflow, timestamp.wallTime > limit else { return change }
-        return RemoteChange(recordID: change.recordID, record: change.record, revision: change.revision,
-                            timestamp: HLCTimestamp(wallTime: limit, counter: timestamp.counter, nodeID: timestamp.nodeID),
-                            sequence: change.sequence)
+    /// Moves the clock past a server version's timestamp; one further ahead of the device clock
+    /// than ``Configuration/maximumClockDrift`` is ignored. The version keeps its timestamp: the
+    /// store weighs it against local writes no further ahead than ``driftLimit(of:configuration:)``
+    /// and orders server versions by it only within that limit.
+    private func receive(_ change: RemoteChange<Record>, in state: inout State) {
+        guard let timestamp = change.timestamp else { return }
+        _ = try? state.clock.receive(timestamp, at: configuration.now())
     }
 
     /// Runs a transport call, or cancels it and throws `URLError(.timedOut)` once `deadline`

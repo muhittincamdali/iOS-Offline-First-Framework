@@ -12,19 +12,21 @@ extension OfflineStore {
     /// The server's version as a stored entry without a pending change.
     static func entry(from remote: RemoteChange<Record>, replacing existing: StoredEntry<Record>?, in state: inout State,
                       configuration: Configuration) -> StoredEntry<Record> {
-        let timestamp = remote.timestamp ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
+        let limit = driftLimit(of: state, configuration: configuration)
+        let timestamp = clamped(remote.timestamp, to: limit) ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
         return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
                            position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
-                           sequence: remote.sequence, serverTimestamp: remote.timestamp)
+                           sequence: remote.sequence, serverTimestamp: orderable(remote.timestamp, below: limit))
     }
 
     /// Makes `remote` the server version `entry` is based on, without touching the record or
     /// its pending change.
-    static func base(_ entry: inout StoredEntry<Record>, on remote: RemoteChange<Record>, history: UInt64) {
+    static func base(_ entry: inout StoredEntry<Record>, on remote: RemoteChange<Record>, in state: State,
+                     configuration: Configuration) {
         entry.revision = remote.revision
-        entry.history = history
+        entry.history = state.history
         entry.sequence = remote.sequence
-        entry.serverTimestamp = remote.timestamp
+        entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
@@ -41,9 +43,39 @@ extension OfflineStore {
         }
     }
 
+    // MARK: - Time limits
+
+    /// The latest wall time, in milliseconds, a server timestamp may carry:
+    /// ``Configuration/maximumClockDrift`` after the device clock.
+    static func driftLimit(of state: State, configuration: Configuration) -> Int64 {
+        let now = HybridLogicalClock.milliseconds(since1970: configuration.now())
+        let (limit, overflow) = now.addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
+        return overflow ? .max : limit
+    }
+
+    /// `timestamp` moved back to `limit` when it is further ahead: how last write wins weighs a
+    /// version against a local write. A device with a wrong clock, or a hostile one, could
+    /// otherwise stamp a write years ahead, and it would win every later conflict.
+    static func clamped(_ timestamp: HLCTimestamp?, to limit: Int64) -> HLCTimestamp? {
+        guard let timestamp, timestamp.wallTime > limit else { return timestamp }
+        return HLCTimestamp(wallTime: limit, counter: timestamp.counter, nodeID: timestamp.nodeID)
+    }
+
+    /// `timestamp` when two server versions may be ordered by it; `nil` beyond `limit`. Moved
+    /// back to the limit, every such timestamp would end at the same time and their order
+    /// would be lost; kept as it is, one stamped far ahead would hide every later version.
+    static func orderable(_ timestamp: HLCTimestamp?, below limit: Int64) -> HLCTimestamp? {
+        guard let timestamp, timestamp.wallTime <= limit else { return nil }
+        return timestamp
+    }
+
+    // MARK: - Order of server versions
+
     /// Whether `change` is an older server version than `other`, both of the current history.
-    static func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>) -> Bool {
-        isOlder(change.sequence, change.timestamp, than: other.sequence, other.timestamp)
+    func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>, in state: State) -> Bool {
+        let limit = Self.driftLimit(of: state, configuration: configuration)
+        return Self.isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
+                            than: other.sequence, Self.orderable(other.timestamp, below: limit))
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out
@@ -56,12 +88,15 @@ extension OfflineStore {
     /// ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier server history
     /// is never newer than the server's current one. When the order is unknown, the version
     /// counts as newer: the server sends its versions in order, so a newer one follows anyway.
-    static func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, history: UInt64) -> Bool {
-        guard entry.revision != nil, entry.history == history else { return false }
-        return isOlder(change.sequence, change.timestamp, than: entry.sequence, entry.heldServerTimestamp)
+    func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, in state: State) -> Bool {
+        guard entry.revision != nil, entry.history == state.history else { return false }
+        let limit = Self.driftLimit(of: state, configuration: configuration)
+        return Self.isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
+                            than: entry.sequence, entry.serverTimestamp)
     }
 
-    /// Orders two server versions by sequence, or by timestamp when neither has a sequence.
+    /// Orders two server versions by sequence, or by timestamp when neither has a sequence. The
+    /// timestamps are ``orderable(_:below:)`` ones.
     private static func isOlder(_ sequence: UInt64?, _ timestamp: HLCTimestamp?, than heldSequence: UInt64?,
                                 _ heldTimestamp: HLCTimestamp?) -> Bool {
         switch (sequence, heldSequence) {
