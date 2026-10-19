@@ -55,7 +55,8 @@ The rules that keep sync correct:
 - **Order and history.** Send ``RemoteChange/sequence``, a number that grows with every write,
   so the store recognises older versions that arrive late without trusting device clocks, and
   ``PullResponse/epoch``, which changes when the server lost or replaced its data, so the store
-  pulls everything again. Give the transport a ``SyncTransport/serverIdentity`` (the HTTP
+  pulls everything again; the store refuses a page with an epoch it has left, as a stale
+  replica or cache would send. Give the transport a ``SyncTransport/serverIdentity`` (the HTTP
   transport uses its URL), so a store opened with another server does not send it the old
   server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
@@ -71,9 +72,11 @@ The rules that keep sync correct:
 - **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
   `true`; a token that stays the same makes the sync fail with
   ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
-- **Timestamps.** Send ``RemoteChange/timestamp`` back if you store it; without it,
-  ``ConflictResolver/lastWriteWins`` lets the server's version win. Store a timestamp far ahead
-  of the server's clock at a limit, as the reference servers do with five minutes.
+- **Timestamps.** Send ``RemoteChange/timestamp`` back as it was pushed if you store it; without
+  it, ``ConflictResolver/lastWriteWins`` lets the server's version win, and the store cannot
+  recognise its own writes, so a change made after a lost answer meets the resolver. Store a
+  timestamp far ahead of the server's clock at a limit, as the reference servers do with five
+  minutes.
 - **Cancellation.** Stop both calls when their task is cancelled. The store cancels a request
   when every caller gave up and when the sync runs past
   ``OfflineStore/Configuration/syncTimeout``.

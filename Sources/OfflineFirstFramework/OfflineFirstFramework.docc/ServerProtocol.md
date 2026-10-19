@@ -92,12 +92,12 @@ Return changes oldest first, at most one per record, and a `token` the server un
 differ from every token the store pulled with in this sync, or the sync fails. The token is
 sent percent-encoded, `+` as `%2B`.
 
-| Field       | Meaning                                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------------------------- |
-| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.        |
-| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.  |
-| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced.                       |
-| `timestamp` | The timestamp the change was pushed with; the store counts one more than five minutes ahead as at that limit. |
+| Field       | Meaning                                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                      |
+| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.                                |
+| `epoch`     | Names the server's history. Change it whenever the data may have been lost or replaced; never go back to an old one.                        |
+| `timestamp` | The timestamp the change was pushed with, unchanged: the store knows its own writes by it. Over five minutes ahead counts as at that limit. |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than

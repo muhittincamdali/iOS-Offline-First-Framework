@@ -46,7 +46,7 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 195 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 217 Swift Testing tests on macOS and an iPhone simulator,
   among them a property test that runs every conflict policy through lost requests, restarts and
   stale pages, 19 Node tests for the server, and an end-to-end suite in CI that syncs two stores
   through the server over HTTP.
@@ -328,16 +328,19 @@ app and server restarts and stale pages, as long as the server follows the
 - A save or delete is in the file before it returns, and a queued change is pushed until the
   server answers it. A retry keeps the change ID, so the server applies it once.
 - A stale copy never replaces a write the server accepted: the resolver is asked only when a
-  record changed on the device and on the server, and an older server version is skipped.
+  record changed on the device and on another device, and an older server version is skipped,
+  also right after the device's own write was accepted.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
   pull everything again and keep its pending changes. A record the app cannot decode is set
   aside in `quarantinedChanges()` instead of stopping the pull.
-- A clock that runs ahead, a server that answers every push with a conflict and a server that
-  never answers have a bounded effect: timestamps count at most five minutes ahead, retries
-  back off and are parked, and a sync ends after `syncTimeout`.
+- A clock that runs ahead or was set back, a server that answers every push with a conflict, a
+  server that never answers and a file that cannot be written have a bounded effect: a
+  timestamp counts at most five minutes past the device's newest time, retries back off and are
+  parked, a sync ends after `syncTimeout`, and syncs wait while the file cannot be written.
 
 The server must never give the same revision to two versions of a record, should send an
-`epoch` and a `sequence`, and must remember change IDs across restarts. Limits: writes a server
+`epoch` (never an earlier one again), a `sequence` and the pushed timestamps unchanged, and must
+remember change IDs across restarts. Limits: writes a server
 lost in a restore are not uploaded again, one store instance per file, the whole file is
 written on every change, and deletions beyond 10,000 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)

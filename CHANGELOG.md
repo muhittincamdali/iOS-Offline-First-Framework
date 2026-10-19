@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Fixes for the data-integrity findings of two audits of 2.0.0, each with a test that failed
-before the fix. The documentation article "Guarantees and limits" and a section of the README
+Fixes for the data-integrity findings of two audits of 2.0.0 and of their second round, each
+with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -49,6 +49,33 @@ now state what the store promises and what it needs from the server.
   instance's write now throws `OfflineFirstError.storeChangedElsewhere(name:)`.
 - A transport that reported its cancellation as `URLError(.cancelled)` counted a failed attempt,
   and a full disk while counting an attempt hid the transport's error.
+- Right after the server accepted the store's own write, a page from a lagging replica rolled
+  the record back or brought back the store's own deletion, with every policy, and an edit of
+  the rolled-back copy replaced the acknowledged write. Until the write's echo arrives, the store
+  now knows the write is newer than every version up to the one it replaced, its own earlier
+  accepted writes included, and keeps that in its file.
+- A change made on top of a change whose answer was lost met the device's own earlier write as
+  a conflict: `.serverWins` dropped the new edit or brought a deleted record back, and a union
+  merge brought back a removed item. A change now remembers the timestamps of its earlier
+  versions that were in doubt, and a server version with one of them is recognised as the
+  device's own write: the newer change goes out on top of it without the resolver, and a
+  pending change the server already holds is settled as accepted. Node IDs alone are not
+  trusted for this, since a store file restored onto a second device shares its node ID.
+- On a server without sequences, a version without a timestamp was ordered by the time the
+  store received it, so another device's newer version could be skipped for good. A missing
+  timestamp now leaves the order unknown; files from before keep the timestamp they stored.
+- On a device whose clock was set back by more than `maximumClockDrift`, newer edits from other
+  devices were moved below the device's own older edit, and last write wins pushed the older
+  edit over them; without sequences, all remote timestamps ended at the same limit. The limit
+  now counts from the newest timestamp the store holds when that is later than the device
+  clock, and server versions are ordered only by timestamps within the limit.
+- A page from a server epoch the store had left, as a stale replica sends after a restart,
+  started a new history and rolled records back. The store remembers the last 32 epochs it left
+  and refuses such a page.
+- While the store file could not be written (a full disk, file protection, another instance), a
+  change in doubt went out again on every sync, and automatic sync sent it every second. After a
+  failed write, syncs now wait with the retry policy's backoff, and automatic sync waits after
+  failed syncs.
 
 ### Added
 
@@ -65,6 +92,9 @@ now state what the store promises and what it needs from the server.
 - `OfflineFirstError` has the new case `storeChangedElsewhere(name:)`; a `switch` over it without
   `default` needs that case.
 - `HTTPSyncTransport.Failure.unknownOutcome` is no longer thrown.
+- While a sync waits after a failed write of the store file, `sync()` throws that error without
+  a request; the next write that succeeds ends the wait.
+- `SyncReport.conflicts` no longer counts a conflict with the device's own earlier write.
 - The reference server starts a new epoch on every start, also with `--data`, so each client
   pulls everything once after a restart, and it saves the answers to change IDs with its data.
 
