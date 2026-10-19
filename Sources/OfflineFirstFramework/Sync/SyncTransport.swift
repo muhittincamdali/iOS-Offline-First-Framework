@@ -129,7 +129,9 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// Names the server's history of the records, if the server reports it. A server that may
     /// have lost or replaced its data (an in-memory server that restarted, a restore from a
     /// backup, a different database) reports a new epoch. The store then pulls everything again
-    /// from the start and keeps its own pending changes.
+    /// from the start and keeps its own pending changes. An epoch is never reported again after
+    /// a newer one: the store refuses a page that names an epoch it has left, since only a stale
+    /// replica or cache sends one.
     public let epoch: String?
 
     /// Changes in this page the transport could not read, for example a record that does not

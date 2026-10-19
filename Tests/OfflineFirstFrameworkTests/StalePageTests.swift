@@ -138,6 +138,34 @@ struct StalePageTests {
         #expect(await store.record("a")?.text == "mine, newer")
     }
 
+    /// A replica or cache that still answers from before a server restart: its page names the
+    /// epoch the store left, and its versions would roll every record back. The store refuses
+    /// it, also after the app restarted.
+    @Test func aPageFromAnEpochTheStoreLeftIsRefused() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let transport = await forwarding(to: server)
+        let storage = InMemoryStorage()
+        var store = try makeStore(transport, storage: storage)
+        try await store.save(Note(id: "a", text: "v1"))
+        try await store.sync()
+        let beforeRestart = try await server.pull(since: nil)
+
+        await server.restart()
+        clock.advance(by: 10)
+        try await store.save(Note(id: "a", text: "v2"))
+        try await store.sync()
+        #expect(await server.record("a")?.text == "v2")
+
+        store = try makeStore(transport, storage: storage)
+        try await store.resetChangeToken()
+        await answerNextPull(of: transport, with: beforeRestart, from: server)
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        #expect(await store.record("a")?.text == "v2")
+        try await store.sync()
+        #expect(await store.record("a")?.text == "v2")
+        #expect(await store.pendingChanges().isEmpty)
+    }
+
     /// Two accepted writes without an echo in between: the replica has the first, not the
     /// second. The first is the store's own earlier write, so it is older.
     @Test func aStalePageWithTheStoresEarlierWriteDoesNotRollBackItsLaterOne() async throws {

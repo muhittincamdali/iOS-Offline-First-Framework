@@ -30,12 +30,20 @@ extension OfflineStore {
         entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
+    /// Epochs the store remembers after it left them (``OfflineStore/State/previousEpochs``).
+    static var maximumPreviousEpochs: Int { 32 }
+
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
     /// another server. The token goes, so the next pull starts from the beginning. Entries keep
     /// their revisions (a pending change still names its base) but belong to the old history,
     /// so the server's current versions replace them whatever their timestamps say.
     static func beginHistory(epoch: String?, in state: inout State) {
         state.history &+= 1
+        if let left = state.serverEpoch, left != epoch {
+            state.previousEpochs.removeAll { $0 == left }
+            state.previousEpochs.append(left)
+            state.previousEpochs.removeFirst(max(0, state.previousEpochs.count - maximumPreviousEpochs))
+        }
         state.serverEpoch = epoch
         state.token = nil
         state.quarantine.removeAll()

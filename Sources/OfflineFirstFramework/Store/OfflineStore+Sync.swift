@@ -106,6 +106,8 @@ extension OfflineStore {
         try update { state in
             if state.serverIdentity != nil {
                 Self.beginHistory(epoch: nil, in: &state)
+                // Another server's epochs say nothing about this one's.
+                state.previousEpochs.removeAll()
             }
             state.serverIdentity = identity
         }
@@ -369,6 +371,13 @@ extension OfflineStore {
             guard generation == tokenGeneration else { continue }
             if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
                 throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
+            }
+            // A server reports a new epoch when its history changes and never goes back to an
+            // earlier one; a page of a history the store left comes from a stale replica or
+            // cache, and its versions would roll records back.
+            if let epoch = response.epoch, state.previousEpochs.contains(epoch) {
+                throw OfflineFirstError.invalidServerResponse(
+                    "The server answered from an earlier history (epoch “\(epoch.prefix(100))”), as a stale replica or cache would.")
             }
             let epochChanged = try Self.isNewEpoch(response.epoch, after: state.serverEpoch)
             if epochChanged {

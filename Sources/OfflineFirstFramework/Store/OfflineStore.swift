@@ -28,6 +28,9 @@ public actor OfflineStore<Record: SyncableRecord> {
         var history: UInt64
         /// Server changes set aside, oldest first.
         var quarantine: [QuarantinedChange] = []
+        /// Epochs of the server the store has left, oldest first. A page that names one comes
+        /// from a stale replica or cache.
+        var previousEpochs: [String] = []
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -281,7 +284,8 @@ public actor OfflineStore<Record: SyncableRecord> {
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
                              serverEpoch: state.serverEpoch, history: state.history,
-                             quarantine: state.quarantine.isEmpty ? nil : state.quarantine)
+                             quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
+                             previousEpochs: state.previousEpochs.isEmpty ? nil : state.previousEpochs)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         guard let fileKey else {
             try storage.write(data, to: fileName)
