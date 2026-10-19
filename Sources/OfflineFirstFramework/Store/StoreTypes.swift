@@ -20,7 +20,9 @@ public struct SyncReport: Hashable, Sendable {
     public var pushed = 0
     /// Server changes applied to the store.
     public var pulled = 0
-    /// Conflicts the ``ConflictResolver`` decided.
+    /// Conflicts with another version of a record: conflict answers to a push, and server
+    /// versions a pull brought for a record with a local change. A version this store wrote
+    /// itself (a push the server applied although its answer was lost) is not one.
     public var conflicts = 0
     /// Changes the server rejected for good.
     public var rejected = 0

@@ -220,30 +220,12 @@ extension OfflineStore {
                     report.pushed += 1
                     accept(change, as: revision, into: &entry, isCurrent: isCurrent, in: &state, report: &report)
                 case .conflict(let current):
-                    report.conflicts += 1
-                    guard isCurrent else { break }
-                    // The server did not apply the change, so it is no longer in doubt.
-                    entry.pending?.isInDoubt = false
-                    let deferred = entry.deferredRemote
-                    entry.deferredRemote = nil
-                    guard Self.isConsistent(current, for: entry.id) else {
-                        fail(&entry, message: "The server answered with a conflict that names another record or breaks the limits.",
-                             report: &report)
+                    guard isCurrent else {
+                        report.conflicts += 1
                         break
                     }
-                    receive(current, in: &state)
-                    // A repeated push is answered from the server's memory of change IDs, with the
-                    // version that was current then; a version pulled since is newer.
-                    let current = newer(deferred, than: current, in: state)
-                    guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state) else {
-                        // The version the change is based on, or an older one (a lagging replica
-                        // answered): nothing to resolve; the change is pushed again later.
-                        fail(&entry, message: "The server answered with a conflict that names the same or an older version of the record.",
-                             report: &report)
-                        break
-                    }
-                    entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushes[change.recordID] ?? 1,
-                                        report: &report)
+                    try settle(&entry, conflictingWith: current, pushesInThisSync: pushes[change.recordID] ?? 1, in: &state,
+                               report: &report)
                 case .rejected(let reason, let current):
                     report.rejected += 1
                     guard isCurrent else { break }
@@ -286,6 +268,49 @@ extension OfflineStore {
         if let deferred, deferred.revision != revision {
             report.pulled += 1
             entry = Self.entry(from: deferred, replacing: entry, in: &state, configuration: configuration)
+        }
+    }
+
+    /// Handles the server's answer that `entry`'s pending change conflicts with `current`.
+    private func settle(_ entry: inout StoredEntry<Record>, conflictingWith current: RemoteChange<Record>, pushesInThisSync: Int,
+                        in state: inout State, report: inout SyncReport) throws {
+        // The server did not apply the change, so it is no longer in doubt.
+        entry.pending?.isInDoubt = false
+        let deferred = entry.deferredRemote
+        entry.deferredRemote = nil
+        guard Self.isConsistent(current, for: entry.id) else {
+            report.conflicts += 1
+            fail(&entry, message: "The server answered with a conflict that names another record or breaks the limits.",
+                 report: &report)
+            return
+        }
+        receive(current, in: &state)
+        // A repeated push is answered from the server's memory of change IDs, with the version
+        // that was current then; a version pulled since is newer.
+        let current = newer(deferred, than: current, in: state)
+        guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state) else {
+            // The version the change is based on, or an older one (a lagging replica
+            // answered): nothing to resolve; the change is pushed again later.
+            report.conflicts += 1
+            fail(&entry, message: "The server answered with a conflict that names the same or an older version of the record.",
+                 report: &report)
+            return
+        }
+        switch authorship(of: current, comparedWith: entry) {
+        case .pendingChange:
+            // The server holds this very change: an earlier push of it was applied.
+            report.pushed += 1
+            entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
+        case .earlierWrite:
+            // The device's own earlier write, applied although its answer was lost: the
+            // pending change was made on top of it, so it goes out again on its revision.
+            Self.base(&entry, on: current, in: state, configuration: configuration)
+            if let pending = entry.pending {
+                entry.pending = conflictAttempt(rebased(pending), pushesInThisSync: pushesInThisSync, report: &report)
+            }
+        case .other:
+            report.conflicts += 1
+            entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
         }
     }
 
@@ -441,11 +466,34 @@ extension OfflineStore {
         // replica, the earlier version of a deleted record) is skipped: the server already has
         // something newer, and it comes in its turn.
         guard !isStale(change, comparedWith: entry, in: state) else { return }
+        guard let pending = entry.pending else {
+            report.pulled += 1
+            Self.store(Self.entry(from: change, replacing: entry, in: &state, configuration: configuration), in: &state)
+            return
+        }
+        switch authorship(of: change, comparedWith: entry) {
+        case .pendingChange:
+            // The pending change itself: the server applied it, although no answer said so.
+            Self.store(Self.entry(from: newer(entry.deferredRemote, than: change, in: state), replacing: entry, in: &state,
+                                  configuration: configuration), in: &state)
+            return
+        case .earlierWrite:
+            // The device's own earlier write: the pending change was made on top of it. A
+            // change in doubt learns from its next push where it stands; one that is not goes
+            // out on this revision.
+            guard !pending.isInDoubt else { return }
+            Self.base(&entry, on: change, in: state, configuration: configuration)
+            entry.pending = rebased(pending)
+            state.entries[change.recordID] = entry
+            return
+        case .other:
+            break
+        }
         // A change whose push may have been applied waits for its next push, which learns its
         // fate under the same change ID; resolving it here could put it back over this version.
         // The version is kept, since the token moves past it: if the push shows the change was
         // applied, this newer version replaces it.
-        if entry.pending?.isInDoubt == true {
+        if pending.isInDoubt {
             if let deferred = entry.deferredRemote, deferred.revision == change.revision || isOlder(change, than: deferred, in: state) {
                 return
             }
@@ -453,14 +501,10 @@ extension OfflineStore {
             state.entries[change.recordID] = entry
             return
         }
+        // Changed on the device and on the server: a conflict for the resolver.
         report.pulled += 1
-        if entry.pending != nil {
-            // Changed on the device and on the server: a conflict for the resolver.
-            report.conflicts += 1
-            Self.store(try resolve(entry, against: change, in: &state, pushesInThisSync: nil, report: &report), in: &state)
-        } else {
-            Self.store(Self.entry(from: change, replacing: entry, in: &state, configuration: configuration), in: &state)
-        }
+        report.conflicts += 1
+        Self.store(try resolve(entry, against: change, in: &state, pushesInThisSync: nil, report: &report), in: &state)
     }
 
     // MARK: - Conflicts
@@ -493,18 +537,24 @@ extension OfflineStore {
         case .keepLocal:
             break
         }
-        // The local or merged version goes out again on top of the server's revision, under a
-        // new change ID so the server does not answer it from an idempotency cache.
+        // The local or merged version goes out again on top of the server's revision.
         Self.base(&result, on: remote, in: state, configuration: configuration)
-        var pending = entry.pending
-            ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
-        pending.changeID = UUID()
-        pending.isInDoubt = false
+        var pending = rebased(entry.pending
+            ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false))
         if let pushesInThisSync {
             pending = conflictAttempt(pending, pushesInThisSync: pushesInThisSync, report: &report)
         }
         result.pending = pending
         return result
+    }
+
+    /// `pending` under a new change ID, so the server does not answer its push on a new base
+    /// from an idempotency cache.
+    private func rebased(_ pending: PendingWrite) -> PendingWrite {
+        var pending = pending
+        pending.changeID = UUID()
+        pending.isInDoubt = false
+        return pending
     }
 
     /// Counts a conflict answer as a failed attempt of the resolved change. The first one in a

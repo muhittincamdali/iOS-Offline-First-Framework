@@ -12,8 +12,9 @@ struct PendingWrite: Codable, Hashable, Sendable {
     /// Parked changes wait for ``OfflineStore/retryFailedChanges()``.
     var isParked: Bool
     /// Whether this version was sent and no answer came back, so the server may have applied
-    /// it. Written before the request goes out. A pull does not resolve such a change: only
-    /// its next push, under the same change ID, can tell whether it was applied.
+    /// it. Written before the request goes out. A pull does not resolve such a change unless it
+    /// brings the change itself (its timestamp); otherwise only its next push, under the same
+    /// change ID, can tell whether it was applied.
     var isInDoubt = false
 }
 

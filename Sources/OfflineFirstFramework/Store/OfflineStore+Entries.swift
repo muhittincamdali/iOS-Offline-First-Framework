@@ -122,6 +122,25 @@ extension OfflineStore {
         return timestamp < heldTimestamp
     }
 
+    /// How a server version relates to `entry`'s pending change, judged by its timestamp: a
+    /// version this store wrote carries its node ID, and its clock stamps every local write
+    /// after the earlier ones.
+    enum Authorship {
+        /// The pending change itself, applied by the server.
+        case pendingChange
+        /// An earlier write of this store. The pending change was made on top of it on this
+        /// device, so it is not a conflict.
+        case earlierWrite
+        /// Another device's write, or one the store cannot tell.
+        case other
+    }
+
+    func authorship(of change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>) -> Authorship {
+        guard entry.pending != nil, let timestamp = change.timestamp, timestamp.nodeID == nodeID else { return .other }
+        if timestamp == entry.timestamp { return .pendingChange }
+        return timestamp < entry.timestamp ? .earlierWrite : .other
+    }
+
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
     /// server confirmed it (it has a revision), so an older version of the record that arrives
     /// later is recognised; otherwise it is removed.
