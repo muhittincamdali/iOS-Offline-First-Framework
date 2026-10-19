@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -6,10 +7,12 @@ import Testing
 /// answers lost on the way back, stale pages from a lagging replica and server restarts; then
 /// a quiet network. For every conflict policy the server and both devices must end with the
 /// same records and nothing left in the queues, and a write the server accepted must never be
-/// accepted again after a later write replaced it (a lost update by a stale copy). With last
-/// write wins every record must also end as its newest write on either device, so a lost
-/// acknowledged write, a delete that never reaches the server or a record that comes back
-/// shows up as a mismatch.
+/// accepted again after a later write replaced it (a lost update by a stale copy). Along the
+/// way no device may go back to an older server version of a record it holds without a local
+/// change (a stale page that rolls a record back), and no resolver may be asked about a
+/// version the device wrote itself (a conflict that is none). With last write wins every
+/// record must also end as its newest write on either device, so a lost acknowledged write, a
+/// delete that never reaches the server or a record that comes back shows up as a mismatch.
 @Suite("Offline store: convergence")
 struct ConvergenceTests {
     enum Policy: String, CaseIterable, Sendable {
@@ -38,11 +41,13 @@ struct ConvergenceTests {
         var random = SeededRandom(seed: seed)
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let ledger = Ledger()
+        let resolver = Self.checking(policy.resolver, into: ledger)
         var devices = try ["phone", "laptop"].enumerated().map { index, name in
             try Device(name: name, network: FlakyNetwork(server: server, ledger: ledger, seed: seed &+ UInt64(index)),
-                       clock: clock, resolver: policy.resolver)
+                       clock: clock, resolver: resolver)
         }
         var oracle = Oracle()
+        var held = HeldVersions()
 
         for step in 0..<Self.steps {
             let device = Int(random.next() % 2)
@@ -63,7 +68,9 @@ struct ConvergenceTests {
                 } else {
                     oracle.removedOnTheDeviceOnly(device: name, id: id, accepted: await ledger.acceptedTimestamps(of: id))
                 }
-            case 22..<34: _ = try? await store.sync()
+            case 22..<34:
+                _ = try? await store.sync()
+                await held.check(store, device: name, step: step, ledger: ledger)
             case 34..<36: try devices[device].restart()
             case 36: await server.restart()
             default: clock.advance(by: Double(random.next() % 90))
@@ -78,6 +85,7 @@ struct ConvergenceTests {
             for device in devices {
                 try await device.store.retryFailedChanges()
                 _ = try await device.store.sync()
+                await held.check(device.store, device: device.name, step: Self.steps, ledger: ledger)
             }
         }
 
@@ -100,6 +108,37 @@ struct ConvergenceTests {
 
     private static func byID(_ notes: [Note]) -> [String: String] {
         Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0.text) })
+    }
+
+    /// `resolver`, reporting a conflict whose server version the device wrote itself: the
+    /// device's change was made on top of it, so there is nothing to resolve.
+    private static func checking(_ resolver: ConflictResolver<Note>, into ledger: Ledger) -> ConflictResolver<Note> {
+        ConflictResolver { conflict in
+            if let remote = conflict.remoteTimestamp, remote.nodeID == conflict.localTimestamp.nodeID {
+                ledger.reportLater("\(conflict.recordID): the resolver was asked about the device's own write \(remote)")
+            }
+            return resolver.resolve(conflict)
+        }
+    }
+}
+
+/// The server version each device last held for each record without a local change. The
+/// in-memory server numbers its writes across restarts (`<epoch>.<sequence>`), so a smaller
+/// number is an older version.
+private struct HeldVersions {
+    private var sequences: [String: UInt64] = [:]
+
+    mutating func check(_ store: OfflineStore<Note>, device: String, step: Int, ledger: Ledger) async {
+        for (id, entry) in await store.state.entries {
+            let key = "\(device)/\(id)"
+            guard entry.pending == nil, let revision = entry.revision,
+                  let sequence = revision.split(separator: ".").last.flatMap({ UInt64($0) })
+            else { continue }
+            if let previous = sequences[key], sequence < previous {
+                await ledger.report("\(key) went back from version \(previous) to \(sequence) at step \(step)")
+            }
+            sequences[key] = sequence
+        }
     }
 }
 
@@ -150,14 +189,28 @@ private struct Oracle {
 private actor Ledger {
     private var applied: [String: [HLCTimestamp]] = [:]
     private var revisions: Set<String> = []
-    private(set) var violations: [String] = []
+    private var recorded: [String] = []
+    /// Reports from synchronous code, such as a resolver.
+    private nonisolated let reported = OSAllocatedUnfairLock<[String]>(initialState: [])
+
+    var violations: [String] {
+        recorded + reported.withLock { $0 }
+    }
+
+    func report(_ violation: String) {
+        recorded.append(violation)
+    }
+
+    nonisolated func reportLater(_ violation: String) {
+        reported.withLock { $0.append(violation) }
+    }
 
     func accepted(_ change: OutgoingChange<Note>, revision: String) {
         // A repeated push answered from the server's memory of change IDs applies nothing.
         guard revisions.insert(revision).inserted else { return }
         var history = applied[change.recordID, default: []]
         if let last = history.last, last != change.timestamp, history.contains(change.timestamp) {
-            violations.append("\(change.recordID): write \(change.timestamp) applied again after \(last)")
+            recorded.append("\(change.recordID): write \(change.timestamp) applied again after \(last)")
         }
         history.append(change.timestamp)
         applied[change.recordID] = history
