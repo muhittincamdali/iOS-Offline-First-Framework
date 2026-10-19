@@ -114,6 +114,7 @@ extension OfflineStore {
             if let sequence = change.sequence {
                 entry.sequence = sequence
                 entry.minimumSequence = nil
+                entry.olderRevisions = []
             }
             entry.serverTimestamp = Self.orderable(change.timestamp, below: Self.driftLimit(of: state, configuration: configuration))
             state.entries[change.recordID] = entry

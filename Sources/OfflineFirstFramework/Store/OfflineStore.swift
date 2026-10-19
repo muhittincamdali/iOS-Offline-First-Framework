@@ -331,12 +331,19 @@ public actor OfflineStore<Record: SyncableRecord> {
                 throw OfflineFirstError.outboxFull(limit: configuration.maximumPendingChanges)
             }
         }
+        // The version this one replaces may have been applied although its answer was lost; its
+        // timestamp lets the store recognise it on the server as its own earlier write.
+        var superseded = entry.pending?.supersededInDoubt ?? []
+        if entry.pending?.isInDoubt == true {
+            superseded.append(entry.timestamp)
+        }
         entry.record = record
         entry.timestamp = timestamp
         // A new local version is pushed on its own base; its conflict answer brings the current one.
         entry.deferredRemote = nil
         entry.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
-                                     attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
+                                     attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false,
+                                     supersededInDoubt: Array(superseded.suffix(PendingWrite.maximumSupersededInDoubt)))
         state.entries[id] = entry
     }
 }

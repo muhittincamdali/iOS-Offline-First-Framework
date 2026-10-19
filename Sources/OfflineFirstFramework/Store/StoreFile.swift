@@ -16,14 +16,24 @@ struct PendingWrite: Codable, Hashable, Sendable {
     /// brings the change itself (its timestamp); otherwise only its next push, under the same
     /// change ID, can tell whether it was applied.
     var isInDoubt = false
+    /// The timestamps of earlier versions of this change that were in doubt when the record
+    /// changed again, newest last. The server may have applied any of them; a server version
+    /// with one of these timestamps is the device's own earlier write, which the pending change
+    /// was made on top of, not another device's. Emptied once the server's answer or a new
+    /// base shows that none of them can be the server's current version.
+    var supersededInDoubt: [HLCTimestamp] = []
+
+    /// Superseded versions in doubt a change remembers; more than one needs several lost
+    /// answers between edits.
+    static var maximumSupersededInDoubt: Int { 16 }
 }
 
 extension PendingWrite {
     private enum CodingKeys: String, CodingKey {
-        case changeID, sequence, attempts, nextAttemptAt, lastError, isParked, isInDoubt
+        case changeID, sequence, attempts, nextAttemptAt, lastError, isParked, isInDoubt, supersededInDoubt
     }
 
-    /// Files written before `isInDoubt` existed have no such key.
+    /// Files written before `isInDoubt` or `supersededInDoubt` existed have no such keys.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         changeID = try container.decode(UUID.self, forKey: .changeID)
@@ -33,6 +43,21 @@ extension PendingWrite {
         lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
         isParked = try container.decode(Bool.self, forKey: .isParked)
         isInDoubt = try container.decodeIfPresent(Bool.self, forKey: .isInDoubt) ?? false
+        supersededInDoubt = try container.decodeIfPresent([HLCTimestamp].self, forKey: .supersededInDoubt) ?? []
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(changeID, forKey: .changeID)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encode(attempts, forKey: .attempts)
+        try container.encodeIfPresent(nextAttemptAt, forKey: .nextAttemptAt)
+        try container.encodeIfPresent(lastError, forKey: .lastError)
+        try container.encode(isParked, forKey: .isParked)
+        try container.encode(isInDoubt, forKey: .isInDoubt)
+        if !supersededInDoubt.isEmpty {
+            try container.encode(supersededInDoubt, forKey: .supersededInDoubt)
+        }
     }
 }
 
@@ -62,6 +87,10 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// of a version whose sequence the store knew; the write's echo in a pull tells its own
     /// ``sequence``.
     var minimumSequence: UInt64? = nil
+    /// Revisions of the store's own accepted writes that ``revision`` replaced, whose sequences
+    /// the store does not know yet: each is older than ``revision``. Kept, with
+    /// ``minimumSequence``, until a pull tells the sequence of ``revision``.
+    var olderRevisions: [String] = []
     /// The timestamp of the server version ``revision`` names, if the server sent one the store
     /// can order versions by: not further ahead than the drift limit when it arrived (see
     /// ``OfflineStore/Configuration/maximumClockDrift``). `nil` says nothing about the order.
@@ -75,8 +104,8 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
-        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, serverTimestamp,
-             deferredRemote
+        case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, olderRevisions,
+             serverTimestamp, deferredRemote
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
@@ -95,6 +124,7 @@ extension StoredEntry {
         history = try container.decodeIfPresent(UInt64.self, forKey: .history) ?? 0
         sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
         minimumSequence = try container.decodeIfPresent(UInt64.self, forKey: .minimumSequence)
+        olderRevisions = try container.decodeIfPresent([String].self, forKey: .olderRevisions) ?? []
         if container.contains(.serverTimestamp) {
             serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
         } else {
@@ -115,6 +145,9 @@ extension StoredEntry {
         try container.encode(history, forKey: .history)
         try container.encodeIfPresent(sequence, forKey: .sequence)
         try container.encodeIfPresent(minimumSequence, forKey: .minimumSequence)
+        if !olderRevisions.isEmpty {
+            try container.encode(olderRevisions, forKey: .olderRevisions)
+        }
         // Written also when it is nil, so a file tells a server version without a timestamp
         // from a file of a version before the key existed.
         if let serverTimestamp {

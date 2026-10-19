@@ -42,11 +42,13 @@ extension OfflineStore {
     }
 
     /// `pending` under a new change ID, so the server does not answer its push on a new base
-    /// from an idempotency cache.
+    /// from an idempotency cache. On the new base, no earlier version in doubt can become the
+    /// server's current one: its request names an older base.
     func rebased(_ pending: PendingWrite) -> PendingWrite {
         var pending = pending
         pending.changeID = UUID()
         pending.isInDoubt = false
+        pending.supersededInDoubt = []
         return pending
     }
 

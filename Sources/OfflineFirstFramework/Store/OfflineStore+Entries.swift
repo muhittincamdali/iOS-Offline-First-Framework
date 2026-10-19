@@ -9,6 +9,10 @@ extension OfflineStore {
     /// The longest node ID, in UTF-8 bytes, accepted in a server timestamp.
     static var maximumNodeIDLength: Int { 256 }
 
+    /// Revisions of earlier accepted writes an entry remembers as older
+    /// (``StoredEntry/olderRevisions``); more need several accepted writes without an echo.
+    static var maximumOlderRevisions: Int { 16 }
+
     /// The server's version as a stored entry without a pending change.
     static func entry(from remote: RemoteChange<Record>, replacing existing: StoredEntry<Record>?, in state: inout State,
                       configuration: Configuration) -> StoredEntry<Record> {
@@ -27,6 +31,7 @@ extension OfflineStore {
         entry.history = state.history
         entry.sequence = remote.sequence
         entry.minimumSequence = nil
+        entry.olderRevisions = []
         entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
@@ -98,8 +103,9 @@ extension OfflineStore {
     ///
     /// The server's ``RemoteChange/sequence`` decides when both versions have one. Until the echo
     /// of the store's own accepted write arrives, the store knows only that the write is newer
-    /// than every version up to the one it replaced (``StoredEntry/minimumSequence``), and newer
-    /// than every earlier write of this store. Only a server that sends no sequences is ordered
+    /// than every version up to the one it replaced (``StoredEntry/minimumSequence``) and than
+    /// the store's earlier accepted writes it replaced (``StoredEntry/olderRevisions``). Only a
+    /// server that sends no sequences is ordered
     /// by the timestamps, which matches the server's order as long as the devices resolve
     /// conflicts by ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier
     /// server history is never newer than the server's current one. When the order is unknown,
@@ -107,6 +113,7 @@ extension OfflineStore {
     /// follows anyway.
     func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, in state: State) -> Bool {
         guard entry.revision != nil, entry.history == state.history else { return false }
+        if entry.olderRevisions.contains(change.revision) { return true }
         let limit = Self.driftLimit(of: state, configuration: configuration)
         return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
                        than: entry.sequence, entry.minimumSequence, entry.serverTimestamp)
@@ -120,19 +127,14 @@ extension OfflineStore {
             if let heldSequence { return sequence < heldSequence }
             if let heldMinimum, sequence <= heldMinimum { return true }
         }
-        guard let timestamp, let heldTimestamp else { return false }
-        // This store's clock never goes back and it pushes one change of a record after the
-        // other, so its earlier write is older on any server.
-        if timestamp.nodeID == nodeID, heldTimestamp.nodeID == nodeID {
-            return timestamp < heldTimestamp
-        }
-        guard sequence == nil, heldSequence == nil else { return false }
+        guard sequence == nil, heldSequence == nil, let timestamp, let heldTimestamp else { return false }
         return timestamp < heldTimestamp
     }
 
-    /// How a server version relates to `entry`'s pending change, judged by its timestamp: a
-    /// version this store wrote carries its node ID, and its clock stamps every local write
-    /// after the earlier ones.
+    /// How a server version relates to `entry`'s pending change, judged by its timestamp. A
+    /// version counts as the store's own only with the exact timestamp of a write the store
+    /// knows the server may hold, not by the node ID alone: a store file restored onto a second
+    /// device writes with the same node ID.
     enum Authorship {
         /// The pending change itself, applied by the server.
         case pendingChange
@@ -144,9 +146,9 @@ extension OfflineStore {
     }
 
     func authorship(of change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>) -> Authorship {
-        guard entry.pending != nil, let timestamp = change.timestamp, timestamp.nodeID == nodeID else { return .other }
+        guard let pending = entry.pending, let timestamp = change.timestamp else { return .other }
         if timestamp == entry.timestamp { return .pendingChange }
-        return timestamp < entry.timestamp ? .earlierWrite : .other
+        return pending.supersededInDoubt.contains(timestamp) ? .earlierWrite : .other
     }
 
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the

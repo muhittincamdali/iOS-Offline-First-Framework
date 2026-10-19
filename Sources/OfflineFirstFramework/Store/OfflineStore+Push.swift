@@ -135,15 +135,25 @@ extension OfflineStore {
     private func accept(_ change: OutgoingChange<Record>, as revision: String, into entry: inout StoredEntry<Record>, isCurrent: Bool,
                         in state: inout State, report: inout SyncReport) {
         // The answer does not say where the write stands; its echo in a pull will. Until then
-        // every version up to the one it replaced is known to be older.
-        let replaced = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
+        // every version up to the one it replaced is known to be older: by its sequence, or,
+        // for an earlier accepted write of this store that has no echo yet, by its revision.
+        let sameHistory = entry.history == state.history
+        let replacedSequence = sameHistory ? (entry.sequence ?? entry.minimumSequence) : nil
+        var olderRevisions = sameHistory && entry.sequence == nil ? entry.olderRevisions : []
+        if sameHistory, entry.sequence == nil, let replaced = entry.revision {
+            olderRevisions.append(replaced)
+        }
         entry.revision = revision
         entry.history = state.history
         entry.sequence = nil
-        entry.minimumSequence = replaced
+        entry.minimumSequence = replacedSequence
+        entry.olderRevisions = Array(olderRevisions.suffix(Self.maximumOlderRevisions))
         entry.serverTimestamp = change.timestamp
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
+        // The server applied this change on top of the version it was based on, so no earlier
+        // version in doubt can be its current one any more.
+        entry.pending?.supersededInDoubt = []
         guard isCurrent else { return }
         entry.pending = nil
         // A pull brought a newer version while this change was in doubt; the change was
