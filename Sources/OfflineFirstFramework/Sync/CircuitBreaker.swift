@@ -38,13 +38,15 @@ public struct CircuitBreaker: Hashable, Sendable {
     }
 
     /// Whether an attempt may start at `date`. An open breaker whose cooldown has passed turns
-    /// half-open and lets the attempt through.
+    /// half-open and lets the attempt through. So does one whose end lies more than
+    /// ``cooldown`` after `date`: it opened while the device clock was ahead, and would
+    /// otherwise stay open for as long as the clock had been ahead.
     public mutating func allowsAttempt(at date: Date) -> Bool {
         switch state {
         case .closed, .halfOpen:
             return true
         case .open(let until):
-            guard date >= until else { return false }
+            guard !RetryPolicy.isWaiting(until: until, now: date, longest: cooldown) else { return false }
             state = .halfOpen
             return true
         }

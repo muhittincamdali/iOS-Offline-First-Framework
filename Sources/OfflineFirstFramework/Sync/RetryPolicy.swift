@@ -75,6 +75,19 @@ public struct RetryPolicy: Hashable, Sendable {
         seconds -= seconds * jitter * fraction
         return .seconds(max(0, seconds))
     }
+
+    /// Whether a wait this policy set, which ends at `date`, still lasts at `now`. No such wait
+    /// is longer than ``maximumDelay``, so a date further ahead was set while the device clock
+    /// was ahead (a clock set a year forward and back again) and counts as passed; it would
+    /// otherwise hold the change back for as long as the clock had been ahead.
+    func isWaiting(until date: Date, now: Date) -> Bool {
+        Self.isWaiting(until: date, now: now, longest: maximumDelay)
+    }
+
+    /// Whether a wait that ends at `date` and lasts at most `longest` still lasts at `now`.
+    static func isWaiting(until date: Date, now: Date, longest: Duration) -> Bool {
+        date > now && date.timeIntervalSince(now) <= longest.seconds
+    }
 }
 
 extension Duration {

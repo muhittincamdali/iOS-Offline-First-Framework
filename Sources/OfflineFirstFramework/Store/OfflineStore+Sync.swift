@@ -51,7 +51,7 @@ extension OfflineStore {
             report.skipped = true
             return report
         }
-        if let wait = storageWait, wait.until > configuration.now() {
+        if let wait = storageWait, configuration.retryPolicy.isWaiting(until: wait.until, now: configuration.now()) {
             throw failed(with: wait.error)
         }
         try bind(to: transport)

@@ -116,4 +116,26 @@ struct ClockSkewTests {
         #expect(await y.record("r")?.text == "Y newer edit")
         #expect(await x.pendingChanges().isEmpty)
     }
+
+    /// A push fails while the device clock is a year ahead (a game's time travel), so its retry
+    /// date is a year ahead too. Once the clock is set right, the change goes out with the next
+    /// sync: no wait of the retry policy is that long.
+    @Test func aRetryDateSetWhileTheClockWasAheadDoesNotHoldTheChangeBack() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let device = TestClock()
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: server,
+                                           configuration: makeConfiguration(clock: device, retry: .default))
+        try await store.save(Note(id: "a", text: "edit"))
+        device.advance(by: 365 * 86_400)
+        await server.setOnline(false)
+        await #expect(throws: URLError.self) { try await store.sync() }
+        let retryDate = try #require(await store.pendingChanges().first?.nextAttemptAt)
+        #expect(retryDate > device.now)
+
+        device.advance(by: -365 * 86_400)
+        await server.setOnline(true)
+        try await store.sync()
+        #expect(await server.record("a")?.text == "edit")
+        #expect(await store.pendingChanges().isEmpty)
+    }
 }

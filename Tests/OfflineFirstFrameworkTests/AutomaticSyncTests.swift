@@ -107,10 +107,12 @@ struct AutomaticSyncTests {
         let store = try OfflineStore<Note>(name: "notes", storage: storage, transport: server, configuration: makeConfiguration(clock: clock))
         await store.startAutomaticSync(monitor: SimulatedConnectivity(isOnline: true), interval: .seconds(300), debounce: .zero)
         #expect(await eventually { await server.pullRequests == 1 })
-        // The next run is scheduled after the sync; computing its wait used to trap.
+        // The next run is scheduled after the sync; computing its wait used to trap. No wait of
+        // the retry policy is that long, so the change counts as due and goes out.
         try await Task.sleep(for: .milliseconds(100))
         #expect(await store.isAutomaticSyncEnabled)
-        #expect(await store.pendingChanges().count == 1)
+        #expect(await server.record("a")?.text == "A")
+        #expect(await store.pendingChanges().isEmpty)
         await store.stopAutomaticSync()
     }
 }

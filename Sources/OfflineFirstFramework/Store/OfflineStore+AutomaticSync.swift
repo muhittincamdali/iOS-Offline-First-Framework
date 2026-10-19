@@ -131,14 +131,17 @@ extension OfflineStore {
         // A change still waiting without a retry date was pushed the maximum number of times in
         // this run (the server kept answering with conflicts); give the server a moment.
         let shortly = now.addingTimeInterval(max(5, (automaticSync?.debounce ?? .zero).seconds))
+        let policy = configuration.retryPolicy
+        // A date beyond the longest wait was set while the clock was ahead and has passed.
         var dates: [Date] = state.entries.values.compactMap { entry in
             guard let pending = entry.pending, !pending.isParked else { return nil }
-            return pending.nextAttemptAt ?? shortly
+            guard let next = pending.nextAttemptAt else { return shortly }
+            return policy.isWaiting(until: next, now: now) ? next : now
         }
-        if case .open(let until) = breaker.state {
+        if case .open(let until) = breaker.state, RetryPolicy.isWaiting(until: until, now: now, longest: breaker.cooldown) {
             dates = dates.map { max($0, until) }
         }
-        if let wait = storageWait {
+        if let wait = storageWait, policy.isWaiting(until: wait.until, now: now) {
             dates = dates.map { max($0, wait.until) }
         }
         var delays = dates.map { Self.clampedDelay(seconds: $0.timeIntervalSince(now)) }

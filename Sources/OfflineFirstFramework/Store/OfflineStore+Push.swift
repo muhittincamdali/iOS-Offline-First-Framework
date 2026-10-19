@@ -72,7 +72,7 @@ extension OfflineStore {
         return state.entries.values
             .filter { entry in
                 guard let pending = entry.pending, !pending.isParked else { return false }
-                if let next = pending.nextAttemptAt, next > now { return false }
+                if let next = pending.nextAttemptAt, configuration.retryPolicy.isWaiting(until: next, now: now) { return false }
                 return pushes[entry.id, default: 0] < Self.maximumPushesPerRecord
             }
             .sorted { ($0.pending?.sequence ?? 0) < ($1.pending?.sequence ?? 0) }

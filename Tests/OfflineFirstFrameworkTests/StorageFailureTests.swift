@@ -54,6 +54,25 @@ struct StorageFailureTests {
         #expect(await server.record("b")?.text == "B")
     }
 
+    /// The file could not be written while the device clock was a year ahead. Once the clock
+    /// is set right and the file can be written again, the next sync runs: the wait is not
+    /// stretched to a year.
+    @Test func aStorageWaitFromAClockThatWasAheadEndsWhenTheClockIsSetBack() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let storage = FailingStorage()
+        let store = try await storeWithAChangeInDoubt(server, storage: storage)
+        storage.setFailing(true)
+        clock.advance(by: 365 * 86_400)
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+
+        clock.advance(by: -365 * 86_400)
+        storage.setFailing(false)
+        try await store.sync()
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await server.record("a")?.text == "A")
+    }
+
     @Test func automaticSyncWaitsWhileTheFileCannotBeWritten() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let storage = FailingStorage()

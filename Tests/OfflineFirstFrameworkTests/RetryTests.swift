@@ -80,6 +80,20 @@ struct CircuitBreakerTests {
         #expect(breaker.consecutiveFailures == 3)
     }
 
+    /// The breaker opened while the device clock was a year ahead. Set right, the clock is a
+    /// year before the end of the cooldown, which no cooldown of 30 seconds can be: the
+    /// attempt goes through as a trial.
+    @Test func aBreakerOpenedWhileTheClockWasAheadLetsATrialThrough() {
+        var breaker = CircuitBreaker(failureThreshold: 1, cooldown: .seconds(30))
+        let yearAhead = start.addingTimeInterval(365 * 86_400)
+        breaker.recordFailure(at: yearAhead)
+        let allowedWithinCooldown = breaker.allowsAttempt(at: yearAhead.addingTimeInterval(10))
+        #expect(!allowedWithinCooldown)
+        let allowedAfterTheClockWasSetBack = breaker.allowsAttempt(at: start)
+        #expect(allowedAfterTheClockWasSetBack)
+        #expect(breaker.state == .halfOpen)
+    }
+
     @Test func settingsAreClamped() {
         let breaker = CircuitBreaker(failureThreshold: 0, cooldown: .seconds(-1))
         #expect(breaker.failureThreshold == 1)
