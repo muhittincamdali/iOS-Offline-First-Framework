@@ -178,10 +178,12 @@ struct ServerHistoryTests {
         })
         let store = try makeStore(transport)
         try await store.sync()
-        await #expect(throws: OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")) {
+        await #expect(throws: OfflineFirstError.invalidServerResponse(
+            "Two pulls of one sync named the server epochs “e2” and “e3”, as a cache or another deployment that answers some requests would.")) {
             try await store.sync()
         }
         #expect(await transport.pulls == 3)
+        #expect(await store.state.serverEpoch == "e1")
     }
 
     @Test func theFirstEpochAServerReportsKeepsTheToken() async throws {

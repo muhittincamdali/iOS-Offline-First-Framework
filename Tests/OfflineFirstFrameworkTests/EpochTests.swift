@@ -3,9 +3,10 @@ import os
 import Testing
 @testable import OfflineFirstFramework
 
-/// Epochs grow. A page from an earlier epoch comes from a stale replica or cache and is
-/// refused; a later epoch is believed once a pull from the beginning reports it too. Neither a
-/// stale page nor one misdirected request may stop the store from following the real server.
+/// Epochs grow. Another epoch than the store's is believed only when two requests of one sync
+/// report it, a pull with the token and a pull from the beginning: a later one starts a new
+/// history, an earlier one is refused until eight syncs in a row met it. Neither a stale page
+/// nor one misdirected request may stop the store from following the real server.
 @Suite("Offline store: server epochs")
 struct EpochTests {
     let clock = TestClock()
@@ -40,8 +41,9 @@ struct EpochTests {
     }
 
     /// The store first meets the server after a restart (E2). A lagging replica still in E1,
-    /// which the store never saw, answers one pull: the page is refused, nothing changes, and
-    /// the next sync follows the real server again, also after an app restart.
+    /// which the store never saw, answers one pull: the page is not stored, the pull from the
+    /// beginning and the pull with the token reach the server, and the sync goes on with it,
+    /// also after an app restart.
     @Test func aStaleReplicaFromAnEarlierEpochTheStoreNeverSawIsRefused() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         await server.write(Note(id: "a", text: "v1"))
@@ -54,8 +56,9 @@ struct EpochTests {
         let epoch = await store.state.serverEpoch
 
         await answerPulls(1, of: transport, with: staleE1, from: server)
-        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        try await store.sync()
         #expect(await store.state.serverEpoch == epoch)
+        #expect(await store.state.epochRefusal == nil)
 
         clock.advance(by: 10)
         await server.write(Note(id: "b", text: "written later on another device"))
@@ -70,8 +73,9 @@ struct EpochTests {
         #expect(await store.state.serverEpoch == epoch)
     }
 
-    /// The replica answers two pulls in a row with a page from before a deletion. Neither is
-    /// stored, so the deleted record never comes back, and the store goes on with the server.
+    /// The replica answers every pull of two syncs, with and without the token, with a page
+    /// from before a deletion. Both syncs refuse it, so the deleted record never comes back, and
+    /// the store goes on with the server.
     @Test func aStaleReplicaFromAnEarlierEpochDoesNotBringBackADeletedRecord() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         await server.write(Note(id: "a", text: "v1"))
@@ -84,7 +88,7 @@ struct EpochTests {
         try await store.sync()
         #expect(await store.record("a") == nil)
 
-        await answerPulls(2, of: transport, with: staleE1, from: server)
+        await answerPulls(4, of: transport, with: staleE1, from: server)
         for _ in 0..<2 {
             await #expect(throws: OfflineFirstError.self) { try await store.sync() }
             #expect(await store.record("a") == nil)
@@ -96,8 +100,9 @@ struct EpochTests {
 
     /// One pull is answered by another deployment behind the same URL (staging), whose epoch
     /// is later or earlier than production's. The store does not leave production's history:
-    /// a later epoch is not confirmed by the pull from the beginning, an earlier one is refused.
-    /// New production records arrive and local edits reach production.
+    /// the pull from the beginning names production's epoch, so the staging page is dropped and
+    /// the sync goes on after the token. New production records arrive and local edits reach
+    /// production.
     @Test(arguments: [true, false])
     func onePullFromAnotherDeploymentDoesNotLockTheStoreOut(stagingIsLater: Bool) async throws {
         let first = InMemorySyncServer<Note>(now: { [clock] in clock.now })
@@ -118,11 +123,7 @@ struct EpochTests {
         let epoch = await store.state.serverEpoch
 
         misroute.withLock { $0 = true }
-        if stagingIsLater {
-            try await store.sync()
-        } else {
-            await #expect(throws: OfflineFirstError.self) { try await store.sync() }
-        }
+        try await store.sync()
         #expect(await store.state.serverEpoch == epoch)
         await production.write(Note(id: "b", text: "new on production"))
         try await store.sync()
@@ -134,9 +135,9 @@ struct EpochTests {
     }
 
     /// The store took a later epoch from somewhere else, confirmed by two answers in a row, and
-    /// the real server's epoch is earlier. Its pages are refused, eight syncs in a row at most,
-    /// counted across app restarts; then the store follows it again. A page of the store's own
-    /// epoch in between starts the count over.
+    /// the real server's epoch is earlier. Its pages, with and without the token, are refused,
+    /// eight syncs in a row at most, counted across app restarts; then the store follows it
+    /// again. A page of the store's own epoch in between starts the count over.
     @Test func anEarlierEpochIsTakenAfterItWasRefusedEightSyncsInARow() async throws {
         let wrong = PullResponse<Note>(changes: [RemoteChange(recordID: "w", record: Note(id: "w", text: "elsewhere"), revision: "e2.1",
                                                              timestamp: nil, sequence: 1)], token: "e2.1", hasMore: false, epoch: "e2")
@@ -167,7 +168,7 @@ struct EpochTests {
         // Two refusals, then a page of the store's own epoch: the count starts over.
         answers.withLock { $0 = [wrong, wrong, wrong] }
         try await store.sync()
-        answers.withLock { $0 = [real, real, wrong] }
+        answers.withLock { $0 = [real, real, real, real, wrong] }
         for _ in 0..<2 {
             await #expect(throws: OfflineFirstError.self) { try await store.sync() }
         }

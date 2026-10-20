@@ -12,14 +12,17 @@ struct EpochRefusal: Codable, Hashable, Sendable {
 /// never an earlier one again. A page that names an earlier epoch comes from a stale replica or
 /// cache, and its versions would roll records back; a page that names a later one comes from a
 /// server that restarted or was restored, or from somewhere else behind the same URL (another
-/// deployment, a misdirected request). The store therefore refuses an earlier epoch and
-/// believes a later one only when a pull from the beginning reports it too.
+/// deployment, a misdirected request). The store therefore believes another epoch than its own
+/// only when two requests of different kinds in one sync report it (a pull with the token and a
+/// pull from the beginning), takes a later one then, and refuses an earlier one until the syncs
+/// in a row that met it reach ``maximumEpochRefusals``; after
+/// ``OfflineStore/resetChangeToken()`` it takes any other epoch the two requests report.
 extension OfflineStore {
     /// Syncs in a row that meet the same earlier epoch until the store takes it as the server's
     /// history: the last of them takes it, the ones before refuse it. A server whose epochs went
     /// back (the store took a later one from elsewhere, or the server's epochs do not grow) is
     /// followed again after that many syncs without ``OfflineStore/resetChangeToken()``; a stale
-    /// replica or cache rarely answers that many syncs in a row.
+    /// replica or cache rarely answers that many syncs in a row, both with and without a token.
     static var maximumEpochRefusals: Int { 8 }
 
     /// How the epoch of a page relates to the store's history.
@@ -31,13 +34,14 @@ extension OfflineStore {
         case first
         /// A later epoch than the store's: the server's history changed.
         case later
-        /// An earlier epoch than the store's: a stale replica or cache answered.
+        /// An earlier epoch than the store's: a stale replica or cache answered, or the store
+        /// took a later epoch from elsewhere before.
         case earlier
         /// After ``OfflineStore/resetChangeToken()``, another epoch than the store's, whatever
         /// its order.
         case other
 
-        /// Whether a page of this epoch, once taken, starts a new server history.
+        /// Whether a page of this epoch, once believed, starts a new server history.
         var startsHistory: Bool {
             self == .later || self == .earlier || self == .other
         }
@@ -63,9 +67,9 @@ extension OfflineStore {
         return otherBytes.lexicographicallyPrecedes(bytes)
     }
 
-    /// Counts a sync that met `epoch`, earlier than the store's, and returns when the store now
-    /// takes it: in the ``maximumEpochRefusals``th sync in a row. Otherwise the refusal is
-    /// written to the file and thrown.
+    /// Counts a sync in which two requests reported `epoch`, earlier than the store's, and
+    /// returns when the store now takes it: in the ``maximumEpochRefusals``th sync in a row.
+    /// Otherwise the refusal is written to the file and thrown.
     func takeOrRefuse(_ epoch: String) throws {
         let previous = state.epochRefusal?.epoch == epoch ? state.epochRefusal?.syncs ?? 0 : 0
         guard previous + 1 < Self.maximumEpochRefusals else { return }
