@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Fixes for the data-integrity findings of two audits of 2.0.0 and of their second round, each
-with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+Fixes for the data-integrity findings of two audits of 2.0.0 and of their second and third
+rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -25,8 +25,9 @@ now state what the store promises and what it needs from the server.
 - The deletion of a record the store never held was not kept, so an older page could create
   the record. Two deletions now go to the resolver, so the newer one stays.
 - A timestamp years ahead won every last-write-wins conflict on every device. Timestamps more
-  than `maximumClockDrift` ahead now count as at that limit, in the store and in the reference
-  servers.
+  than `maximumClockDrift` ahead now count as at that limit when the store weighs them; the
+  reference servers keep them as they were pushed, so a device whose clock runs ahead still
+  recognises its own write whose answer was lost.
 - `discardChange(for:)` during a pull lost its token reset, and the server's copy never came
   back.
 - A change whose push answer was lost could be resolved again by a pull and pushed over a newer
@@ -69,9 +70,21 @@ now state what the store promises and what it needs from the server.
   edit over them; without sequences, all remote timestamps ended at the same limit. The limit
   now counts from the newest timestamp the store holds when that is later than the device
   clock, and server versions are ordered only by timestamps within the limit.
-- A page from a server epoch the store had left, as a stale replica sends after a restart,
-  started a new history and rolled records back. The store remembers the last 32 epochs it left
-  and refuses such a page.
+- After a server restart, a page from a stale replica or cache could roll records back. Epochs
+  now have an order (a longer one is later; of two as long, the greater byte by byte): a page
+  of an earlier epoch than the store's is refused without being stored, and a later epoch
+  counts once the pull from the beginning reports it too, so one page from another deployment
+  behind the same URL does not move the store. An earlier epoch met in eight syncs in a row is
+  taken, and `resetChangeToken()` takes the next epoch at once, so a wrong answer cannot lock
+  the store out of the real server. What a push answer tells about a record (an accepted
+  write, or the version a conflict answer brought) moves into a later epoch until a pull
+  brings that version: the push may have been answered after a restart the store had not
+  seen, and a page of the new epoch from before it no longer rolls the write back or makes the
+  next edit meet the device's own write as a conflict.
+- A push that failed while the device clock was far ahead waited for a retry date that far
+  ahead after the clock was set right, unreported; the circuit breaker's pause and the wait
+  after a failed file write did the same. A wait longer than the policy allows now counts as
+  passed.
 - While the store file could not be written (a full disk, file protection, another instance), a
   change in doubt went out again on every sync, and automatic sync sent it every second. After a
   failed write, syncs now wait with the retry policy's backoff, and automatic sync waits after
@@ -97,6 +110,10 @@ now state what the store promises and what it needs from the server.
 - `SyncReport.conflicts` no longer counts a conflict with the device's own earlier write.
 - The reference server starts a new epoch on every start, also with `--data`, so each client
   pulls everything once after a restart, and it saves the answers to change IDs with its data.
+- Servers must report epochs that only move to later ones: longer, or as long and greater byte
+  by byte, and keep counting sequences across a restart that keeps the data. Both reference
+  servers make each epoch from the time in microseconds (16 hexadecimal digits), and at least
+  one more than the last epoch they handed out in the process or, with `--data`, saved.
 
 ## [2.0.0] - 2026-10-15
 

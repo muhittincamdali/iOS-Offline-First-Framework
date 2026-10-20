@@ -46,9 +46,9 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 217 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 237 Swift Testing tests on macOS and an iPhone simulator,
   among them a property test that runs every conflict policy through lost requests, restarts and
-  stale pages, 19 Node tests for the server, and an end-to-end suite in CI that syncs two stores
+  stale pages, 20 Node tests for the server, and an end-to-end suite in CI that syncs two stores
   through the server over HTTP.
 
 ### What's included
@@ -329,7 +329,8 @@ app and server restarts and stale pages, as long as the server follows the
   server answers it. A retry keeps the change ID, so the server applies it once.
 - A stale copy never replaces a write the server accepted: the resolver is asked only when a
   record changed on the device and on another device, and an older server version is skipped,
-  also right after the device's own write was accepted.
+  also right after the device's own write was accepted, even across a server restart the device
+  has not seen yet.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
   pull everything again and keep its pending changes. A record the app cannot decode is set
   aside in `quarantinedChanges()` instead of stopping the pull.
@@ -339,10 +340,11 @@ app and server restarts and stale pages, as long as the server follows the
   parked, a sync ends after `syncTimeout`, and syncs wait while the file cannot be written.
 
 The server must never give the same revision to two versions of a record, should send an
-`epoch` (never an earlier one again), a `sequence` and the pushed timestamps unchanged, and must
-remember change IDs across restarts. Limits: writes a server
-lost in a restore are not uploaded again, one store instance per file, the whole file is
-written on every change, and deletions beyond 10,000 are forgotten.
+`epoch` that only moves to later ones (longer, or greater byte by byte), a `sequence` that keeps
+counting across restarts and the pushed timestamps unchanged, and must remember change IDs
+across restarts. Limits: writes a server lost in a restore are not uploaded again, one store
+instance per file, the whole file is written on every change, and deletions beyond 10,000 are
+forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

@@ -53,12 +53,13 @@ The rules that keep sync correct:
   saw; if the server's revision differs, answer ``PushOutcome/conflict(current:)`` with the
   server's record instead of overwriting it.
 - **Order and history.** Send ``RemoteChange/sequence``, a number that grows with every write,
-  so the store recognises older versions that arrive late without trusting device clocks, and
-  ``PullResponse/epoch``, which changes when the server lost or replaced its data, so the store
-  pulls everything again; the store refuses a page with an epoch it has left, as a stale
-  replica or cache would send. Give the transport a ``SyncTransport/serverIdentity`` (the HTTP
-  transport uses its URL), so a store opened with another server does not send it the old
-  server's token.
+  also across a restart that keeps the data, so the store recognises older versions that
+  arrive late without trusting device clocks, and ``PullResponse/epoch``, which changes to a
+  later one (longer, or as long and greater byte by byte) when the server restarted, lost or
+  replaced its data, so the store pulls everything again; the store refuses a page with an
+  earlier epoch than its own, as a stale replica or cache would send. Give the transport a
+  ``SyncTransport/serverIdentity`` (the HTTP transport uses its URL), so a store opened with
+  another server does not send it the old server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
   change out of the answer to retry only that change. Answer
   ``PushOutcome/rejected(reason:current:)`` only when the change can never succeed.
