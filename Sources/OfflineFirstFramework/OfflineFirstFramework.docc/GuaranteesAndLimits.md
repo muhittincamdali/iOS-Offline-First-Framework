@@ -6,9 +6,10 @@ What the store promises about your data, what it needs from the server for that,
 
 The guarantees below hold for every ``ConflictResolver``, for a server that follows
 <doc:ServerProtocol>, and through lost requests, lost answers, app restarts, server restarts and
-pages answered from a stale replica. A property test checks them: two devices make random
-saves, deletes, syncs and restarts against an ``InMemorySyncServer`` that restarts and answers
-some pulls with stale pages, for last write wins, server wins, client wins and a merge. It
+pages answered from a stale replica or cache. A property test checks them: two devices make
+random saves, deletes, syncs and restarts against an ``InMemorySyncServer`` that restarts and
+answers some pulls with stale pages, from a cache of each device or one cache both devices
+share, for last write wins, server wins, client wins and a merge. It
 checks the end state, that no accepted write is applied again after a later one, that no device
 goes back to an older server version of a record, and that no resolver is asked about a
 device's own write.
