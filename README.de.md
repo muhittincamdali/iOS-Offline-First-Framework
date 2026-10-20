@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
+<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,9 +51,9 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 217 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 237 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
-  Anfragen, Neustarts und veraltete Seiten schickt, 19 Node-Tests für den Server und eine
+  Anfragen, Neustarts und veraltete Seiten schickt, 20 Node-Tests für den Server und eine
   End-to-End-Testsuite in der CI, die zwei Stores über HTTP durch den Server synchronisiert.
 
 ### Was enthalten ist
@@ -339,7 +339,8 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
 - Eine veraltete Kopie ersetzt nie einen Schreibvorgang, den der Server angenommen hat: Der
   Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf einem anderen Gerät
   geändert hat, und eine ältere Serverversion wird übersprungen, auch direkt nachdem der Server
-  den eigenen Schreibvorgang des Geräts angenommen hat.
+  den eigenen Schreibvorgang des Geräts angenommen hat, selbst über einen Serverneustart hinweg,
+  den das Gerät noch nicht gesehen hat.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein anderer
   Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben. Ein
   Datensatz, den die App nicht dekodieren kann, wird in `quarantinedChanges()` zurückgestellt,
@@ -350,9 +351,10 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   Geräts hinaus, Wiederholungen warten und werden geparkt, eine Synchronisierung endet nach
   `syncTimeout`, und Synchronisierungen warten, solange die Datei nicht geschrieben werden kann.
 
-Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`
-(nie wieder eine frühere), eine `sequence` und die übertragenen Zeitstempel unverändert senden
-und muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen:
+Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
+die nur zu späteren wechselt (länger oder Byte für Byte größer), eine `sequence`, die über
+Neustarts weiterzählt, und die übertragenen Zeitstempel unverändert senden und muss sich
+Änderungs-IDs über Neustarts hinweg merken. Grenzen:
 Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht erneut
 hochgeladen, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben,
 und Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält

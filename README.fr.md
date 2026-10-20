@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
+<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,9 +53,9 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 217 tests Swift Testing sur macOS et sur un simulateur
+- **Testé contre un vrai serveur** — 237 tests Swift Testing sur macOS et sur un simulateur
   d’iPhone, dont un test de propriétés qui soumet chaque politique de conflit à des requêtes perdues,
-  des redémarrages et des pages périmées, 19 tests Node pour le serveur et une suite de tests de
+  des redémarrages et des pages périmées, 20 tests Node pour le serveur et une suite de tests de
   bout en bout dans la CI qui synchronise deux stores via le serveur en HTTP.
 
 ### Contenu
@@ -343,7 +343,7 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
 - Une copie périmée ne remplace jamais une écriture acceptée par le serveur : le résolveur n’est
   consulté que lorsqu’un enregistrement a changé sur l’appareil et sur un autre appareil, et une
   version plus ancienne du serveur est ignorée, y compris juste après l’acceptation d’une écriture
-  de l’appareil lui-même.
+  de l’appareil lui-même, même après un redémarrage du serveur que l’appareil n’a pas encore vu.
 - Les enregistrements supprimés le restent. Un serveur qui a perdu ses données, ou un autre
   serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente. Un
   enregistrement que l’app ne sait pas décoder est mis de côté dans `quarantinedChanges()` au lieu
@@ -355,8 +355,9 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
   `syncTimeout`, et les synchronisations attendent tant que le fichier ne peut pas être écrit.
 
 Le serveur ne doit jamais donner la même révision à deux versions d’un enregistrement, devrait
-envoyer un `epoch` (jamais un ancien à nouveau), un `sequence` et les horodatages reçus sans les
-modifier, et doit retenir les ID de modification d’un redémarrage à l’autre. Limites : les écritures qu’un serveur a perdues lors d’une restauration ne sont pas
+envoyer un `epoch` qui ne passe qu’à des epochs ultérieurs (plus longs, ou plus grands octet par
+octet), un `sequence` qui continue de compter après un redémarrage et les horodatages reçus sans
+les modifier, et doit retenir les ID de modification d’un redémarrage à l’autre. Limites : les écritures qu’un serveur a perdues lors d’une restauration ne sont pas
 renvoyées, une seule instance du store par fichier, le fichier entier est écrit à chaque
 modification, et les suppressions au-delà de 10 000 sont oubliées. [Garanties et
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) donne la liste complète.

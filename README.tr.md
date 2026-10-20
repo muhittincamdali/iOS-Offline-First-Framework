@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@dc38027e3dbee9c8e1e1e5fd495fa29376967c1f status=reviewed -->
+<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,9 +50,9 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 217 Swift Testing
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 237 Swift Testing
   testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar ve bayat
-  sayfalarla sınayan bir özellik testi), sunucu için 19 Node testi ve CI'da iki yerel depoyu sunucu
+  sayfalarla sınayan bir özellik testi), sunucu için 20 Node testi ve CI'da iki yerel depoyu sunucu
   üzerinden HTTP ile eşitleyen uçtan uca bir test paketi.
 
 ### Neler var
@@ -337,7 +337,8 @@ tutar:
   onu bir kez uygular.
 - Bayat bir kopya, sunucunun kabul ettiği bir yazmanın yerini asla almaz: çözücüye yalnızca kayıt
   hem bu cihazda hem başka bir cihazda değiştiyse sorulur ve sunucunun daha eski bir sürümü,
-  cihazın kendi yazması kabul edildikten hemen sonra da atlanır.
+  cihazın kendi yazması kabul edildikten hemen sonra da, cihazın henüz görmediği bir sunucu
+  yeniden başlatmasının ardından bile atlanır.
 - Silinen kayıtlar silinmiş kalır. Verisini kaybetmiş bir sunucu ya da başka bir sunucu, deponun
   her şeyi baştan çekmesine yol açar ve bekleyen değişiklikler korunur. Uygulamanın çözemediği bir
   kayıt, çekmeyi durdurmak yerine `quarantinedChanges()` içine ayrılır.
@@ -347,9 +348,10 @@ tutar:
   ve park edilir, bir eşitleme `syncTimeout` sonunda biter ve dosya yazılamadığı sürece
   eşitlemeler bekler.
 
-Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; bir `epoch` (eskisine asla geri
-dönmeden), bir `sequence` ve gönderilen zaman damgalarını değiştirmeden göndermeli ve değişiklik
-kimliklerini yeniden başlatmalar boyunca hatırlamalıdır. Sınırlar:
+Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; yalnızca daha geç olanlara ilerleyen
+bir `epoch` (daha uzun ya da bayt bayt daha büyük), yeniden başlatmalarda saymayı sürdüren bir
+`sequence` ve gönderilen zaman damgalarını değiştirmeden göndermeli ve değişiklik kimliklerini
+yeniden başlatmalar boyunca hatırlamalıdır. Sınırlar:
 sunucunun bir geri yüklemede kaybettiği yazmalar yeniden yüklenmez, dosya başına tek bir depo
 örneği kullanılır, her değişiklikte dosyanın tamamı yazılır ve 10.000'i aşan silmeler unutulur.
 Tam liste [Güvenceler ve sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) makalesindedir.
