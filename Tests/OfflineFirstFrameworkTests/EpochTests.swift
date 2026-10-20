@@ -177,8 +177,8 @@ struct EpochTests {
         #expect(await store.state.epochRefusal == nil)
     }
 
-    /// resetChangeToken() takes the next epoch the server reports, whatever its order, and
-    /// starts a new history when it differs from the store's.
+    /// After resetChangeToken() an earlier epoch that the pull from the beginning and the pull
+    /// after its token both report is taken at once, as a new history.
     @Test func resetChangeTokenTakesAnEarlierEpochAtOnce() async throws {
         let later = PullResponse<Note>(changes: [], token: "e2.0", hasMore: false, epoch: "e2")
         let earlier = PullResponse<Note>(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "real"), revision: "e1.1",

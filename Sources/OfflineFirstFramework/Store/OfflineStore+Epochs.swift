@@ -15,8 +15,7 @@ struct EpochRefusal: Codable, Hashable, Sendable {
 /// deployment, a misdirected request). The store therefore believes another epoch than its own
 /// only when two requests of different kinds in one sync report it (a pull with the token and a
 /// pull from the beginning), takes a later one then, and refuses an earlier one until the syncs
-/// in a row that met it reach ``maximumEpochRefusals``; after
-/// ``OfflineStore/resetChangeToken()`` it takes any other epoch the two requests report.
+/// in a row that met it reach ``maximumEpochRefusals``.
 extension OfflineStore {
     /// Syncs in a row that meet the same earlier epoch until the store takes it as the server's
     /// history: the last of them takes it, the ones before refuse it. A server whose epochs went
@@ -37,13 +36,10 @@ extension OfflineStore {
         /// An earlier epoch than the store's: a stale replica or cache answered, or the store
         /// took a later epoch from elsewhere before.
         case earlier
-        /// After ``OfflineStore/resetChangeToken()``, another epoch than the store's, whatever
-        /// its order.
-        case other
 
         /// Whether a page of this epoch, once believed, starts a new server history.
         var startsHistory: Bool {
-            self == .later || self == .earlier || self == .other
+            self == .later || self == .earlier
         }
     }
 
@@ -54,7 +50,6 @@ extension OfflineStore {
         }
         guard let known = state.serverEpoch else { return .first }
         if epoch == known { return .current }
-        if state.takesNextEpoch { return .other }
         return isLater(epoch, than: known) ? .later : .earlier
     }
 
@@ -68,9 +63,11 @@ extension OfflineStore {
     }
 
     /// Counts a sync in which two requests reported `epoch`, earlier than the store's, and
-    /// returns when the store now takes it: in the ``maximumEpochRefusals``th sync in a row.
-    /// Otherwise the refusal is written to the file and thrown.
+    /// returns when the store now takes it: after ``OfflineStore/resetChangeToken()``, or in the
+    /// ``maximumEpochRefusals``th sync in a row. Otherwise the refusal is written to the file and
+    /// thrown.
     func takeOrRefuse(_ epoch: String) throws {
+        guard !state.takesNextEpoch else { return }
         let previous = state.epochRefusal?.epoch == epoch ? state.epochRefusal?.syncs ?? 0 : 0
         guard previous + 1 < Self.maximumEpochRefusals else { return }
         try update { $0.epochRefusal = EpochRefusal(epoch: epoch, syncs: previous + 1) }

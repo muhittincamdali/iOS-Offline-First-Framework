@@ -30,8 +30,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         var quarantine: [QuarantinedChange] = []
         /// An earlier epoch than ``serverEpoch`` that the last syncs in a row refused.
         var epochRefusal: EpochRefusal? = nil
-        /// Set by ``OfflineStore/resetChangeToken()``: the next epoch the server reports is taken
-        /// whatever its order.
+        /// Set by ``OfflineStore/resetChangeToken()``: an earlier epoch than ``serverEpoch`` is
+        /// taken in the next sync that confirms it, without the refusals.
         var takesNextEpoch = false
 
         mutating func takeSequence() -> UInt64 {
@@ -227,9 +227,13 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Forgets the change token, so the next sync pulls every server change from the
     /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
-    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again. The
-    /// next ``PullResponse/epoch`` the server reports is taken whatever its order: when it
-    /// differs from the store's, a new server history starts.
+    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
+    ///
+    /// Another ``PullResponse/epoch`` than the store's is believed, as always, once two requests
+    /// of one sync report it: the pull from the beginning and the pull after its token. A later
+    /// epoch then starts a new server history as after a restart, keeping what push answers
+    /// told; an earlier one is taken at once instead of after eight syncs in a row. One page
+    /// from a stale replica or cache therefore still cannot roll the store back.
     ///
     /// Use it when the server can no longer continue after the token, for example when it
     /// answers every pull with an error for it; after an app update that can read records the

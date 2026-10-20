@@ -152,6 +152,48 @@ struct EpochConfirmationTests {
         #expect(await store.record("a")?.text == "a v3, current")
     }
 
+    /// The app calls resetChangeToken() (after an app update, say) and pushes before its pull
+    /// sees a server restart. A shared cache answers the pull from the beginning with the new
+    /// epoch's first page from before the push, and the sync fetches one page. The later epoch
+    /// keeps what the push answer told, so the accepted write stays and the next edit is not
+    /// resolved against it.
+    @Test(arguments: ConvergenceTests.Policy.allCases)
+    func aResetDoesNotLetAStaleFirstPageOfALaterEpochRollBackTheOwnWrite(policy: ConvergenceTests.Policy) async throws {
+        let seen = SeenTexts()
+        let server = InMemorySyncServer<Note>(pageSize: 1, now: { [clock] in clock.now })
+        let transport = await forwarding(to: server)
+        let resolver = ConflictResolver<Note> { conflict in
+            seen.add(conflict.remote?.text)
+            return policy.resolver.resolve(conflict)
+        }
+        var configuration = makeConfiguration(clock: clock, resolver: resolver)
+        configuration.maximumPullPages = 1
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport, configuration: configuration)
+        await server.write(Note(id: "x", text: "v1"))
+        await server.write(Note(id: "y", text: "y1"))
+        try await store.sync()
+        try await store.sync()
+        await server.restart()
+        let cachedFirstPage = try await server.pull(since: nil)
+        clock.advance(by: 5)
+        try await store.save(Note(id: "x", text: "v3"))
+        try await store.resetChangeToken()
+        let cached = OneShot()
+        await transport.onPull { token in
+            if token == nil, await cached.fire() { return cachedFirstPage }
+            return try await server.pull(since: token)
+        }
+        try await store.sync()
+        #expect(await store.record("x")?.text == "v3", "\(policy): the accepted write was rolled back")
+
+        clock.advance(by: 5)
+        try await store.save(Note(id: "x", text: "v4"))
+        for _ in 0..<3 { try await store.sync() }
+        #expect(!seen.values.contains("v3"), "\(policy): the resolver was asked about the device's own write")
+        #expect(await server.record("x")?.text == "v4", "\(policy)")
+        #expect(await store.record("x")?.text == "v4", "\(policy)")
+    }
+
     /// After resetChangeToken(), a lagging replica still in an earlier epoch answers the pull
     /// from the beginning; the pull after its token reaches the server, which names the store's
     /// epoch. The replica's versions are not taken: no record goes back, and a deleted record,
