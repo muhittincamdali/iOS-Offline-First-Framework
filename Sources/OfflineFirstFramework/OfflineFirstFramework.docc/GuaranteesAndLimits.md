@@ -30,15 +30,20 @@ device's own write.
   the store holds (a page out of order, a lagging replica, a stale cache) is skipped and never
   pushed back, also right after the store's own write was accepted: until its echo arrives,
   the store knows the write is newer than every version up to the one it replaced, its own
-  earlier accepted writes included, and keeps that in its file. A page that names an earlier
-  server epoch than the store's is refused.
+  earlier accepted writes included, and keeps that in its file. That holds across a server
+  restart too: a sync pushes before it pulls, so a push may be answered after a restart the
+  store has not seen yet, and what a push answer told about a record (an accepted write, or the
+  version a conflict answer brought) moves into the later epoch until a pull brings that
+  version. A page that names an earlier server epoch than the store's is refused.
 - **Deleted records stay deleted.** Deletions are kept as tombstones, also for records the store
   never held, so an older version that arrives later does not bring a record back.
-- **A server that lost or replaced its data does not mix histories.** A later
+- **A server that lost or replaced its data starts a new history.** A later
   ``PullResponse/epoch``, or a transport with another ``SyncTransport/serverIdentity``, makes the
-  store pull everything again from the beginning. Pending changes stay and are pushed against
-  the server's current versions. A later epoch counts once the pull from the beginning reports
-  it too, so one page from another deployment behind the same URL does not move the store.
+  store pull everything again from the beginning, and the server's versions replace the ones of
+  the earlier history, except those a push answer brought as described above (never from
+  another server). Pending changes stay and are pushed against the server's current versions.
+  A later epoch counts once the pull from the beginning reports it too, so one page from
+  another deployment behind the same URL does not move the store.
 - **A refused epoch does not stop the store for good.** When the server keeps answering with an
   earlier epoch than the store's, eight syncs in a row, the store takes it as the server's
   history; ``OfflineStore/resetChangeToken()`` takes the next epoch at once.
@@ -73,7 +78,8 @@ device's own write.
 - Report an ``PullResponse/epoch`` that changes whenever its history may have changed, to a
   later one: longer, or as long and greater byte by byte (a counter, or the start time in
   fixed-width digits, as the reference servers do). Report a ``RemoteChange/sequence`` that
-  grows with every write. Without a sequence the store orders versions by their timestamps,
+  grows with every write, also across a restart that keeps the data. Without a sequence the
+  store orders versions by their timestamps,
   which matches the server's order only while the devices resolve conflicts by last write wins
   or a merge.
 - Send back the ``RemoteChange/timestamp`` a change was pushed with. The store recognises a
@@ -88,7 +94,12 @@ device's own write.
 
 - **Data the server lost stays lost.** After a restore from a backup the store follows the
   server: it does not upload again the writes the server no longer has, and records the server
-  lost stay on the device until they change again.
+  lost stay on the device until they change again. A record whose last push the server
+  answered before the store saw the new epoch keeps what that answer told, since a pull cannot
+  tell the restored version from a stale page: after a restore that set the server's sequence
+  back, the device keeps its version until the record changes on the device (the server's
+  version then meets the edit as a conflict) or changes on the server once the sequence has
+  passed where it stood before.
 - **One instance per file.** A second ``OfflineStore`` on the same file in the same process
   cannot write once the first one did
   (``OfflineFirstError/storeChangedElsewhere(name:)``); separate processes, such as an app and

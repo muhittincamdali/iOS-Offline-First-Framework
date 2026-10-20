@@ -36,6 +36,11 @@ extension OfflineStore {
         /// After ``OfflineStore/resetChangeToken()``, another epoch than the store's, whatever
         /// its order.
         case other
+
+        /// Whether a page of this epoch, once taken, starts a new server history.
+        var startsHistory: Bool {
+            self == .later || self == .earlier || self == .other
+        }
     }
 
     static func standing(of epoch: String?, in state: State) throws -> EpochStanding {
@@ -71,17 +76,29 @@ extension OfflineStore {
 
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
     /// another server. The token goes, so the next pull starts from the beginning. Entries keep
-    /// their revisions (a pending change still names its base) but belong to the old history,
-    /// so the server's current versions replace them whatever their timestamps say.
-    static func beginHistory(epoch: String?, in state: inout State) {
+    /// their revisions (a pending change still names its base) but belong to the old history:
+    /// the server's current versions replace them whatever their timestamps say.
+    ///
+    /// With `keepingPushAnswers`, for a later epoch of the same server, a version that a push
+    /// answer brought and no pull has brought since (``StoredEntry/pushedInHistory``) moves into
+    /// the new history with what the store knows about its order. The sync pushes before it
+    /// pulls, so the server may have answered after its restart: a page of the new epoch
+    /// from before that answer (a shared cache, a lagging replica) would otherwise roll back the
+    /// store's accepted write, or the version a conflict answer brought, and the next edit
+    /// would be resolved against the device's own write.
+    static func beginHistory(epoch: String?, keepingPushAnswers: Bool, in state: inout State) {
+        let previous = state.history
         state.history &+= 1
         state.serverEpoch = epoch
         state.token = nil
         state.quarantine.removeAll()
         state.epochRefusal = nil
         state.takesNextEpoch = false
-        for (id, entry) in state.entries where entry.deferredRemote != nil {
+        for (id, entry) in state.entries {
+            let keepsPosition = keepingPushAnswers && entry.pushedInHistory != nil && entry.history == previous
+            guard entry.deferredRemote != nil || keepsPosition else { continue }
             state.entries[id]?.deferredRemote = nil
+            if keepsPosition { state.entries[id]?.history = state.history }
         }
     }
 }

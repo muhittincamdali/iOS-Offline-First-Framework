@@ -9,8 +9,9 @@ extension OfflineStore {
     /// The longest node ID, in UTF-8 bytes, accepted in a server timestamp.
     static var maximumNodeIDLength: Int { 256 }
 
-    /// Revisions of earlier accepted writes an entry remembers as older
-    /// (``StoredEntry/olderRevisions``); more need several accepted writes without an echo.
+    /// Revisions an entry remembers as older than its own accepted write
+    /// (``StoredEntry/olderRevisions``): one per accepted write without an echo, the oldest
+    /// dropped first.
     static var maximumOlderRevisions: Int { 16 }
 
     /// The server's version as a stored entry without a pending change.
@@ -32,6 +33,7 @@ extension OfflineStore {
         entry.sequence = remote.sequence
         entry.minimumSequence = nil
         entry.olderRevisions = []
+        entry.pushedInHistory = nil
         entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
@@ -82,15 +84,22 @@ extension OfflineStore {
     /// The server's ``RemoteChange/sequence`` decides when both versions have one. Until the echo
     /// of the store's own accepted write arrives, the store knows only that the write is newer
     /// than every version up to the one it replaced (``StoredEntry/minimumSequence``) and than
-    /// the store's earlier accepted writes it replaced (``StoredEntry/olderRevisions``). Only a
-    /// server that sends no sequences is ordered
-    /// by the timestamps, which matches the server's order as long as the devices resolve
-    /// conflicts by ``ConflictResolver/lastWriteWins`` or a merge. A version from an earlier
-    /// server history is never newer than the server's current one. When the order is unknown,
-    /// the version counts as newer: the server sends its versions in order, so a newer one
-    /// follows anyway.
-    func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, in state: State) -> Bool {
+    /// the versions its earlier accepted writes replaced (``StoredEntry/olderRevisions``). Only a
+    /// server that sends no sequences is ordered by the timestamps, which matches the server's
+    /// order as long as the devices resolve conflicts by ``ConflictResolver/lastWriteWins`` or a
+    /// merge. A version from an earlier server history is never newer than the server's current
+    /// one. When the order is unknown, the version counts as newer: the server sends its versions
+    /// in order, so a newer one follows anyway.
+    ///
+    /// `isConflictAnswer` is true for the version a push answer names, which comes from the
+    /// server itself. What an entry moved into a new history from a push answer of the old one
+    /// knows about the order (``StoredEntry/pushedInHistory``) is then not used: after a restore
+    /// that set the server's sequence back, it could make the store refuse the server's current
+    /// version on every push.
+    func isStale(_ change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>, in state: State,
+                 isConflictAnswer: Bool = false) -> Bool {
         guard entry.revision != nil, entry.history == state.history else { return false }
+        if isConflictAnswer, let pushed = entry.pushedInHistory, pushed != entry.history { return false }
         if entry.olderRevisions.contains(change.revision) { return true }
         let limit = Self.driftLimit(of: state, configuration: configuration)
         return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),

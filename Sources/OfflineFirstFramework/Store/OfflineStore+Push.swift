@@ -117,8 +117,9 @@ extension OfflineStore {
                     entry.deferredRemote = nil
                     if let current, Self.isConsistent(current, for: entry.id) {
                         receive(current, in: &state)
-                        entry = Self.entry(from: newer(deferred, than: current, in: state), replacing: entry, in: &state,
-                                           configuration: configuration)
+                        let taken = newer(deferred, than: current, in: state)
+                        entry = Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration)
+                        if taken.revision == current.revision { entry.pushedInHistory = state.history }
                     } else {
                         entry.pending?.isParked = true
                         entry.pending?.nextAttemptAt = nil
@@ -135,18 +136,20 @@ extension OfflineStore {
     private func accept(_ change: OutgoingChange<Record>, as revision: String, into entry: inout StoredEntry<Record>, isCurrent: Bool,
                         in state: inout State, report: inout SyncReport) {
         // The answer does not say where the write stands; its echo in a pull will. Until then
-        // every version up to the one it replaced is known to be older: by its sequence, or,
-        // for an earlier accepted write of this store that has no echo yet, by its revision.
-        let sameHistory = entry.history == state.history
-        let replacedSequence = sameHistory ? (entry.sequence ?? entry.minimumSequence) : nil
-        var olderRevisions = sameHistory && entry.sequence == nil ? entry.olderRevisions : []
-        if sameHistory, entry.sequence == nil, let replaced = entry.revision {
+        // every version up to the one it replaced is known to be older: by its sequence, or by
+        // its revision when the store does not know that sequence in the current history (an
+        // earlier accepted write of this store without an echo, a version of an earlier history
+        // after a pull of the new one stopped before the record).
+        let knowsReplacedSequence = entry.history == state.history && entry.sequence != nil
+        var olderRevisions = knowsReplacedSequence ? [] : entry.olderRevisions
+        if !knowsReplacedSequence, let replaced = entry.revision {
             olderRevisions.append(replaced)
         }
+        entry.minimumSequence = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
         entry.revision = revision
         entry.history = state.history
+        entry.pushedInHistory = state.history
         entry.sequence = nil
-        entry.minimumSequence = replacedSequence
         entry.olderRevisions = Array(olderRevisions.suffix(Self.maximumOlderRevisions))
         entry.serverTimestamp = change.timestamp
         let deferred = entry.deferredRemote
@@ -181,7 +184,7 @@ extension OfflineStore {
         // A repeated push is answered from the server's memory of change IDs, with the version
         // that was current then; a version pulled since is newer.
         let current = newer(deferred, than: current, in: state)
-        guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state) else {
+        guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state, isConflictAnswer: true) else {
             // The version the change is based on, or an older one (a lagging replica
             // answered): nothing to resolve; the change is pushed again later.
             report.conflicts += 1
@@ -205,6 +208,8 @@ extension OfflineStore {
             report.conflicts += 1
             entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
         }
+        // Every path above makes `current` the version the entry is based on.
+        entry.pushedInHistory = state.history
     }
 
     /// `deferred`, the version a pull brought while the change was in doubt, when it is not

@@ -87,10 +87,20 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// of a version whose sequence the store knew; the write's echo in a pull tells its own
     /// ``sequence``.
     var minimumSequence: UInt64? = nil
-    /// Revisions of the store's own accepted writes that ``revision`` replaced, whose sequences
-    /// the store does not know yet: each is older than ``revision``. Kept, with
-    /// ``minimumSequence``, until a pull tells the sequence of ``revision``.
+    /// Revisions of versions that the store's own accepted writes replaced, up to ``revision``,
+    /// whose order the sequences do not tell: earlier writes of the store without an echo, and
+    /// a version of an earlier history the write was based on. Each is older than ``revision``,
+    /// since a server never gives a revision twice. Kept until a pull tells the sequence of
+    /// ``revision``.
     var olderRevisions: [String] = []
+    /// The ``history`` the store was in when a push answer set ``revision``: the server accepted
+    /// the store's write, or answered a conflict with its current version. `nil` once a pull
+    /// brought that version or another one. The server may have answered from a later history
+    /// than the store's, after a restart the store has not seen yet, so when a pull starts a
+    /// later epoch such an entry moves into the new history and keeps what it knows about the
+    /// order (see ``OfflineStore/beginHistory(epoch:keepingPushAnswers:in:)``). An entry whose
+    /// ``history`` differs from this one was moved so.
+    var pushedInHistory: UInt64? = nil
     /// The timestamp of the server version ``revision`` names, if the server sent one the store
     /// can order versions by: not further ahead than the drift limit when it arrived (see
     /// ``OfflineStore/Configuration/maximumClockDrift``). `nil` says nothing about the order.
@@ -105,7 +115,7 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
         case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, olderRevisions,
-             serverTimestamp, deferredRemote
+             pushedInHistory, serverTimestamp, deferredRemote
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
@@ -125,6 +135,7 @@ extension StoredEntry {
         sequence = try container.decodeIfPresent(UInt64.self, forKey: .sequence)
         minimumSequence = try container.decodeIfPresent(UInt64.self, forKey: .minimumSequence)
         olderRevisions = try container.decodeIfPresent([String].self, forKey: .olderRevisions) ?? []
+        pushedInHistory = try container.decodeIfPresent(UInt64.self, forKey: .pushedInHistory)
         if container.contains(.serverTimestamp) {
             serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
         } else {
@@ -148,6 +159,7 @@ extension StoredEntry {
         if !olderRevisions.isEmpty {
             try container.encode(olderRevisions, forKey: .olderRevisions)
         }
+        try container.encodeIfPresent(pushedInHistory, forKey: .pushedInHistory)
         // Written also when it is nil, so a file tells a server version without a timestamp
         // from a file of a version before the key existed.
         if let serverTimestamp {

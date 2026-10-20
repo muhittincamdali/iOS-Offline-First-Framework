@@ -25,7 +25,11 @@ extension OfflineStore {
             if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
                 throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
             }
-            guard let startsHistory = try startsHistory(with: response, unconfirmed: &unconfirmed) else { continue }
+            guard let standing = try standing(of: response, unconfirmed: &unconfirmed) else { continue }
+            let startsHistory = standing.startsHistory
+            // Only a later epoch is the same server going on; after an earlier one or a reset,
+            // what the push answers told may come from somewhere else.
+            let keepingPushAnswers = standing == .later
             if startsHistory {
                 guard !historyChanged else {
                     throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
@@ -34,7 +38,7 @@ extension OfflineStore {
                 requested.removeAll()
                 if token != nil {
                     // The page answers a token of the old history; start over from the beginning.
-                    try update { Self.beginHistory(epoch: response.epoch, in: &$0) }
+                    try update { Self.beginHistory(epoch: response.epoch, keepingPushAnswers: keepingPushAnswers, in: &$0) }
                     continue
                 }
             }
@@ -42,7 +46,7 @@ extension OfflineStore {
             try Self.checkProgress(of: response, after: token, requested: requested)
             try update { state in
                 if startsHistory {
-                    Self.beginHistory(epoch: response.epoch, in: &state)
+                    Self.beginHistory(epoch: response.epoch, keepingPushAnswers: keepingPushAnswers, in: &state)
                 } else if let epoch = response.epoch {
                     // The store's epoch, or the first one the server reports (a new store, an
                     // update of the server): an earlier epoch refused before is no longer current.
@@ -65,12 +69,12 @@ extension OfflineStore {
         report.hasMoreChanges = true
     }
 
-    /// Whether `response` starts a new server history, or `nil` when the page is dropped and the
-    /// pull goes on. A later epoch counts once a pull from the beginning reports it too; until
-    /// then `unconfirmed` holds it. An earlier epoch is refused (``takeOrRefuse(_:)``).
-    private func startsHistory(with response: PullResponse<Record>, unconfirmed: inout String?) throws -> Bool? {
+    /// How the epoch of `response` stands, or `nil` when the page is dropped and the pull goes
+    /// on. A later epoch counts once a pull from the beginning reports it too; until then
+    /// `unconfirmed` holds it. An earlier epoch is refused (``takeOrRefuse(_:)``).
+    private func standing(of response: PullResponse<Record>, unconfirmed: inout String?) throws -> EpochStanding? {
         let standing = try Self.standing(of: response.epoch, in: state)
-        guard let epoch = response.epoch, standing != .current, standing != .first else {
+        guard let epoch = response.epoch, standing.startsHistory else {
             // A later epoch that the pull from the beginning does not report again came from
             // somewhere else (another deployment behind the same URL, a misdirected request):
             // the store stays in its history and goes on after its own token.
@@ -78,7 +82,7 @@ extension OfflineStore {
                 unconfirmed = nil
                 return nil
             }
-            return false
+            return standing
         }
         switch standing {
         case .later:
@@ -95,7 +99,7 @@ extension OfflineStore {
             break
         }
         unconfirmed = nil
-        return true
+        return standing
     }
 
     /// Throws when a page that says more changes follow would not move the pull forward: it
@@ -136,6 +140,7 @@ extension OfflineStore {
         // version stands.
         guard entry.revision != change.revision else {
             entry.history = state.history
+            entry.pushedInHistory = nil
             if let sequence = change.sequence {
                 entry.sequence = sequence
                 entry.minimumSequence = nil

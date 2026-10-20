@@ -95,7 +95,7 @@ sent percent-encoded, `+` as `%2B`.
 | Field       | Meaning                                                                                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                   |
-| `sequence`  | Grows with every write the server stores; orders versions within one epoch. Lets the store skip stale pages.                                             |
+| `sequence`  | Grows with every write the server stores, also across a restart that keeps the data; orders versions within one epoch. Lets the store skip stale pages.  |
 | `epoch`     | Names the server's history. Change it to a later one whenever the data may have been lost or replaced: longer, or as long and greater byte by byte.      |
 | `timestamp` | The timestamp the change was pushed with, unchanged, also when it is far ahead: the store knows its own writes by it and limits how far ahead it counts. |
 
