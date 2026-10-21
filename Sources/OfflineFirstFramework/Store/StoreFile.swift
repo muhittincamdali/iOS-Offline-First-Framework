@@ -217,12 +217,18 @@ enum StoreFileCoder {
         else {
             throw OfflineFirstError.corruptStore(name: name, description: "the file has no list of entries")
         }
-        // Only live records are migrated; a deleted one has no "record" key.
+        // Only live records are migrated; a deleted one has no "record" key. A version a pull kept
+        // back (`deferredRemote`) holds a record of the stored schema as well.
         let liveIndices = entries.indices.filter { entries[$0]["record"].map { $0 != .null } ?? false }
+        let keptIndices = entries.indices.filter { entries[$0]["deferredRemote"]?["record"].map { $0 != .null } ?? false }
         var records = liveIndices.compactMap { entries[$0]["record"] }
+            + keptIndices.compactMap { entries[$0]["deferredRemote"]?["record"] }
         try RecordMigration.migrate(&records, from: stored, to: current, using: migrations)
         for (index, record) in zip(liveIndices, records) {
             entries[index]["record"] = record
+        }
+        for (index, record) in zip(keptIndices, records.dropFirst(liveIndices.count)) {
+            entries[index]["deferredRemote"]?["record"] = record
         }
         file["entries"] = .array(entries)
         file["schemaVersion"] = .integer(Int64(current))
