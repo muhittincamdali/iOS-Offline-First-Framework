@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { once } from 'node:events';
+import { mkdir, mkdtemp, readFile, rmdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { MAX_BODY_BYTES, MAX_COLLECTIONS, createSyncServer, loadFromFile, saveToFile } from '../server.mjs';
 
 let server;
@@ -109,4 +112,58 @@ test('collections survive a restart through the data file', async () => {
   assert.match(await readFile(path, 'utf8'), /kept/);
   const reloaded = await loadFromFile(path);
   assert.deepEqual(reloaded.get('notes').changes(null).changes.map((c) => c.recordID), ['kept']);
+});
+
+/** Runs server.mjs in a process of its own on a free port, keeping its data in `data`. */
+async function startServerProcess(data) {
+  const script = fileURLToPath(new URL('../server.mjs', import.meta.url));
+  const child = spawn(process.execPath, [script, '--port', '0', '--data', data], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const url = await new Promise((resolve, reject) => {
+    let output = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      output += chunk;
+      const port = /localhost:(\d+)/.exec(output)?.[1];
+      if (port) resolve(`http://localhost:${port}`);
+    });
+    child.once('exit', (code) => reject(new Error(`the server exited with ${code}: ${output}`)));
+  });
+  return { url, kill: async () => {
+    const exited = once(child, 'exit');
+    child.kill('SIGKILL');
+    await exited;
+  } };
+}
+
+/** Pushes a new record `recordID` to the collection `notes` at `url` and returns the status. */
+async function pushRecord(url, recordID) {
+  const change = { id: randomUUID(), recordID, operation: 'upsert', record: { id: recordID }, timestamp };
+  const response = await fetch(`${url}/sync/notes/push`, { method: 'POST', body: JSON.stringify({ changes: [change] }) });
+  await response.arrayBuffer();
+  return response.status;
+}
+
+/** A directory where the data file's temporary file goes makes every save fail until it is removed. */
+async function failingSaves(data, body) {
+  await mkdir(`${data}.tmp`);
+  try {
+    return await body();
+  } finally {
+    await rmdir(`${data}.tmp`);
+  }
+}
+
+test('a save that failed does not stop later saves of the data file', async () => {
+  const data = join(await mkdtemp(join(tmpdir(), 'sync-server-')), 'data.json');
+  const server = await startServerProcess(data);
+  try {
+    assert.equal(await pushRecord(server.url, 'a'), 200);
+    assert.equal(await failingSaves(data, () => pushRecord(server.url, 'b')), 500);
+    // The disk takes writes again: the next push saves its change and the one that failed.
+    assert.equal(await pushRecord(server.url, 'c'), 200);
+    const saved = await loadFromFile(data);
+    assert.deepEqual(saved.get('notes').changes(null).changes.map((c) => c.recordID), ['a', 'b', 'c']);
+  } finally {
+    await server.kill();
+  }
 });

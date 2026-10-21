@@ -52,9 +52,19 @@ function send(response, status, body) {
 
 /**
  * Creates the HTTP server. `collections` maps collection names to `Collection`s and grows as
- * clients use new names; `save` is called after every accepted push.
+ * clients use new names; `save` is called with all of them after every push, and the push is
+ * answered once it returns.
  */
 export function createSyncServer({ collections = new Map(), save = async () => {}, validate } = {}) {
+  // Saves run one after another, so two pushes never write the data at the same time. A save
+  // that fails (a full disk, a missing permission) answers its push with an error and leaves the
+  // next one to run: that save writes every collection, the failed push's changes included.
+  let saving = Promise.resolve();
+  const saveAll = () => {
+    const saved = saving.then(() => save(collections));
+    saving = saved.catch(() => {});
+    return saved;
+  };
   const collection = (name) => {
     if (!collections.has(name)) {
       if (collections.size >= MAX_COLLECTIONS) throw new HTTPError(507, `at most ${MAX_COLLECTIONS} collections`);
@@ -72,7 +82,7 @@ export function createSyncServer({ collections = new Map(), save = async () => {
       if (action === 'push') {
         if (request.method !== 'POST') throw new HTTPError(405, 'use POST');
         const answer = collection(name).push(await readBody(request));
-        await save(collections);
+        await saveAll();
         send(response, 200, answer);
       } else {
         if (request.method !== 'GET') throw new HTTPError(405, 'use GET');
@@ -112,9 +122,7 @@ export async function saveToFile(path, collections) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const { values } = parseArgs({ options: { port: { type: 'string', default: '8080' }, data: { type: 'string' } } });
   const collections = values.data ? await loadFromFile(values.data) : new Map();
-  // Saves run one after another, so two pushes never write the file at the same time.
-  let saving = Promise.resolve();
-  const save = values.data ? (all) => (saving = saving.then(() => saveToFile(values.data, all))) : undefined;
+  const save = values.data ? (all) => saveToFile(values.data, all) : undefined;
   const server = createSyncServer({ collections, save });
   server.listen(Number(values.port), () => {
     console.log(`Sync server listening on http://localhost:${server.address().port}/sync/<collection>`);
