@@ -112,7 +112,7 @@ struct HTTPSyncTransportTests {
     @Test func pullSendsTheTokenAndReadsThePage() async throws {
         let transport = transport { request, _ in
             let query = request.url?.query() ?? ""
-            let answer = query == "since=7"
+            let answer = query == "since=7&limit=100"
                 ? #"{"changes": [{"recordID": "a", "revision": "8"}], "token": "8", "hasMore": false}"#
                 : #"{"changes": [{"recordID": "a", "record": {"id": "a", "text": "A"}, "revision": "7", "timestamp": {"wallTime": 5, "counter": 0, "nodeID": "x"}}], "token": "7", "hasMore": true}"#
             return (200, Data(answer.utf8))
@@ -137,7 +137,7 @@ struct HTTPSyncTransportTests {
         }
         _ = try await transport.pull(since: "ab+c/d==&e")
         let (query, since) = seen.withLock { $0 }
-        #expect(query == "since=ab%2Bc/d%3D%3D%26e")
+        #expect(query == "since=ab%2Bc/d%3D%3D%26e&limit=100")
         #expect(since == "ab+c/d==&e")
     }
 

@@ -7,7 +7,7 @@ import Foundation
 /// of JavaScript):
 ///
 /// - `POST <baseURL>/push` with `{"changes": [...]}`, answered with `{"outcomes": {...}}`.
-/// - `GET <baseURL>/changes?since=<token>`, answered with
+/// - `GET <baseURL>/changes?since=<token>&limit=<n>`, answered with
 ///   `{"changes": [...], "token": "...", "hasMore": false, "epoch": "..."}`.
 ///
 /// ```swift
@@ -20,7 +20,10 @@ import Foundation
 ///
 /// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)``, so the store
 /// retries the changes with its ``RetryPolicy``. Responses are read up to
-/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded.
+/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded. A pull asks
+/// for ``pageSize`` changes and, while the page is larger than that, for half as many; a single
+/// change that is larger on its own is set aside in ``OfflineStore/quarantinedChanges()`` and
+/// the pull moves past it.
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
@@ -59,6 +62,10 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// The longest response, in bytes, that is read. Default: 16 MiB.
     public let maximumResponseSize: Int
 
+    /// The most changes a pull asks for (the `limit` of the request), from 1 to 1,000. Default:
+    /// 100, the reference server's page size.
+    public let pageSize: Int
+
     private let headers: @Sendable () async throws -> [String: String]
 
     /// The base URL: a store opened with a transport for another URL pulls everything again.
@@ -73,17 +80,20 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     ///     `https://api.example.com/sync/notes`.
     ///   - session: The URL session. Default: `URLSession.shared`.
     ///   - maximumResponseSize: The longest response that is read, in bytes.
+    ///   - pageSize: The most changes a pull asks for.
     ///   - headers: Extra headers for each request, such as an `Authorization` header. Called
     ///     before every request, so it can refresh a token.
     public init(
         baseURL: URL,
         session: URLSession = .shared,
         maximumResponseSize: Int = 16 * 1024 * 1024,
+        pageSize: Int = 100,
         headers: @escaping @Sendable () async throws -> [String: String] = { [:] }
     ) {
         self.baseURL = baseURL
         self.session = session
         self.maximumResponseSize = max(1, maximumResponseSize)
+        self.pageSize = min(max(1, pageSize), 1_000)
         self.headers = headers
     }
 
@@ -95,17 +105,39 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         return try Self.outcomes(from: try await send(request), for: Set(changes.map(\.id)))
     }
 
+    /// Pulls the page after `token`. A page must fit in ``maximumResponseSize``; while it does
+    /// not, the pull asks for half as many changes, down to one. A change that is larger than
+    /// the limit on its own is read as it streams in without what it holds, set aside, and the
+    /// page's token moves past it, so one large record cannot stop every later pull. A server
+    /// that ignores `limit` and sends a page that is too large still fails with
+    /// ``Failure/responseTooLarge(limit:)``.
     public func pull(since token: String?) async throws -> PullResponse<Record> {
-        var url = baseURL.appending(path: "changes")
-        // Encoded by hand: URLQueryItem leaves "+" as it is, and servers that decode the query
-        // as a form (URLSearchParams, the reference server) read it as a space.
-        if let token, let encoded = token.addingPercentEncoding(withAllowedCharacters: changeTokenCharacters),
-           var components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
-            components.percentEncodedQuery = "since=\(encoded)"
-            url = components.url ?? url
+        var limit = pageSize
+        while true {
+            let request = try await makeRequest(url: changesURL(after: token, limit: limit))
+            do {
+                return try Self.page(from: try await send(request))
+            } catch Failure.responseTooLarge(limit: _) where limit > 1 {
+                limit /= 2
+            } catch Failure.responseTooLarge(limit: _) {
+                return try Self.oversizedPage(from: try await send(request, outlining: true), limit: maximumResponseSize)
+            }
         }
-        let request = try await makeRequest(url: url)
-        return try Self.page(from: try await send(request))
+    }
+
+    /// `<base>/changes?since=<token>&limit=<n>`, without `since` on the first pull. The token is
+    /// encoded by hand: URLQueryItem leaves "+" as it is, and servers that decode the query as a
+    /// form (URLSearchParams, the reference server) read it as a space.
+    private func changesURL(after token: String?, limit: Int) -> URL {
+        let url = baseURL.appending(path: "changes")
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var query: [String] = []
+        if let token, let encoded = token.addingPercentEncoding(withAllowedCharacters: changeTokenCharacters) {
+            query.append("since=\(encoded)")
+        }
+        query.append("limit=\(limit)")
+        components.percentEncodedQuery = query.joined(separator: "&")
+        return components.url ?? url
     }
 
     // MARK: - HTTP
@@ -120,10 +152,10 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     }
 
     /// Sends `request` and returns the body of a 2xx answer, reading at most
-    /// ``maximumResponseSize`` bytes.
-    private func send(_ request: URLRequest) async throws -> Data {
+    /// ``maximumResponseSize`` bytes; `outlining` keeps only the ``PageOutline`` of the body.
+    private func send(_ request: URLRequest, outlining: Bool = false) async throws -> Data {
         do {
-            return try await receive(request)
+            return try await receive(request, outlining: outlining)
         } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
             // URLSession reports a cancelled task as URLError(.cancelled). The store treats
             // CancellationError as "stopped", not as a failed attempt.
@@ -131,20 +163,25 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    private func receive(_ request: URLRequest) async throws -> Data {
+    private func receive(_ request: URLRequest, outlining: Bool) async throws -> Data {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.notHTTP }
-        if response.expectedContentLength > Int64(maximumResponseSize) {
+        if !outlining, response.expectedContentLength > Int64(maximumResponseSize) {
             bytes.task.cancel()
             throw Failure.responseTooLarge(limit: maximumResponseSize)
         }
         var body = Data()
+        var outline = PageOutline()
         for try await byte in bytes {
-            guard body.count < maximumResponseSize else {
+            if outlining {
+                outline.append(byte, to: &body)
+            } else {
+                body.append(byte)
+            }
+            guard body.count <= maximumResponseSize else {
                 bytes.task.cancel()
                 throw Failure.responseTooLarge(limit: maximumResponseSize)
             }
-            body.append(byte)
         }
         guard (200..<300).contains(http.statusCode) else {
             throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: body.prefix(500), as: UTF8.self))

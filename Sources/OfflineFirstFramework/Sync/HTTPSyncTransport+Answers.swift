@@ -53,6 +53,22 @@ extension HTTPSyncTransport {
     /// walk stops with `CancellationError` once its task is cancelled, as the store does when a
     /// sync passes ``OfflineStore/Configuration/syncTimeout``.
     static func page(from data: Data) throws -> PullResponse<Record> {
+        try page(from: data, settingAsideEveryChange: nil)
+    }
+
+    /// The page of one change that is larger than the transport reads, from the outline of the
+    /// page (``PageOutline``): the change is set aside with its record ID and revision, and the
+    /// page's token moves past it. An outline with more or fewer changes comes from a server that
+    /// ignored `limit=1`, or one whose page is too large for another reason.
+    static func oversizedPage(from outline: Data, limit: Int) throws -> PullResponse<Record> {
+        let reason = "The change is larger than the \(limit) bytes the transport reads (maximumResponseSize)."
+        let page = try page(from: outline, settingAsideEveryChange: reason)
+        guard page.quarantinedCount == 1 else { throw Failure.responseTooLarge(limit: limit) }
+        return page
+    }
+
+    /// A page; with `reason`, every change of it is set aside for that reason, unread.
+    private static func page(from data: Data, settingAsideEveryChange reason: String?) throws -> PullResponse<Record> {
         try JSONLayout.read(data) { page in
             var changes: [RemoteChange<Record>] = []
             var quarantined: [QuarantinedChange] = []
@@ -65,7 +81,8 @@ extension HTTPSyncTransport {
                 case "changes":
                     let end = try page.forEachElement(ofArrayAt: start) { start in
                         try Task.checkCancellation()
-                        let (end, element) = try change(in: page, at: start, listing: quarantined.count < listedQuarantinePerPage)
+                        let (end, element) = try change(in: page, at: start, listing: quarantined.count < listedQuarantinePerPage,
+                                                        settingAsideBecause: reason)
                         switch element {
                         case .readable(let change):
                             changes.append(change)
@@ -107,11 +124,12 @@ extension HTTPSyncTransport {
     }
 
     /// The change that starts at `start`, walked once for its depth, record ID and revision, and
-    /// decoded unless it lacks either of them or one of its fields nests deeper than a record
-    /// may. Of a change that cannot be used, only the record ID and the revision are read, each
-    /// as the type it should have, only when it is not nested too deeply itself, and only while
-    /// `listing`. Returns the index after the change.
-    private static func change(in page: JSONLayout, at start: Int, listing: Bool) throws -> (end: Int, change: Change) {
+    /// decoded unless it lacks either of them, one of its fields nests deeper than a record may,
+    /// or there is a `reason` to set it aside anyway. Of a change that cannot be used, only the
+    /// record ID and the revision are read, each as the type it should have, only when it is not
+    /// nested too deeply itself, and only while `listing`. Returns the index after the change.
+    private static func change(in page: JSONLayout, at start: Int, listing: Bool,
+                               settingAsideBecause reason: String?) throws -> (end: Int, change: Change) {
         guard page.isObject(at: start) else {
             let value = try page.value(at: start)
             return (value.range.upperBound, unreadable(page, reason: "The change is not an object.", recordID: nil, revision: nil,
@@ -129,6 +147,9 @@ extension HTTPSyncTransport {
             default: break
             }
             return value.range.upperBound
+        }
+        if let reason {
+            return (end, unreadable(page, reason: reason, recordID: recordID, revision: revision, listing: listing))
         }
         guard recordID != nil, revision != nil else {
             return (end, unreadable(page, reason: "The change has no recordID or no revision.", recordID: recordID, revision: revision,

@@ -1,5 +1,56 @@
 import Foundation
 
+/// The outline of a page whose change is too large to load, kept as the bytes stream in: every
+/// object or array inside a change (its record, its timestamp) becomes `null`, everything else
+/// stays. The outline still names the change's record ID and revision and the page's token, so
+/// ``HTTPSyncTransport`` can set the change aside and move past it while holding a few hundred
+/// bytes instead of the change.
+struct PageOutline {
+    /// Objects and arrays deeper than this are left out: the page, its list of changes, and a
+    /// change are kept.
+    private static let keptDepth = 3
+
+    private var depth = 0
+    /// The depth of the object or array being left out, while one is.
+    private var omitted: Int?
+    private var inString = false
+    private var escaped = false
+
+    mutating func append(_ byte: UInt8, to outline: inout Data) {
+        if inString {
+            if escaped {
+                escaped = false
+            } else if byte == UInt8(ascii: "\\") {
+                escaped = true
+            } else if byte == UInt8(ascii: "\"") {
+                inString = false
+            }
+            if omitted == nil { outline.append(byte) }
+            return
+        }
+        switch byte {
+        case UInt8(ascii: "\""):
+            inString = true
+        case UInt8(ascii: "{"), UInt8(ascii: "["):
+            depth += 1
+            if omitted == nil, depth > Self.keptDepth {
+                omitted = depth
+                outline.append(contentsOf: Array("null".utf8))
+                return
+            }
+        case UInt8(ascii: "}"), UInt8(ascii: "]"):
+            depth -= 1
+            if let level = omitted {
+                if depth < level { omitted = nil }
+                return
+            }
+        default:
+            break
+        }
+        if omitted == nil { outline.append(byte) }
+    }
+}
+
 /// A JSON answer from the sync server, walked part by part in one pass before any part is
 /// decoded: the members of an object and the elements of an array, as byte ranges, with how
 /// deep each one nests.
