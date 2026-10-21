@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.0] - Unreleased
+## [2.1.0] - 2026-10-21
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
 fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth and thirteenth rounds, and of a review of this release, each with a test
@@ -348,7 +348,15 @@ Answers that come from another deployment than the server (a load balancer, DNS 
 sends a request to staging instead of production or to a region with separate data, or a
 replica that still serves the history from before a data loss) are only partly covered: the
 epoch check keeps out one page, not these cases. Details and the way back are in
-"Guarantees and limits".
+"Guarantees and limits". Each item has an issue with an example, the way back and the plan:
+[#26](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/26),
+[#27](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/27),
+[#28](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/28),
+[#29](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/29),
+[#30](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/30),
+[#31](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/31),
+[#32](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/32),
+[#33](https://github.com/muhittincamdali/iOS-Offline-First-Framework/issues/33).
 
 - A new store whose first sync reaches only another deployment takes that deployment's state:
   without an epoch it goes on after that deployment's token, which a server whose tokens are
