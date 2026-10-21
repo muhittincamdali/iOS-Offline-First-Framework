@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
+<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,10 +50,10 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 350 Swift
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 369 Swift
   Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
   sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları, bayat sayfalar, aynı anda
-  çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan iki özellik
+  çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan üç özellik
   testi, bir cihaza art arda birçok eşitlemede yanıt veren bir replikayı, cihazın kendi daha eski
   bir yazmasını geri getiren ya da kabul edilmiş bir gönderimle karşılaşan bayat bir sayfayı, bir
   eşitlemenin her yazımındaki bir çökmeyi ve ileri sıçrayan cihaz saatlerini deneyen senaryo
@@ -361,10 +361,11 @@ tutar:
   yeni olduğunu gösterdiğinde alır. Hiçbir şey bunu göstermediğinde bir çakışma değişikliği taze
   bir yanıt için bir kez daha gönderir; başka her yanıt geçerli kalır ve bir sonraki eşitleme
   baştan çeker.
-- Başka bir sunucu epoch'u da, kayıtları olan bir deponun duyduğu ilk epoch da ancak tek bir
-  eşitlemedeki iki istek, yani token ile çekme ve baştan çekme, onu birlikte bildirdiğinde
-  sayılır; böylece bayat bir önbellek ya da aynı URL'nin arkasındaki başka bir dağıtım depoyu geri
-  saramaz ve epoch'suz bir sunucudan koparamaz. İki istek bir epoch bildirdikten sonra
+- Başka bir sunucu epoch'u da, bir deponun duyduğu ilk epoch da, yeni bir deponun ilk sayfasında
+  bile, ancak tek bir eşitlemedeki iki istek, yani token ile çekme ve baştan çekme, onu birlikte
+  bildirdiğinde sayılır; böylece bayat bir önbellekten ya da aynı URL'nin arkasındaki başka bir
+  dağıtımdan gelen tek bir sayfa depoyu geri saramaz, yeni bir depoya sunucunun hiç tutmadığı
+  kayıtlar getiremez ve bir depoyu dışarıda bırakamaz. İki istek bir epoch bildirdikten sonra
   epoch'suz bir sayfa da asla alınmaz. Tek sayfa çeken bir eşitleme de sunucunun yeniden
   başlatılmasını izler ve iki istek uyuşmadığında eşitleme başarı bildirmek yerine hata verir.
   Epoch'lar tek yönde ilerler: deponunkinden önceki bir epoch, ister deponun geride bıraktığı

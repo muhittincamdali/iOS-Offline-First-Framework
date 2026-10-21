@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
+<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,8 +51,8 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 350 testes de Swift Testing no macOS e em um simulador de
-  iPhone, entre eles dois testes de propriedades que submetem cada política de conflito a
+- **Testado contra um servidor real** — 369 testes de Swift Testing no macOS e em um simulador de
+  iPhone, entre eles três testes de propriedades que submetem cada política de conflito a
   solicitações perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de
   páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, também contra um
   servidor sem sequências, testes de cenários com uma réplica que responde a um dispositivo
@@ -363,12 +363,13 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   mais nova. Quando nada mostra isso, um conflito faz a alteração sair mais uma vez para obter uma
   resposta nova, e qualquer outra resposta vale enquanto a próxima sincronização lê tudo desde o
   início.
-- Outro epoch do servidor, e o primeiro de que fica sabendo um store com registros, só conta
-  quando duas solicitações da mesma sincronização o informam, a leitura com o token e a leitura
-  desde o início, então um cache desatualizado ou outra implantação atrás da mesma URL não
-  consegue fazer o store voltar atrás nem deixá-lo fora de um servidor sem epochs. Uma página sem
-  epoch, depois que duas solicitações informaram um, também nunca é aceita. Uma sincronização que
-  lê uma única página ainda acompanha um reinício do servidor, e quando as duas solicitações não
+- Outro epoch do servidor, e o primeiro de que fica sabendo um store, também na primeira página de
+  um store novo, só conta quando duas solicitações da mesma sincronização o informam, a leitura
+  com o token e a leitura desde o início, então uma única página de um cache desatualizado ou de
+  outra implantação atrás da mesma URL não consegue fazer o store voltar atrás, trazer a um store
+  novo registros que o servidor nunca teve nem deixar um store de fora. Uma página sem epoch,
+  depois que duas solicitações informaram um, também nunca é aceita. Uma sincronização que lê uma
+  única página ainda acompanha um reinício do servidor, e quando as duas solicitações não
   concordam a sincronização falha em vez de informar sucesso. Os epochs seguem um único sentido:
   um epoch anterior ao do store, um que ele deixou ou um que nunca teve, nunca é aceito, nem
   depois de `resetChangeToken()`, então uma réplica ou um cache desatualizado que responde às duas

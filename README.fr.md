@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
+<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,8 +53,8 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 350 tests Swift Testing sur macOS et sur un simulateur
-  d’iPhone, dont deux tests de propriétés qui soumettent chaque politique de conflit à des
+- **Testé contre un vrai serveur** — 369 tests Swift Testing sur macOS et sur un simulateur
+  d’iPhone, dont trois tests de propriétés qui soumettent chaque politique de conflit à des
   requêtes perdues, des redémarrages, des réinitialisations du jeton, des synchronisations
   simultanées, de petites limites de pages, des pages périmées, des opérations simultanées et des
   plantages, aussi face à un serveur sans séquences, des tests de scénarios avec une réplique qui
@@ -369,17 +369,19 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
   place que lorsque le `sequence` du serveur montre qu’elle est plus récente. Quand rien ne le
   montre, un conflit renvoie la modification une fois de plus pour obtenir une réponse fraîche, et
   toute autre réponse tient pendant que la synchronisation suivante récupère tout depuis le début.
-- Un autre epoch du serveur, et le premier dont entend parler un store qui a des enregistrements,
-  ne compte que lorsque deux requêtes d’une même synchronisation le signalent, la récupération
-  avec le jeton et la récupération depuis le début : un cache périmé ou un autre déploiement
-  derrière la même URL ne peut donc ni faire revenir le store en arrière ni le couper d’un serveur
-  sans epochs. Une page sans epoch, une fois que deux requêtes en ont annoncé un, n’est jamais
-  prise non plus. Une synchronisation qui ne récupère qu’une page suit quand même un redémarrage
-  du serveur, et quand les deux requêtes ne concordent pas, la synchronisation échoue au lieu de
-  signaler un succès. Les epochs vont dans un seul sens : un epoch antérieur à celui du store,
-  qu’il l’ait quitté ou ne l’ait jamais eu, n’est jamais pris, même après `resetChangeToken()`, si
-  bien qu’une réplique ou un cache périmé qui répond aux deux requêtes, pendant autant de
-  synchronisations de suite que ce soit, ne peut pas non plus faire revenir le store en arrière.
+- Un autre epoch du serveur, et le premier dont entend parler un store, y compris sur la première
+  page d’un nouveau store, ne compte que lorsque deux requêtes d’une même synchronisation le
+  signalent, la récupération avec le jeton et la récupération depuis le début : une seule page
+  d’un cache périmé ou d’un autre déploiement derrière la même URL ne peut donc ni faire revenir
+  le store en arrière, ni apporter à un nouveau store des enregistrements que le serveur n’a
+  jamais eus, ni couper un store de son serveur. Une page sans epoch, une fois que deux requêtes
+  en ont annoncé un, n’est jamais prise non plus. Une synchronisation qui ne récupère qu’une page
+  suit quand même un redémarrage du serveur, et quand les deux requêtes ne concordent pas, la
+  synchronisation échoue au lieu de signaler un succès. Les epochs vont dans un seul sens : un
+  epoch antérieur à celui du store, qu’il l’ait quitté ou ne l’ait jamais eu, n’est jamais pris,
+  même après `resetChangeToken()`, si bien qu’une réplique ou un cache périmé qui répond aux deux
+  requêtes, pendant autant de synchronisations de suite que ce soit, ne peut pas non plus faire
+  revenir le store en arrière.
 - Les enregistrements supprimés le restent. Un serveur qui a perdu ses données, ou un autre
   serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente ; elles
   rencontrent le nouvel historique par la réponse à leur envoi, pas par une page. Un

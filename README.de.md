@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
+<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,8 +51,8 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 350 Swift-Testing-Tests auf macOS und in einem
-  iPhone-Simulator, darunter zwei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
+- **Gegen einen echten Server getestet** — 369 Swift-Testing-Tests auf macOS und in einem
+  iPhone-Simulator, darunter drei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
   Seitengrenzen, veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, auch gegen
   einen Server ohne Sequenzen, Szenariotests mit einem Replikat, das einem Gerät viele
@@ -366,17 +366,19 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   Servers zeigt, dass sie neuer ist. Wenn nichts das zeigt, schickt ein Konflikt die Änderung für
   eine frische Antwort noch einmal hinaus, und jede andere Antwort bleibt stehen, während die
   nächste Synchronisierung von Anfang an abruft.
-- Eine andere Server-Epoch, und die erste, von der ein Store mit Datensätzen erfährt, zählt nur,
-  wenn zwei Anfragen derselben Synchronisierung sie melden, der Abruf mit dem Token und der Abruf
-  von Anfang an. Ein veralteter Cache oder ein anderes Deployment hinter derselben URL kann den
-  Store also weder zurücksetzen noch von einem Server ohne Epochs aussperren. Eine Seite ohne
-  Epoch wird, sobald zwei Anfragen eine gemeldet haben, ebenfalls nie übernommen. Eine
-  Synchronisierung, die nur eine Seite abruft, folgt trotzdem einem Serverneustart, und wenn die
-  beiden Anfragen nicht übereinstimmen, schlägt die Synchronisierung fehl, statt Erfolg zu melden.
-  Epochs laufen nur in eine Richtung: Eine frühere Epoch als die des Stores, ob er sie verlassen
-  oder nie gehabt hat, wird nie übernommen, auch nicht nach `resetChangeToken()`, sodass auch ein
-  veraltetes Replikat oder ein Cache, das beide Anfragen beantwortet, wie viele Synchronisierungen
-  in Folge auch immer, den Store nicht zurücksetzen kann.
+- Eine andere Server-Epoch, und die erste, von der ein Store erfährt, auch auf der ersten Seite
+  eines neuen Stores, zählt nur, wenn zwei Anfragen derselben Synchronisierung sie melden, der
+  Abruf mit dem Token und der Abruf von Anfang an. Eine einzelne Seite aus einem veralteten Cache
+  oder von einem anderen Deployment hinter derselben URL kann den Store also weder zurücksetzen
+  noch einem neuen Store Datensätze bringen, die der Server nie hatte, noch einen Store
+  aussperren. Eine Seite ohne Epoch wird, sobald zwei Anfragen eine gemeldet haben, ebenfalls nie
+  übernommen. Eine Synchronisierung, die nur eine Seite abruft, folgt trotzdem einem
+  Serverneustart, und wenn die beiden Anfragen nicht übereinstimmen, schlägt die Synchronisierung
+  fehl, statt Erfolg zu melden. Epochs laufen nur in eine Richtung: Eine frühere Epoch als die des
+  Stores, ob er sie verlassen oder nie gehabt hat, wird nie übernommen, auch nicht nach
+  `resetChangeToken()`, sodass auch ein veraltetes Replikat oder ein Cache, das beide Anfragen
+  beantwortet, wie viele Synchronisierungen in Folge auch immer, den Store nicht zurücksetzen
+  kann.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein
   anderer Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben;
   sie treffen auf die neue Historie über die Antwort auf ihre Übertragung, nicht über eine Seite.

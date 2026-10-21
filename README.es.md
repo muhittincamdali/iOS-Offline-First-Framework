@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
+<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,8 +51,8 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 350 pruebas de Swift Testing en macOS y en un simulador de
-  iPhone, entre ellas dos pruebas de propiedades que someten cada política de conflictos a
+- **Probado contra un servidor real** — 369 pruebas de Swift Testing en macOS y en un simulador de
+  iPhone, entre ellas tres pruebas de propiedades que someten cada política de conflictos a
   solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
   límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, también contra
   un servidor sin secuencias, pruebas de escenarios con una réplica que responde a un dispositivo
@@ -363,17 +363,18 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   Cuando nada lo indica, un conflicto hace que el cambio salga una vez más para obtener una
   respuesta nueva, y cualquier otra respuesta se mantiene mientras la siguiente sincronización
   descarga desde el principio.
-- Otro epoch del servidor, y el primero del que se entera un almacén con registros, solo cuenta
-  cuando lo informan dos solicitudes de la misma sincronización, la descarga con el token y la
-  descarga desde el principio, así que una caché obsoleta u otro despliegue detrás de la misma URL
-  no puede hacer retroceder el almacén ni dejarlo fuera de un servidor sin epochs. Una página sin
-  epoch, una vez que dos solicitudes informaron uno, tampoco se toma nunca. Una sincronización que
-  descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos solicitudes
-  no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs van en un solo
-  sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo, nunca se toma,
-  tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que responde ambas
-  solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer retroceder el
-  almacén.
+- Otro epoch del servidor, y el primero del que se entera un almacén, también en la primera página
+  de un almacén nuevo, solo cuenta cuando lo informan dos solicitudes de la misma sincronización,
+  la descarga con el token y la descarga desde el principio, así que una sola página de una caché
+  obsoleta o de otro despliegue detrás de la misma URL no puede hacer retroceder el almacén, traer
+  a un almacén nuevo registros que el servidor nunca tuvo ni dejar fuera a un almacén. Una página
+  sin epoch, una vez que dos solicitudes informaron uno, tampoco se toma nunca. Una sincronización
+  que descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos
+  solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs
+  van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo,
+  nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
+  responde ambas solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer
+  retroceder el almacén.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
   que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes, que se encuentran
   con la nueva historia a través de la respuesta a su envío, no de una página. Un registro que la
