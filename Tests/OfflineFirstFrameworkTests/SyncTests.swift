@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -433,7 +434,8 @@ struct SyncTests {
         await #expect(throws: OfflineFirstError.pullTokenDidNotAdvance(token: nil)) {
             try await store.sync()
         }
-        #expect(await transport.pulls == 1)
+        // The pull, and the second request that checks a new store's first page.
+        #expect(await transport.pulls == 2)
         guard case .failed = await store.status else {
             Issue.record("expected a failed status")
             return
@@ -447,7 +449,9 @@ struct SyncTests {
         }
         let store = try makeStore(server) { $0.maximumPullPages = 2 }
         let first = try await store.sync()
-        #expect(first.pulled == 2)
+        // The first step of a new store takes two pages: its second request, after the first
+        // page's token, checks the server's epoch.
+        #expect(first.pulled == 3)
         #expect(first.hasMoreChanges)
         try await store.sync()
         try await store.sync()
@@ -455,12 +459,11 @@ struct SyncTests {
     }
 
     @Test func malformedServerRecordsAreQuarantined() async throws {
-        let transport = ScriptedTransport(pull: { _ in
+        let transport = ScriptedTransport(pull: servingOnePage(
             PullResponse(changes: [
                 RemoteChange(recordID: "a", record: Note(id: "b", text: "mismatched"), revision: "1", timestamp: nil),
                 RemoteChange(recordID: "c", record: Note(id: "c", text: "fine"), revision: "2", timestamp: nil)
-            ], token: "2", hasMore: false)
-        })
+            ], token: "2", hasMore: false)))
         let store = try makeStore(transport)
         let report = try await store.sync()
         #expect(await store.records() == [Note(id: "c", text: "fine")])
@@ -492,18 +495,23 @@ struct SyncTests {
     /// A later version that can be used replaces the entry; resetting the token clears the list
     /// and pulls everything again.
     @Test func quarantinedChangesGoWhenTheRecordComesAgain() async throws {
-        let pages = Counter()
-        let transport = ScriptedTransport(pull: { _ in
-            await pages.next() == 1
-                ? PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "x", text: "bad"), revision: "1", timestamp: nil),
-                                         RemoteChange(recordID: "b", record: Note(id: "y", text: "bad"), revision: "2", timestamp: nil)],
-                               token: "2", hasMore: false)
-                : PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "fixed"), revision: "3", timestamp: nil)],
-                               token: "3", hasMore: false)
+        let fixed = OSAllocatedUnfairLock(initialState: false)
+        let transport = ScriptedTransport(pull: { token in
+            switch token {
+            case nil:
+                PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "x", text: "bad"), revision: "1", timestamp: nil),
+                                       RemoteChange(recordID: "b", record: Note(id: "y", text: "bad"), revision: "2", timestamp: nil)],
+                             token: "2", hasMore: false)
+            case "2" where fixed.withLock({ $0 }):
+                PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "fixed"), revision: "3", timestamp: nil)],
+                             token: "3", hasMore: false)
+            default: PullResponse(changes: [], token: token, hasMore: false)
+            }
         })
         let store = try makeStore(transport)
         try await store.sync()
         #expect(await store.quarantinedChanges().count == 2)
+        fixed.withLock { $0 = true }
         try await store.sync()
         #expect(await store.quarantinedChanges().map(\.recordID) == [#""b""#])
         #expect(await store.record("a")?.text == "fixed")

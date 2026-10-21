@@ -31,8 +31,7 @@ extension OfflineStore {
                 // A page is checked before it is stored, so a broken one changes nothing.
                 try Self.checkProgress(of: page.response, after: page.token, requested: requested)
                 try store(page.response, startingHistory: index == 0 && step.standing.startsHistory,
-                          isLaterEpoch: step.standing == .later, isFirstPageOfNewStore: step.standing == .firstOfNewStore,
-                          report: &report)
+                          isLaterEpoch: step.standing == .later, report: &report)
             }
             guard step.pages.last?.response.hasMore == true else { return }
         }
@@ -41,12 +40,16 @@ extension OfflineStore {
 
     /// The pages of the next step after the store's token.
     ///
-    /// A page that names a later epoch than the store's (``EpochStanding/later``), the first
-    /// epoch a store with a token or records hears of (``EpochStanding/first``), or no epoch while
-    /// only a new store's first page reported the store's (``EpochStanding/missingUnconfirmed``),
-    /// is believed only when a second request of the other kind reports the same: a pull from the
-    /// beginning after a pull with the token, or a pull with the first page's token after a pull
-    /// from the beginning. An earlier epoch (``EpochStanding/earlier`` or
+    /// A page that names the store's own epoch, once two requests reported it
+    /// (``EpochStanding/current``), is stored at once. Every other page is believed only when a
+    /// second request of the other kind reports the same epoch, or the same lack of one: a pull
+    /// from the beginning after a pull with the token, or a pull with the first page's token
+    /// after a pull from the beginning. That is a later epoch (``EpochStanding/later``), the first
+    /// epoch the store hears of (``EpochStanding/first``), no epoch while only one request
+    /// reported the store's (``EpochStanding/missingUnconfirmed``), and the store's own epoch,
+    /// or none, before two requests reported it (``EpochStanding/unconfirmed``): the first page
+    /// of a new store too, so one page from another deployment brings it neither records nor a
+    /// token nor an epoch. An earlier epoch (``EpochStanding/earlier`` or
     /// ``EpochStanding/retired``), and no epoch while the store holds one two requests reported
     /// (``EpochStanding/missing``), are refused even then, in every sync. A stale cache or
     /// replica, or another deployment behind the same URL, rarely answers both, and a shared
@@ -54,45 +57,52 @@ extension OfflineStore {
     /// URL. Both requests belong to the same step, so a sync that may fetch one page still gets
     /// there.
     ///
-    /// When the second request reports the store's own epoch, the first page came from
-    /// somewhere else: it is dropped, and the step asks with the store's token once more. Every
-    /// other disagreement fails the sync with ``OfflineFirstError/invalidServerResponse(_:)``,
-    /// without a change to the store, and a sync checks one such epoch at most: a pull either
-    /// moves forward or fails, instead of spending its pages on requests it drops.
+    /// When the two disagree, a third request, of the first one's kind, decides: it has to report
+    /// what the second reported. While two requests reported the store's epoch, the second has
+    /// to name that epoch: the first page came from somewhere else and is dropped. A store that
+    /// holds no epoch two requests reported has nothing to go by, so the epoch the second and the
+    /// third request report counts as reported by two requests. Every other disagreement fails
+    /// the sync with ``OfflineFirstError/invalidServerResponse(_:)``, without a change to the
+    /// store, and a sync checks one such epoch at most: a pull either moves forward or fails,
+    /// instead of spending its pages on requests it drops.
     private func nextStep(using transport: any SyncTransport<Record>, until deadline: ContinuousClock.Instant,
                           checkedEpoch: inout Bool) async throws -> PullStep {
         let token = state.token
         let first = try await page(after: token, using: transport, until: deadline)
         let standing = try Self.standing(of: first.epoch, in: state)
-        guard standing.namesAnotherEpoch else {
+        guard standing != .current else {
             return PullStep(pages: [(token, first)], standing: standing)
         }
         guard !checkedEpoch else {
             throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
         }
         checkedEpoch = true
-        let epoch = first.epoch
         let secondToken = token == nil ? first.token : nil
         let second = try await page(after: secondToken, using: transport, until: deadline)
-        if second.epoch == epoch {
-            if standing.isRefused { throw Self.refusal(of: epoch, standing, in: state) }
+        if second.epoch == first.epoch {
+            if standing.isRefused { throw Self.refusal(of: first.epoch, standing, in: state) }
             if token == nil, secondToken != nil {
                 return PullStep(pages: [(token, first), (secondToken, second)], standing: standing)
             }
-            // A first epoch names the history the store's token belongs to, so the pull goes on
-            // after it. After a token of the old history the first page is dropped; the pull
-            // starts over from the beginning of the new one.
-            if standing == .first { return PullStep(pages: [(token, first)], standing: standing) }
+            // The store's epoch, or a first one, names the history the store's token belongs to,
+            // so the pull goes on after it. After a token of the old history the first page is
+            // dropped; the pull starts over from the beginning of the new one.
+            if !standing.startsHistory { return PullStep(pages: [(token, first)], standing: standing) }
             return PullStep(pages: [(nil, second)], standing: standing)
         }
-        guard try Self.standing(of: second.epoch, in: state) == .current else {
-            throw Self.disagreement(epoch, second.epoch)
+        let secondStanding = try Self.standing(of: second.epoch, in: state)
+        guard !state.epochIsConfirmed || secondStanding == .current else {
+            throw Self.disagreement(first.epoch, second.epoch)
         }
         let third = try await page(after: token, using: transport, until: deadline)
-        guard try Self.standing(of: third.epoch, in: state) == .current else {
+        guard third.epoch == second.epoch else {
             throw Self.disagreement(third.epoch, second.epoch)
         }
-        return PullStep(pages: [(token, third)], standing: .current)
+        if secondStanding.isRefused { throw Self.refusal(of: second.epoch, secondStanding, in: state) }
+        // A new history starts from the beginning: the second page when the third asked with the
+        // token of the old one.
+        if token != nil, secondStanding.startsHistory { return PullStep(pages: [(nil, second)], standing: secondStanding) }
+        return PullStep(pages: [(token, third)], standing: secondStanding)
     }
 
     /// One page after `token`, with its length and the length of its token checked.
@@ -117,16 +127,16 @@ extension OfflineStore {
     }
 
     /// Stores a checked page: its epoch, its changes and its token.
-    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool, isFirstPageOfNewStore: Bool,
+    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool,
                        report: inout SyncReport) throws {
         try update { state in
             if startingHistory {
                 Self.beginHistory(epoch: response.epoch, isLaterEpoch: isLaterEpoch, in: &state)
-            } else if let epoch = response.epoch {
-                // The store's epoch, which this request reports once more, or the first one the
-                // server reports: from two requests, or from the first page of a new store.
-                state.epochIsConfirmed = epoch == state.serverEpoch || !isFirstPageOfNewStore
-                state.serverEpoch = epoch
+            } else {
+                // The store's epoch, or the one two requests of this step reported, or that the
+                // server reports none.
+                state.serverEpoch = response.epoch
+                state.epochIsConfirmed = true
             }
             for change in response.quarantined {
                 Self.quarantine(change, in: &state, report: &report)

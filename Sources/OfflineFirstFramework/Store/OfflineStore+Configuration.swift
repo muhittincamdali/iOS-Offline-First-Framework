@@ -36,7 +36,9 @@ extension OfflineStore {
         /// ``OfflineFirstError/outboxFull(limit:)``. Default: 10,000.
         public var maximumPendingChanges: Int
 
-        /// Pull pages fetched in one sync; the rest waits for the next sync. Default: 100.
+        /// Pull pages fetched in one sync; the rest waits for the next sync. A page whose epoch
+        /// another request checks counts once with that request, which may bring the next page
+        /// too. Default: 100.
         public var maximumPullPages: Int
 
         /// Deleted records the store remembers, so that an older version of one that arrives

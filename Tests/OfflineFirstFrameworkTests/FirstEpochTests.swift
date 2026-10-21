@@ -59,8 +59,9 @@ private func forging(_ server: EpochlessServer, _ forged: OSAllocatedUnfairLock<
 /// held an epoch, every page without one was refused: one page with an epoch from another
 /// deployment behind the same URL locked a store of a server without epochs out for good, also
 /// after `resetChangeToken()`, and the edits of other devices never reached it. The first epoch
-/// is now checked by a second request like any other, so the store holds only an epoch two
-/// requests reported, and a page without an epoch is refused only against such an epoch.
+/// is now checked by a second request like any other, also in a new store, so the store holds
+/// only an epoch two requests reported, and a page without an epoch is refused only against
+/// such an epoch. (A new store's first page from another deployment: NewStoreTests.)
 @Suite("Offline store: the first epoch")
 struct FirstEpochTests {
     /// Verifier A11's probe: one request of a store that synced with a server without epochs is
@@ -136,12 +137,13 @@ struct FirstEpochTests {
         #expect(await a.record("n")?.text == "B")
     }
 
-    /// A new store's very first page comes from the other deployment. Nothing of the store's can
-    /// be overwritten, so the page is taken, but its epoch counts as reported once: the server's
-    /// pages without an epoch are not refused for it, and once both requests of a sync agree,
-    /// the store starts a new history with the server.
+    /// A new store's very first request is answered by the other deployment, with an epoch, a
+    /// copy, a token and, with sequences, a sequence of its own. It used to be taken from that
+    /// one page; now the second request, after the page's token, reaches the server, which names
+    /// no epoch, and the third, from the beginning, agrees with it: the store holds the server's
+    /// page without an epoch, and the other deployment's page never entered it.
     @Test(arguments: [false, true])
-    func aNewStoreLeavesAFirstEpochThatOneRequestReported(withSequences: Bool) async throws {
+    func aNewStoreChecksAFirstPageFromAnotherDeployment(withSequences: Bool) async throws {
         let clock = TestClock()
         let server = EpochlessServer(sendsSequences: withSequences)
         _ = await server.push([OutgoingChange(id: UUID(), recordID: "n", operation: .upsert(Note(id: "n", text: "real")),
@@ -154,12 +156,12 @@ struct FirstEpochTests {
         }
         let a = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: transport, configuration: makeConfiguration(clock: clock))
         try await a.sync()
-        #expect(await a.state.serverEpoch == "0001")
-        #expect(await a.state.epochIsConfirmed == false)
-
-        try await a.sync()
+        #expect(await transport.pulls == 3)
         #expect(await a.state.serverEpoch == nil)
+        #expect(await a.state.epochIsConfirmed)
         #expect(await a.record("n")?.text == "real")
+        #expect(await a.state.entries["n"]?.revision == "v1")
+        #expect(await a.state.token == "1")
 
         try await a.save(Note(id: "n", text: "A's edit"))
         for _ in 0..<3 {
@@ -170,10 +172,9 @@ struct FirstEpochTests {
         #expect(await a.failedChanges().isEmpty)
     }
 
-    /// A new store's first epoch from its real server counts once another request reports it,
-    /// the next page of the same pull or the next sync; from then on a page without an epoch
-    /// is refused.
-    @Test func aFirstEpochIsConfirmedByTheNextRequest() async throws {
+    /// A new store holds the first epoch of its real server once the two requests of its first
+    /// sync report it; from then on a page without an epoch is refused.
+    @Test func aNewStoreHoldsAFirstEpochTwoRequestsReported() async throws {
         let clock = TestClock()
         let server = InMemorySyncServer<Note>(now: { clock.now })
         let withoutEpoch = OSAllocatedUnfairLock(initialState: false)
@@ -187,9 +188,8 @@ struct FirstEpochTests {
         try await a.sync()
         let epoch = await a.state.serverEpoch
         #expect(epoch != nil)
-        #expect(await a.state.epochIsConfirmed == false)
-        try await a.sync()
-        #expect(await a.state.epochIsConfirmed == true)
+        #expect(await a.state.epochIsConfirmed)
+        #expect(await transport.pulls == 2)
 
         withoutEpoch.withLock { $0 = true }
         await #expect(throws: OfflineFirstError.self) { try await a.sync() }

@@ -195,9 +195,9 @@ struct HTTPSyncTransportTests {
     /// One record the app cannot decode is set aside; the rest of the page is used and the
     /// token moves on, so the pull does not stop for good.
     @Test func aRecordThatDoesNotDecodeIsQuarantined() async throws {
-        let transport = transport { _, _ in
+        let transport = transport { request, _ in
             let page = #"{"changes":[{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"1"},{"recordID":"bad","record":{"id":"bad","text":42},"revision":"2"}],"token":"t9","hasMore":false}"#
-            return (200, Data(page.utf8))
+            return (200, onePageAnswer(request, holding: Data(page.utf8)))
         }
         let response = try await transport.pull(since: nil)
         #expect(response.changes.map(\.recordID) == ["ok"])
@@ -227,7 +227,7 @@ struct HTTPSyncTransportTests {
             let page = #"{"changes":[{"recordID":"deep","record":{"id":"deep","text":"# + nested + #"},"revision":"1"},"#
                 + #"{"recordID":"# + nested + #","revision":"2"},"#
                 + #"{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"3"}],"token":"t1","hasMore":false}"#
-            return (200, Data(page.utf8))
+            return (200, onePageAnswer(request, holding: Data(page.utf8)))
         }
         let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
                                            configuration: makeConfiguration(clock: TestClock()))

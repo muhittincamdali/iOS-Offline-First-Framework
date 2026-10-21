@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -149,11 +150,14 @@ struct InterleavingTests {
 
     @Test func aTokenResetDuringAPullIsKept() async throws {
         let gate = PullGate()
+        // The gate holds pulls after "t1" from the second sync on: the first one checks the new
+        // store's first page with such a pull.
+        let armed = OSAllocatedUnfairLock(initialState: false)
         let serverCopy = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "server"), revision: "1", timestamp: nil)
         let transport = ScriptedTransport(pull: { token in
             switch token {
             case nil: return PullResponse(changes: [serverCopy], token: "t1", hasMore: false)
-            case "t1":
+            case "t1" where armed.withLock({ $0 }):
                 await gate.enter()
                 return PullResponse(changes: [], token: "t2", hasMore: false)
             default: return PullResponse(changes: [], token: token, hasMore: false)
@@ -161,6 +165,7 @@ struct InterleavingTests {
         })
         let store = try makeStore(transport)
         try await store.sync()
+        armed.withLock { $0 = true }
 
         let running = Task { try await store.sync() }
         await gate.waitUntilEntered()
@@ -202,11 +207,16 @@ struct InterleavingTests {
     /// Without new changes a call made during the pull still joins the running sync.
     @Test func aSyncCalledDuringAPullWithoutNewChangesJoinsIt() async throws {
         let gate = PullGate()
+        let armed = OSAllocatedUnfairLock(initialState: false)
         let transport = ScriptedTransport(pull: { token in
-            await gate.enter()
+            if armed.withLock({ $0 }) { await gate.enter() }
             return PullResponse(changes: [], token: token, hasMore: false)
         })
         let store = try makeStore(transport)
+        // The first sync checks with a second request that the server reports no epoch; the
+        // sync under test pulls once.
+        try await store.sync()
+        armed.withLock { $0 = true }
         let running = Task { try await store.sync() }
         await gate.waitUntilEntered()
         let mine = Task { try await store.sync() }
@@ -214,7 +224,7 @@ struct InterleavingTests {
         await gate.release()
         _ = try await running.value
         _ = try await mine.value
-        #expect(await transport.pulls == 1)
+        #expect(await transport.pulls == 3)
     }
 
     @Test func resettingTheChangeTokenPullsEverythingAgain() async throws {
@@ -235,9 +245,10 @@ struct InterleavingTests {
         #expect(await store.pendingChanges().count == 1)
 
         let report = try await store.sync()
-        // Everything came again; the store already had it.
+        // Everything came again; the store already had it. The first sync checked the server's
+        // epoch with a second request, after the first page's token.
         #expect(report.pulled == 0)
-        #expect(await tokens.all == [nil, nil])
+        #expect(await tokens.all.map { $0 == nil } == [true, false, true])
         #expect(await store.records().map(\.id) == ["a", "b", "local"])
         #expect(await store.pendingChanges().isEmpty)
     }

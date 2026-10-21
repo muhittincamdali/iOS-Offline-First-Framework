@@ -24,9 +24,10 @@ public actor OfflineStore<Record: SyncableRecord> {
         var serverIdentity: String?
         /// The last ``PullResponse/epoch`` the server reported.
         var serverEpoch: String?
-        /// Whether two requests reported ``serverEpoch``. A new store takes its first epoch from
-        /// one page; until another request reports it, a page without an epoch is not refused
-        /// for it.
+        /// Whether two requests of one sync reported ``serverEpoch``, or that the server reports
+        /// none. Until they did (a new store, a store file from before the check, another
+        /// server), a page that names the store's epoch is checked like another epoch, and a page
+        /// without an epoch is not refused for it.
         var epochIsConfirmed = false
         /// Grows by one whenever the server's history changes: a new epoch or another server.
         var history: UInt64

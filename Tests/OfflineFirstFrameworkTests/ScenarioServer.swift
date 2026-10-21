@@ -30,6 +30,8 @@ struct ScenarioSnapshot: Sendable {
     var epoch: String
     var stored: [String: ScenarioVersion]
     var sequence: UInt64
+    /// Whether pages name the epoch; it is in revisions and tokens either way.
+    var reportsEpoch = true
 }
 
 struct ScenarioCommit: Sendable {
@@ -83,17 +85,22 @@ actor ScenarioServer {
     private var answers: [UUID: PushOutcome<Note>] = [:]
     private(set) var commits: [ScenarioCommit] = []
     var pageSize: Int
+    /// Whether pages name the epoch: a server without epochs, as the protocol allows, when not.
+    let reportsEpochs: Bool
 
-    init(options: ScenarioOptions = ScenarioOptions(), pageSize: Int = 2) {
+    init(options: ScenarioOptions = ScenarioOptions(), pageSize: Int = 2, reportsEpochs: Bool = true) {
         self.options = options
         self.pageSize = pageSize
+        self.reportsEpochs = reportsEpochs
     }
 
     var epoch: String { String(format: "%08d", epochNumber) }
 
     func restart() { epochNumber += 1 }
     func setPageSize(_ size: Int) { pageSize = max(1, size) }
-    func snapshot() -> ScenarioSnapshot { ScenarioSnapshot(epoch: epoch, stored: stored, sequence: sequence) }
+    func snapshot() -> ScenarioSnapshot {
+        ScenarioSnapshot(epoch: epoch, stored: stored, sequence: sequence, reportsEpoch: reportsEpochs)
+    }
     func records() -> [String: String] { stored.compactMapValues { $0.text } }
     func text(_ id: String) -> String? { stored[id]?.text }
 
@@ -152,6 +159,6 @@ actor ScenarioServer {
         let page = changed.prefix(pageSize)
         let next = page.last?.value.sequence ?? after
         return PullResponse(changes: page.map { remote($0.key, $0.value, options) }, token: "\(snapshot.epoch).\(next)",
-                            hasMore: changed.count > page.count, epoch: snapshot.epoch)
+                            hasMore: changed.count > page.count, epoch: snapshot.reportsEpoch ? snapshot.epoch : nil)
     }
 }

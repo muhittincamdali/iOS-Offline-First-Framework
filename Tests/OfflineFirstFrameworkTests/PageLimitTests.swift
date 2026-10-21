@@ -31,7 +31,7 @@ struct PageLimitTests {
             // A push is left unanswered, so the store pulls.
             guard request.httpMethod == "GET" else { return (200, Data(#"{"outcomes":{}}"#.utf8)) }
             limits?.record(request)
-            return (200, body)
+            return (200, onePageAnswer(request, holding: body))
         }
         return HTTPSyncTransport<Note>(baseURL: URL(string: "https://\(host)/sync/notes")!, session: session,
                                        maximumResponseSize: 16 * 1024 * 1024, pageSize: pageSize)
@@ -100,7 +100,7 @@ struct PageLimitTests {
         let changes = (0..<900).map { RemoteChange<Note>(recordID: "\($0)", record: Note(id: "\($0)", text: ""), revision: "1", timestamp: nil) }
         let unreadable = (0..<100).map { QuarantinedChange(recordID: "bad\($0)", revision: "1", reason: "test") }
         let page = PullResponse(changes: changes, token: "t1", hasMore: false, quarantined: unreadable, quarantinedCount: 5_000)
-        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: { _ in page }))
+        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: servingOnePage(page)))
         let report = try await store.sync()
         #expect(report.pulled == 900)
         #expect(report.quarantined == 5_000)

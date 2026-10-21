@@ -113,7 +113,7 @@ struct PageBudgetTests {
         #expect(page.quarantinedCount == 999)
         #expect(page.quarantined.first?.recordID == #""bad0""#)
         #expect(page.changes.map(\.recordID) == ["good"])
-        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: { _ in page }))
+        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: servingOnePage(page)))
         let report = try await store.sync()
         #expect(report.quarantined == 999)
         #expect(await store.quarantinedChanges().count == 100)

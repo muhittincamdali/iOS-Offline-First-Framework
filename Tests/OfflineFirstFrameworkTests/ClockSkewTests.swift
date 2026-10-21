@@ -52,12 +52,18 @@ struct ClockSkewTests {
     /// to the drift limit before it stores the version or hands it to the resolver.
     @Test func timestampsFromTheFutureAreMovedBackToTheDriftLimit() async throws {
         let future = HLCTimestamp(wallTime: nowMilliseconds + 100 * 365 * 86_400_000, counter: 7, nodeID: "broken")
+        // The second version is written after the store's first sync.
+        let written = OSAllocatedUnfairLock(initialState: false)
         let transport = ScriptedTransport(push: { _ in throw URLError(.notConnectedToInternet) }, pull: { token in
-            token == nil
-                ? PullResponse(changes: [RemoteChange(recordID: "x", record: Note(id: "x", text: "first"), revision: "1", timestamp: future, sequence: 1)],
-                               token: "t1", hasMore: false)
-                : PullResponse(changes: [RemoteChange(recordID: "x", record: Note(id: "x", text: "second"), revision: "2", timestamp: future, sequence: 2)],
-                               token: "t2", hasMore: false)
+            switch token {
+            case nil:
+                PullResponse(changes: [RemoteChange(recordID: "x", record: Note(id: "x", text: "first"), revision: "1", timestamp: future, sequence: 1)],
+                             token: "t1", hasMore: false)
+            case "t1" where written.withLock({ $0 }):
+                PullResponse(changes: [RemoteChange(recordID: "x", record: Note(id: "x", text: "second"), revision: "2", timestamp: future, sequence: 2)],
+                             token: "t2", hasMore: false)
+            default: PullResponse(changes: [], token: token, hasMore: false)
+            }
         })
         let seen = OSAllocatedUnfairLock<HLCTimestamp?>(initialState: nil)
         let resolver = ConflictResolver<Note> { conflict in
@@ -71,6 +77,7 @@ struct ClockSkewTests {
 
         clock.advance(by: 600)
         try await store.save(Note(id: "x", text: "local edit"))
+        written.withLock { $0 = true }
         await #expect(throws: URLError.self) { try await store.sync() }
         try await store.sync()
         #expect(seen.withLock { $0 } == HLCTimestamp(wallTime: nowMilliseconds + 300_000, counter: 7, nodeID: "broken"))

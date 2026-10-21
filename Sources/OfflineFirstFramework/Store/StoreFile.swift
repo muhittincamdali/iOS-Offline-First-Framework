@@ -37,8 +37,8 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// brought that version or another one. The server may have answered from a later history
     /// than the store's, after a restart the store has not seen yet, so when a pull starts a
     /// later epoch such an entry moves into the new history and keeps what it knows about the
-    /// order (see ``OfflineStore/beginHistory(epoch:isLaterEpoch:in:)``). An entry whose
-    /// ``history`` differs from this one was moved so.
+    /// order (see ``OfflineStore/beginHistory(epoch:isLaterEpoch:isAnotherServer:in:)``). An
+    /// entry whose ``history`` differs from this one was moved so.
     var pushedInHistory: UInt64? = nil
     /// The newest server version a pull brought while the pending change was in doubt
     /// (``PendingWrite/isInDoubt``). It is newer than that change, so it replaces the record
@@ -148,8 +148,9 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var serverIdentity: String? = nil
     /// The last ``PullResponse/epoch`` the server reported.
     var serverEpoch: String? = nil
-    /// Whether two requests reported ``serverEpoch``; `nil` when not, as in files from before it
-    /// existed: the next page with that epoch confirms it.
+    /// Whether two requests reported ``serverEpoch``, or that the server reports none; `nil`
+    /// when not, as in files from before it existed: the next sync checks the epoch with a second
+    /// request.
     var epochIsConfirmed: Bool? = nil
     /// Counts the server histories the store has seen; `nil` in files from before it existed.
     var history: UInt64? = nil

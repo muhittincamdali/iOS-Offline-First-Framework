@@ -136,7 +136,8 @@ struct ServerHistoryTests {
         })
         try await makeStore(serverB, storage: storage).sync()
         try await makeStore(serverB, storage: storage).sync()
-        #expect(await tokens.all == [nil, "b1"])
+        // The first sync with server B checks its first page with a pull after that page's token.
+        #expect(await tokens.all == [nil, "b1", "b1"])
     }
 
     @Test func aNewEpochStartsThePullAgainAndKeepsPendingChanges() async throws {
@@ -172,9 +173,10 @@ struct ServerHistoryTests {
     }
 
     @Test func anEpochThatChangesTwiceInOneSyncFailsTheSync() async throws {
+        // Both requests of the first sync report "e1"; every later pull another epoch.
         let pulls = Counter()
         let transport = ScriptedTransport(pull: { _ in
-            let number = await pulls.next()
+            let number = max(1, await pulls.next() - 1)
             return PullResponse(changes: [], token: "t\(number)", hasMore: false, epoch: "e\(number)")
         })
         let store = try makeStore(transport)
@@ -183,7 +185,7 @@ struct ServerHistoryTests {
             "Two pulls of one sync named the server epochs “e2” and “e3”, as a cache or another deployment that answers some requests would.")) {
             try await store.sync()
         }
-        #expect(await transport.pulls == 3)
+        #expect(await transport.pulls == 4)
         #expect(await store.state.serverEpoch == "e1")
     }
 
@@ -199,8 +201,9 @@ struct ServerHistoryTests {
         try await store.sync()
         reportsEpoch.withLock { $0 = true }
         try await store.sync()
-        // The pull with the token, and the pull from the beginning that checks the first epoch.
-        #expect(await transport.pulls == 3)
+        // The two requests of the first sync, which check that the server reports no epoch; then
+        // the pull with the token, and the pull from the beginning that checks the first epoch.
+        #expect(await transport.pulls == 4)
         #expect(await store.state.token == "t2")
         #expect(await store.state.serverEpoch == "e1")
     }
@@ -209,14 +212,17 @@ struct ServerHistoryTests {
     /// the beginning without one, as another deployment behind the URL would for one of them: the
     /// sync fails without a change, and the store goes on without an epoch.
     @Test func aFirstEpochThatOnlyOneRequestReportsIsNotTaken() async throws {
+        let split = OSAllocatedUnfairLock(initialState: false)
         let transport = ScriptedTransport(pull: { token in
-            token == nil ? PullResponse(changes: [], token: "t1", hasMore: false)
+            token == nil || !split.withLock({ $0 }) ? PullResponse(changes: [], token: "t1", hasMore: false)
                 : PullResponse(changes: [], token: "t2", hasMore: false, epoch: "e1")
         })
         let store = try makeStore(transport)
         try await store.sync()
+        split.withLock { $0 = true }
         await #expect(throws: OfflineFirstError.self) { try await store.sync() }
-        #expect(await transport.pulls == 4)
+        // Two requests in the first sync, three in the second.
+        #expect(await transport.pulls == 5)
         #expect(await store.state.token == "t1")
         #expect(await store.state.serverEpoch == nil)
     }

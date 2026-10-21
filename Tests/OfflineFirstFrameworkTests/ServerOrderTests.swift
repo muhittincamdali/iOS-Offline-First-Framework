@@ -67,9 +67,12 @@ struct ServerOrderTests {
                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds, counter: 1, nodeID: "Z"))
         let newer = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "newer"), revision: "r2",
                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds + 3_600_000, nodeID: "A"))
-        let store = try makeStore(twoPages(older, newer), clock: behind)
+        let feed = PageFeed()
+        await feed.publish(older)
+        let store = try makeStore(feed, clock: behind)
         try await store.sync()
         #expect(await store.record("a")?.text == "older")
+        await feed.publish(newer)
         try await store.sync()
         #expect(await store.record("a")?.text == "newer")
     }
@@ -84,17 +87,14 @@ struct ServerOrderTests {
                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds - 5_000, nodeID: "B"))
         let newest = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "newest"), revision: "r3",
                                         timestamp: HLCTimestamp(wallTime: nowMilliseconds - 3_000, nodeID: "C"))
-        let store = try makeStore(ScriptedTransport(pull: { token in
-            switch token {
-            case nil: PullResponse(changes: [newer], token: "t1", hasMore: false)
-            case "t1": PullResponse(changes: [older], token: "t2", hasMore: false)
-            case "t2": PullResponse(changes: [newest], token: "t3", hasMore: false)
-            default: PullResponse(changes: [], token: token, hasMore: false)
-            }
-        }))
+        let feed = PageFeed()
+        let store = try makeStore(feed)
+        await feed.publish(newer)
         try await store.sync()
+        await feed.publish(older)
         try await store.sync()
         #expect(await store.record("a")?.text == "old")
+        await feed.publish(newest)
         try await store.sync()
         #expect(await store.record("a")?.text == "newest")
     }

@@ -112,7 +112,7 @@ extension OfflineStore {
         try update { state in
             // Another server's epochs say nothing about this one's: its first one is taken.
             if state.serverIdentity != nil {
-                Self.beginHistory(epoch: nil, isLaterEpoch: false, in: &state)
+                Self.beginHistory(epoch: nil, isLaterEpoch: false, isAnotherServer: true, in: &state)
                 state.retiredEpochs.removeAll()
             }
             state.serverIdentity = identity

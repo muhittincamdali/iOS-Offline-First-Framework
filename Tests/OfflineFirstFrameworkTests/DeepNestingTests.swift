@@ -17,7 +17,7 @@ struct DeepNestingTests {
                        retry: RetryPolicy? = nil) throws -> OfflineStore<Note> {
         let host = "deep-\(UUID().uuidString.lowercased()).example"
         let session = StubURLProtocol.session(host: host) { request, body in
-            request.httpMethod == "POST" ? (200, try push(body)) : (200, page())
+            request.httpMethod == "POST" ? (200, try push(body)) : (200, onePageAnswer(request, holding: page()))
         }
         let transport = HTTPSyncTransport<Note>(baseURL: URL(string: "https://\(host)/sync/notes")!, session: session)
         let clock = TestClock()

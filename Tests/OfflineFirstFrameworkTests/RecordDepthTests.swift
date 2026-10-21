@@ -61,7 +61,11 @@ actor ValueTransport<Record: SyncableRecord>: SyncTransport {
     func setAnswer(_ answer: @escaping Answer) { self.answer = answer }
 
     func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>] { try answer(changes) }
-    func pull(since token: String?) async throws -> PullResponse<Record> { page }
+    /// A server that holds `page`: nothing new after a token, as a new store's check of its first
+    /// page asks.
+    func pull(since token: String?) async throws -> PullResponse<Record> {
+        token == nil ? page : PullResponse(changes: [], token: nil, hasMore: false, epoch: page.epoch)
+    }
 }
 
 /// A record nested deeper than ``OfflineStore/maximumRecordDepth`` never enters the store, from
@@ -77,7 +81,7 @@ struct RecordDepthTests {
         let host = "depth-\(UUID().uuidString.lowercased()).example"
         let body = Data(page.utf8)
         let session = StubURLProtocol.session(host: host) { request, _ in
-            request.httpMethod == "POST" ? (200, Data(#"{"outcomes":{}}"#.utf8)) : (200, body)
+            request.httpMethod == "POST" ? (200, Data(#"{"outcomes":{}}"#.utf8)) : (200, onePageAnswer(request, holding: body))
         }
         let transport = HTTPSyncTransport<Record>(baseURL: URL(string: "https://\(host)/sync/records")!, session: session)
         return try OfflineStore<Record>(name: "records", storage: storage, transport: transport)

@@ -53,15 +53,18 @@ struct CrashRecoveryTests {
 
     @Test func aCrashWhileStoringPageTwoKeepsPageOneAndResumes() async throws {
         let server = InMemorySyncServer<Note>(pageSize: 1, now: { [clock] in clock.now })
-        for id in ["a", "b", "c"] { await server.write(Note(id: id, text: id)) }
         let storage = FailingStorage()
         let transport = ScriptedTransport()
         let pulls = Counter()
         await transport.onPull { token in
-            if await pulls.next() == 2 { storage.setFailing(true) }
+            // The first sync checks the empty server's epoch with two requests; page one is the
+            // third pull, page two the fourth.
+            if await pulls.next() == 4 { storage.setFailing(true) }
             return try await server.pull(since: token)
         }
         let store = try makeStore(transport, storage: storage)
+        try await store.sync()
+        for id in ["a", "b", "c"] { await server.write(Note(id: id, text: id)) }
         await #expect(throws: OfflineFirstError.self) { try await store.sync() }
         let reopened = try makeStore(server, storage: storage.inner)
         #expect(await reopened.records().map(\.id) == ["a"])

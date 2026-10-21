@@ -3,7 +3,24 @@ import os
 import Testing
 @testable import OfflineFirstFramework
 
-/// One device's connection: pushes always reach the server; pulls may be answered by a replica.
+/// Another deployment behind the server's URL (a staging server, an older version, a proxy that
+/// answers for it): a page with a record the server never held, a token and a sequence of its
+/// own, and its own epoch or none.
+struct ScenarioDeployment: Sendable {
+    var epoch: String?
+    var record = "s"
+    var text = "foreign"
+    var sequence: UInt64? = 900_000
+
+    var page: PullResponse<Note> {
+        PullResponse(changes: [RemoteChange(recordID: record, record: Note(id: record, text: text), revision: "F.900000",
+                                            timestamp: HLCTimestamp(wallTime: 1_700_000_000_000, nodeID: "foreign"), sequence: sequence)],
+                     token: "F.900000", hasMore: false, epoch: epoch)
+    }
+}
+
+/// One device's connection: pushes always reach the server; pulls may be answered by a replica
+/// or by another deployment.
 actor ScenarioNetwork: SyncTransport {
     typealias Record = Note
     nonisolated let serverIdentity: String? = "scenario-server"
@@ -15,6 +32,8 @@ actor ScenarioNetwork: SyncTransport {
     private var pullHook: (@Sendable () async -> Void)?
     private var failNextPushUnsent = 0
     private var loseNextAnswers = 0
+    private var deployment: ScenarioDeployment?
+    private var deploymentPulls = 0
     var pageSize: Int?
     var yields = 0
 
@@ -32,6 +51,11 @@ actor ScenarioNetwork: SyncTransport {
     func failNextPushes(unsent count: Int) { failNextPushUnsent = count }
     func loseNextAnswers(_ count: Int) { loseNextAnswers = count }
     func setYields(_ count: Int) { yields = count }
+    /// The next `pulls` pulls go to `deployment`.
+    func setDeployment(_ deployment: ScenarioDeployment, pulls: Int) {
+        self.deployment = deployment
+        deploymentPulls = pulls
+    }
     func setPageSize(_ size: Int?) { pageSize = size }
 
     private func interleave() async {
@@ -61,6 +85,10 @@ actor ScenarioNetwork: SyncTransport {
             await hook()
         }
         await interleave()
+        if let deployment, deploymentPulls > 0 {
+            deploymentPulls -= 1
+            return deployment.page
+        }
         let size: Int
         if let pageSize { size = pageSize } else { size = await server.pageSize }
         if let replica, replicaPulls > 0 {
@@ -220,10 +248,10 @@ final class ScenarioWorld: @unchecked Sendable {
     let policy: ScenarioPolicy
     let retry: RetryPolicy
 
-    init(policy: ScenarioPolicy, options: ScenarioOptions = ScenarioOptions(), pageSize: Int = 2,
+    init(policy: ScenarioPolicy, options: ScenarioOptions = ScenarioOptions(), pageSize: Int = 2, reportsEpochs: Bool = true,
          retry: RetryPolicy = RetryPolicy(maximumAttempts: 8, initialDelay: .seconds(10), maximumDelay: .seconds(60), jitter: 0)) {
         self.policy = policy
-        self.server = ScenarioServer(options: options, pageSize: pageSize)
+        self.server = ScenarioServer(options: options, pageSize: pageSize, reportsEpochs: reportsEpochs)
         self.retry = retry
     }
 

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -98,12 +99,15 @@ struct MisbehavingServerTests {
 
     /// Without timestamps the server's sequence tells which version is older.
     @Test func aStalePageWithoutTimestampsIsRecognisedBySequence() async throws {
+        // The deletion is written after the store's first sync.
+        let deleted = OSAllocatedUnfairLock(initialState: false)
         let transport = ScriptedTransport(pull: { token in
             switch token {
             case nil: PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "A"), revision: "1", timestamp: nil, sequence: 1)],
                                    token: "t1", hasMore: false)
-            case "t1": PullResponse(changes: [RemoteChange(recordID: "a", record: nil, revision: "3", timestamp: nil, sequence: 3)],
-                                    token: "t3", hasMore: true)
+            case "t1" where deleted.withLock({ $0 }):
+                PullResponse(changes: [RemoteChange(recordID: "a", record: nil, revision: "3", timestamp: nil, sequence: 3)],
+                             token: "t3", hasMore: true)
             case "t3": PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "A"), revision: "2", timestamp: nil, sequence: 2)],
                                     token: "t4", hasMore: false)
             default: PullResponse(changes: [], token: token, hasMore: false)
@@ -112,6 +116,7 @@ struct MisbehavingServerTests {
         let store = try makeStore(transport)
         try await store.sync()
         #expect(await store.record("a") != nil)
+        deleted.withLock { $0 = true }
         try await store.sync()
         try await store.sync()
         #expect(await store.record("a") == nil)
