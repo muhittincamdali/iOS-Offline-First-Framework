@@ -22,11 +22,22 @@ enum JSONLayout {
 
     /// The value the document consists of; only whitespace may surround it.
     static func root(of bytes: [UInt8]) throws -> Range<Int> {
-        let range = try value(in: bytes, from: 0)
+        let range = try value(in: bytes, from: try contentStart(of: bytes))
         guard skipWhitespace(in: bytes, from: range.upperBound) == bytes.count else {
             throw Failure(description: "The document goes on after its value.")
         }
         return range
+    }
+
+    /// Where the JSON text starts: after a UTF-8 byte order mark, which some servers write and
+    /// JSON parsers ignore. A document in UTF-16 or UTF-32, with or without a mark, is refused by
+    /// name: JSON text starts with an ASCII character, so one of its first two bytes is then zero.
+    static func contentStart(of bytes: [UInt8]) throws -> Int {
+        if bytes.starts(with: [0xEF, 0xBB, 0xBF]) { return 3 }
+        if bytes.starts(with: [0xFE, 0xFF]) || bytes.starts(with: [0xFF, 0xFE]) || bytes.prefix(2).contains(0) {
+            throw Failure(description: "The document is in UTF-16 or UTF-32; the sync protocol uses UTF-8.")
+        }
+        return 0
     }
 
     /// The members of the object at `range`, in order.
