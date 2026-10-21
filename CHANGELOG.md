@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh, eighth, ninth, tenth and eleventh rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh and twelfth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -219,6 +219,22 @@ now state what the store promises and what it needs from the server.
   every later conflict answer of the real server look older, so each edit of the record was
   parked, also after `retryFailedChanges()` and `resetChangeToken()`. Once the store holds an
   epoch, a page without one is checked by a second request like another epoch and never taken.
+- The first epoch was taken from a single page. One page with an epoch from another deployment
+  behind the same URL therefore locked a store of a server without epochs out for good: every
+  later page of the server named no epoch and was refused, also after `resetChangeToken()` and
+  `retryFailedChanges()`, other devices' records never arrived, and with sequences the device's
+  edit was parked. A store with a token or records now takes its first epoch only when the pull
+  from the beginning reports it too, and goes on after its token. A new store still takes it
+  from its first page, but a page without an epoch is refused only once a second request
+  reported the store's epoch; before that, two requests without one start a new history.
+- An accepted push answer took a version a pull had kept back for the change whenever it was
+  another one, while a conflict answer already followed the server's sequences. A stale page (a
+  cache after `resetChangeToken()`, a replica that sticks to the device) thus replaced the
+  device's accepted write, and an edit of what the app showed dropped what that write held,
+  without a conflict. Every push answer now follows one rule: the kept-back version takes the
+  answer's place only when the sequences show it is newer. When nothing tells, the answer
+  stands and the next sync pulls from the beginning, which brings a newer version the server
+  holds.
 
 ### Added
 
@@ -256,9 +272,10 @@ now state what the store promises and what it needs from the server.
   by byte, and keep counting sequences across a restart that keeps the data. Both reference
   servers make each epoch from the time in microseconds (16 hexadecimal digits), and at least
   one more than the last epoch they handed out in the process or, with `--data`, saved.
-- Servers that report an epoch must report it on every page: while the store holds an epoch, it
-  refuses a page without one, and a server that stops reporting epochs is refused until it
-  reports one again.
+- Servers that report an epoch must report it on every page: while the store holds an epoch that
+  two requests reported, it refuses a page without one, and a server that stops reporting epochs
+  is refused until it reports one again. A store with a token or records checks the first epoch
+  it hears of with one more pull from the beginning.
 - Servers should send back the change ID that wrote each version and may bound pushed
   timestamps by their clock; a server without change IDs has to keep timestamps as they were
   pushed. The reference servers do the first and bound timestamps to five minutes ahead.

@@ -80,6 +80,11 @@ version of one record, so records well below the limit keep every answer within 
 | `{"status": "conflict", "current": <change>}`                  | The record's revision is not `baseRevision`; `current` is the server's version. |
 | `{"status": "rejected", "reason": "...", "current": <change>}` | The change can never succeed; `current` is optional.                            |
 
+Store a change only while the record's revision is its `baseRevision`, and a change without one
+only while you hold no version of the record, a deletion included. The store takes an accepted
+change as written on top of that version: with `sequence`, a version later than that one came
+after the change.
+
 ## Pull
 
 `GET <base>/changes?limit=<n>` on the first sync, then `GET <base>/changes?since=<token>&limit=<n>`.
@@ -143,18 +148,24 @@ later epoch on every start, 16 hexadecimal digits of the time in microseconds, a
 front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). The store believes another epoch
 than its own only when two requests of one sync report it: the pull with its token and the pull
 from the beginning, or, without a token, the pull from the beginning and the pull after that
-page's token. A later epoch then starts a new history. **Never report an earlier epoch, and
-never report an epoch again once you reported a later one**: the store refuses a page that names
-an earlier epoch than its own in every sync, however many requests or syncs report it, as it
-comes from a stale replica or cache. That holds for an epoch the store left for a later one (it
-keeps the last 32 of them) and for one it never held, such as the epoch between two restarts. A
-server restored from a backup reports a new, later epoch; a server whose clock may go back keeps
-its last epoch and counts on from it, as the reference server does with `--data`. A page without
-an epoch, once the store holds one, is refused the same way: it comes from no history the store
-knows, such as another deployment behind the same URL, so a server that stops reporting epochs
-is refused until it reports one again. ``OfflineStore/resetChangeToken()`` forgets the token
-only: the next sync pulls from the beginning, and earlier epochs stay refused. When the two
-requests disagree, the sync fails without a change to the store. So serve the pull from the
+page's token. A later epoch then starts a new history. The first epoch a store with a token or
+records hears of, from a server that starts to report epochs, is checked the same way; once both
+requests report it, the pull goes on after the token, without a new history. A new store takes
+its first epoch from its first page and counts it as reported twice once another request reports
+it. **Never report an earlier epoch, and never report an epoch again once you reported a later
+one**: the store refuses a page that names an earlier epoch than its own in every sync, however
+many requests or syncs report it, as it comes from a stale replica or cache. That holds for an
+epoch the store left for a later one (it keeps the last 32 of them) and for one it never held,
+such as the epoch between two restarts. A server restored from a backup reports a new, later
+epoch; a server whose clock may go back keeps its last epoch and counts on from it, as the
+reference server does with `--data`. A page without an epoch, once two requests reported the
+store's, is refused the same way: it comes from no history the store knows, such as another
+deployment behind the same URL, so a server that stops reporting epochs is refused until it
+reports one again. Against an epoch only a new store's first page reported, two requests without
+an epoch start a new history without one instead, so one page from another deployment cannot
+lock a store out of a server without epochs. ``OfflineStore/resetChangeToken()`` forgets the
+token only: the next sync pulls from the beginning, and earlier epochs stay refused. When the
+two requests disagree, the sync fails without a change to the store. So serve the pull from the
 beginning (`GET <base>/changes` without `since`) from a cache only for a short time: every
 device asks for the same URL, and right after a reset both requests of the check are such URLs.
 

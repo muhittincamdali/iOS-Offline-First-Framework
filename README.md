@@ -46,18 +46,18 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 342 Swift Testing tests on macOS and an iPhone simulator, among
+- **Tested against a real server** — 350 Swift Testing tests on macOS and an iPhone simulator, among
   them two property tests that run every conflict policy through lost requests, restarts, token
   resets, overlapping syncs, small page limits, stale pages, operations at once and crashes, also
   against a server without sequences, scenario tests of a replica that answers a device for many
-  syncs, of a stale page that brings back an older own write, of a crash at every write of a sync
-  and of device clocks that jump ahead, and tests that send pages of junk, deeply nested records,
-  pages larger than the response limit and pages with more changes than asked for, also streamed
-  endlessly over a socket; 28 Node tests for the server; and an end-to-end suite in CI that syncs
-  stores through the server over HTTP, also with 68 records of 250 KiB across a server restart, with
-  70 conflict answers of 250 KiB that together exceed the response limit, with a write whose save
-  failed before a restart, with a push the server applied behind a proxy that answers 504, and with
-  a replica that serves pages from before a restart after a token reset.
+  syncs, of a stale page that brings back an older own write or meets an accepted push, of a crash
+  at every write of a sync and of device clocks that jump ahead, and tests that send pages of junk,
+  deeply nested records, pages larger than the response limit and pages with more changes than asked
+  for, also streamed endlessly over a socket; 28 Node tests for the server; and an end-to-end suite
+  in CI that syncs stores through the server over HTTP, also with 68 records of 250 KiB across a
+  server restart, with 70 conflict answers of 250 KiB that together exceed the response limit, with
+  a write whose save failed before a restart, with a push the server applied behind a proxy that
+  answers 504, and with a replica that serves pages from before a restart after a token reset.
 
 ### What's included
 
@@ -344,12 +344,15 @@ app and server restarts and stale pages, as long as the server follows the
   itself is never a conflict, also when a stale page took the record back and the user edited on top
   of it, or a page lists an older own write before a version whose answer was lost. Without
   sequences a pull leaves a pending change to its push, also when the page brings an older write of
-  the device itself, and the push's answer decides: a version a pull kept back meanwhile takes its
-  place only when the server's `sequence` shows it is newer, and when nothing tells, the change goes
-  out once more for a fresh answer.
-- Another server epoch counts only when two requests of one sync report it, the pull with the token
-  and the pull from the beginning, so a stale cache or another deployment behind the same URL cannot
-  roll the store back. A page without an epoch, once the server reported one, is never taken either.
+  the device itself, and the push's answer decides, accepted or not: a version a pull kept back
+  meanwhile takes its place only when the server's `sequence` shows it is newer. When nothing tells,
+  a conflict sends the change once more for a fresh answer, and any other answer stands while the
+  next sync pulls from the beginning.
+- Another server epoch, and the first one a store with records hears of, counts only when two
+  requests of one sync report it, the pull with the token and the pull from the beginning, so a
+  stale cache or another deployment behind the same URL cannot roll the store back or lock it out of
+  a server without epochs. A page without an epoch, once two requests reported one, is never taken
+  either.
   A sync that fetches a single page still follows a server restart, and when the two requests
   disagree the sync fails instead of reporting success. Epochs go one way: an earlier epoch than the
   store's, one it left or one it never held, is never taken, also after `resetChangeToken()`, so a

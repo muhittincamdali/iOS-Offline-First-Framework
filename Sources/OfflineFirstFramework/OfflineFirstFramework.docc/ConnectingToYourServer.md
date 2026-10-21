@@ -65,7 +65,7 @@ The rules that keep sync correct:
   restarted, lost or replaced its data, so the store pulls everything again, and never goes back
   to an epoch it reported before a later one; the store refuses a page with an earlier epoch
   than its own in every sync, as a stale replica or cache would send one, and a page without an
-  epoch once it holds one. Give the transport a
+  epoch once two requests reported one. Give the transport a
   ``SyncTransport/serverIdentity`` (the HTTP transport uses its URL), so a store opened with
   another server does not send it the old server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
