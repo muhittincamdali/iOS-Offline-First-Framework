@@ -33,12 +33,12 @@ struct PushSizeTests {
         }
     }
 
-    private func store(_ endpoint: Endpoint) throws -> OfflineStore<Note> {
+    private func store(_ endpoint: Endpoint, clock: TestClock = TestClock()) throws -> OfflineStore<Note> {
         let host = "push-\(UUID().uuidString.lowercased()).example"
         let session = StubURLProtocol.session(host: host) { request, body in try endpoint.answer(request, body) }
         let transport = HTTPSyncTransport<Note>(baseURL: URL(string: "https://\(host)/sync/notes")!, session: session)
         return try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
-                                      configuration: makeConfiguration(clock: TestClock()))
+                                      configuration: makeConfiguration(clock: clock))
     }
 
     private static func notes(_ count: Int, kibibytes: Int) -> [Note] {
@@ -65,13 +65,25 @@ struct PushSizeTests {
         #expect(await store.pendingChanges().isEmpty)
     }
 
-    @Test func aChangeTooLargeForTheServerIsRejectedAndParkedAndTheOthersGoThrough() async throws {
+    /// A change the server refuses as too large on its own gets no outcome, since only a 2xx
+    /// answer settles a change: it waits for its retry date and is parked after its last
+    /// attempt, as the retry policy says. The other change goes through.
+    @Test func aChangeTooLargeForTheServerIsRetriedAndParkedAndTheOthersGoThrough() async throws {
         let endpoint = Endpoint(limit: 1 << 20)
-        let store = try store(endpoint)
+        let clock = TestClock()
+        let store = try store(endpoint, clock: clock)
         try await store.save(contentsOf: [Note(id: "huge", text: String(repeating: "y", count: 2 << 20)), Note(id: "small", text: "s")])
         let report = try await store.sync()
         #expect(report.pushed == 1)
-        #expect(report.rejected == 1)
+        #expect(report.rejected == 0)
+        let waiting = try #require(await store.pendingChanges().first)
+        #expect(waiting.recordID == "huge")
+        #expect(waiting.attempts == 1)
+        #expect(!waiting.isParked)
+        for _ in 0..<2 {
+            clock.advance(by: 3_600)
+            _ = try? await store.sync()
+        }
         let failed = try #require(await store.failedChanges().first)
         #expect(failed.recordID == "huge")
         #expect(failed.lastError?.contains("413") == true)

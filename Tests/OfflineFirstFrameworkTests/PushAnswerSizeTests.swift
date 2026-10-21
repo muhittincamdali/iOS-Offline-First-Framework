@@ -65,21 +65,40 @@ struct PushAnswerSizeTests {
         #expect(endpoint.requests == [ids, Array(ids[..<4]), Array(ids[4...])])
     }
 
-    /// A conflict of 40 KiB never fits in 16 KiB. That change is parked with `answerTooLarge`,
-    /// the other change of the request is accepted, and the sync goes on to pull.
-    @Test func aChangeWhoseAnswerAloneIsTooLargeIsParkedAndTheSyncGoesOn() async throws {
+    /// A conflict of 40 KiB never fits in 16 KiB. That answer was never read, so the change was
+    /// not settled: it used to be rejected and parked as not applied, which dropped its in-doubt
+    /// mark although the server may have applied it. It now stays in doubt and waits for its
+    /// retry date; the other change of the request is accepted, and the sync goes on to pull.
+    @Test func aChangeWhoseAnswerAloneIsTooLargeStaysInDoubtAndTheSyncGoesOn() async throws {
         let endpoint = Endpoint(conflictSize: 40 * 1024, accepted: ["small"])
         let store = try store(endpoint, maximumResponseSize: 16 * 1024)
         try await store.save(contentsOf: [Note(id: "huge", text: "device"), Note(id: "small", text: "device")])
         let report = try await store.sync()
         #expect(report.pushed == 1)
-        #expect(report.rejected == 1)
-        let failed = try #require(await store.failedChanges().first)
-        #expect(failed.recordID == "huge")
-        #expect(failed.lastError?.hasPrefix(HTTPSyncTransport<Note>.answerTooLarge) == true)
-        #expect(await store.pendingChanges().map(\.recordID) == ["huge"])
+        #expect(report.rejected == 0)
+        #expect(await store.failedChanges().isEmpty)
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.recordID == "huge")
+        #expect(pending.attempts == 1)
+        #expect(await store.state.entries["huge"]?.pending?.isInDoubt == true)
         #expect(await store.record("huge")?.text == "device")
         #expect(await store.state.token == "t")
         #expect(endpoint.requests == [["huge", "small"], ["huge"], ["small"]])
+    }
+
+    /// Forty conflicts of 12 KiB fit in 16 KiB one by one only. Halving them all took 79
+    /// requests; it stops after `maximumSplitRequests` more, and the changes it did not reach
+    /// wait for their retry date in doubt.
+    @Test func halvingAPushAddsABoundedNumberOfRequests() async throws {
+        let endpoint = Endpoint(conflictSize: 12 * 1024)
+        let store = try store(endpoint, maximumResponseSize: 16 * 1024)
+        try await store.save(contentsOf: (0..<40).map { Note(id: "n\($0)", text: "device") })
+        let report = try await store.sync()
+        #expect(endpoint.requests.count == 1 + HTTPSyncTransport<Note>.maximumSplitRequests)
+        #expect(report.conflicts > 0)
+        let waiting = await store.pendingChanges().filter { $0.lastError == "The server did not answer this change." }
+        #expect(!waiting.isEmpty)
+        #expect(waiting.allSatisfy { !$0.isParked && $0.attempts == 1 })
+        #expect(await store.failedChanges().isEmpty)
     }
 }

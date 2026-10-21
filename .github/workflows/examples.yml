@@ -77,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           OFFLINE_FIRST_NODE="$(command -v node)" swift test --filter GatewayEndToEndTests 2>&1 | tee "$RUNNER_TEMP/gateway.log"
-          grep -q "aLaterEditOnAnotherDeviceSurvivesAnAnswerThatWasNeverRead(policy:mode:) with 8 test cases passed" "$RUNNER_TEMP/gateway.log"
+          grep -q "aLaterEditOnAnotherDeviceSurvivesAnAnswerThatWasNeverRead(policy:mode:) with 12 test cases passed" "$RUNNER_TEMP/gateway.log"
 
       - name: End-to-end tests against the server
         run: |

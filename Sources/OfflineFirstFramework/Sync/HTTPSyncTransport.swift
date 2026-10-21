@@ -118,46 +118,60 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
 
     /// Pushes `changes` in requests of at most ``maximumRequestSize`` bytes, in order.
     ///
-    /// A request the server refuses as too large (status 413), or whose answer is longer than
+    /// A request the server refuses as too large (status 413), or whose 2xx answer is longer than
     /// ``maximumResponseSize`` (conflicts that each bring a large version), is sent again as two
     /// halves; the server answers the changes it already applied from its memory of change IDs.
-    /// A single change that stays too large is answered ``PushOutcome/rejected(reason:current:)``
-    /// and parked, since the same request can never succeed: with status 413, or with
-    /// ``answerTooLarge`` when its answer alone is longer than the limit. A push of n changes
-    /// takes at most 2n − 1 requests. When a request fails after earlier ones were answered,
-    /// their outcomes are returned, and the changes without an answer are retried later.
+    /// Halving adds at most ``maximumSplitRequests`` requests to one push, and no other status
+    /// halves a request.
+    ///
+    /// A request that stays too large, of a single change or once the halving is spent, settles
+    /// none of its changes: only an answer that was read settles a change, and the server may
+    /// have applied them. They get no outcome, so the store keeps them in doubt and retries them
+    /// as its ``RetryPolicy`` says, and the other requests go on. When no request of the push
+    /// got an answer, the error is thrown instead. When a request fails otherwise after earlier
+    /// ones were answered, their outcomes are returned, and the changes without an answer are
+    /// retried later.
     public func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>] {
         let encoder = JSONEncoder()
         let encoded = try changes.map { EncodedChange(id: $0.id, json: try encoder.encode(WireChange($0))) }
         var requests = Self.requests(for: encoded, upTo: maximumRequestSize)
         var outcomes: [UUID: PushOutcome<Record>] = [:]
+        var splitRequests = 0
+        var unsettled: Failure?
         while !requests.isEmpty {
             let batch = requests.removeFirst()
             do {
                 outcomes.merge(try await push(batch)) { _, answer in answer }
-            } catch Failure.unexpectedStatus(code: 413, body: _) where batch.count > 1,
-                    Failure.responseTooLarge(limit: _) where batch.count > 1 {
+            } catch let failure as Failure where Self.asksForSmallerRequests(failure) {
+                guard batch.count > 1, splitRequests + 2 <= Self.maximumSplitRequests else {
+                    unsettled = failure
+                    continue
+                }
+                splitRequests += 2
                 let half = batch.count / 2
                 requests.insert(contentsOf: [Array(batch[..<half]), Array(batch[half...])], at: 0)
-            } catch Failure.unexpectedStatus(code: 413, body: let body) {
-                let reason = "The sync server refused the change as too large (status 413)" + (body.isEmpty ? "." : ": \(body)")
-                outcomes[batch[0].id] = .rejected(reason: reason, current: nil)
-            } catch Failure.responseTooLarge(limit: let limit) {
-                let reason = "\(Self.answerTooLarge): the sync server's answer to this change alone was longer than \(limit) bytes."
-                outcomes[batch[0].id] = .rejected(reason: reason, current: nil)
             } catch where !outcomes.isEmpty && !(error is CancellationError) {
                 return outcomes
             }
         }
+        if outcomes.isEmpty, let unsettled { throw unsettled }
         return outcomes
     }
 
-    /// Starts the ``PendingChange/lastError`` of a change that is parked because the server's
-    /// answer to it alone was longer than ``maximumResponseSize``. The server has to keep that
-    /// answer within the limit (the documentation article "Server protocol"); until then,
-    /// ``OfflineStore/retryFailedChanges()`` meets the same answer, and
-    /// ``OfflineStore/discardChange(for:)`` drops the change.
-    public static var answerTooLarge: String { "answerTooLarge" }
+    /// The most requests that halving adds to one push: 16, eight halvings. A push call carries
+    /// one batch of the store (``OfflineStore/Configuration/pushBatchSize`` changes at most), so
+    /// a server that refuses every request as too large costs a sync at most this many requests
+    /// more per batch, not 2n − 1 for n changes.
+    public static var maximumSplitRequests: Int { 16 }
+
+    /// Whether `failure` says that a request with fewer changes may succeed: status 413, or a 2xx
+    /// answer longer than ``maximumResponseSize``.
+    private static func asksForSmallerRequests(_ failure: Failure) -> Bool {
+        switch failure {
+        case .unexpectedStatus(code: 413, body: _), .responseTooLarge: true
+        default: false
+        }
+    }
 
     /// One pushed change as the JSON it is sent as.
     private struct EncodedChange {

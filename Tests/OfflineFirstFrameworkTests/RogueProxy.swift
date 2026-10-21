@@ -21,6 +21,10 @@ final class RogueProxy: Sendable {
         case appliedThenGatewayTimeout
         /// Forwards a push, which the server applies, and closes the connection without an answer.
         case appliedThenReset
+        /// Forwards a push, which the server applies, and answers it with 200 and a
+        /// `Content-Length` of 17 MiB without the body, as a proxy that puts a page of its own
+        /// in place of the answer would.
+        case appliedThenLongAnswer
     }
 
     /// Pages recorded earlier: the one from the beginning and the one after its token.
@@ -154,6 +158,9 @@ final class RogueProxy: Sendable {
         case .appliedThenReset:
             await forwardAndHold(method, target, body: body, upstream: upstream, session: session, state: state)
             connection.cancel()
+        case .appliedThenLongAnswer:
+            await forwardAndHold(method, target, body: body, upstream: upstream, session: session, state: state)
+            announceLargeBody(connection, status: "200 OK")
         }
     }
 

@@ -8,14 +8,15 @@ import Testing
 /// parked the change as not applied: device B edited on top of A's version, A's pull met B's
 /// version as a conflict with a change that was not in doubt, `.clientWins` kept A's edit, and
 /// `retryFailedChanges()` put it back over B's edit on the server and on every device. A
-/// connection reset at the same moment, the control, kept the change in doubt.
+/// connection reset at the same moment, the control, kept the change in doubt. A 200 whose body
+/// is longer than the response limit was taken the same way: as a change rejected as not applied.
 ///
 /// Runs where `OFFLINE_FIRST_NODE` names a Node 24 binary, as the "Examples" workflow does:
 /// `OFFLINE_FIRST_NODE=$(command -v node) swift test --filter GatewayEndToEndTests`.
 @Suite("Reference server: a push applied behind a gateway in trouble", .serialized,
        .enabled(if: referenceServerNode != nil, "Set OFFLINE_FIRST_NODE to the path of node."))
 struct GatewayEndToEndTests {
-    static let modes: [RogueProxy.Mode] = [.appliedThenGatewayTimeout, .appliedThenReset]
+    static let modes: [RogueProxy.Mode] = [.appliedThenGatewayTimeout, .appliedThenLongAnswer, .appliedThenReset]
 
     @Test(arguments: ConvergenceTests.Policy.allCases, modes)
     func aLaterEditOnAnotherDeviceSurvivesAnAnswerThatWasNeverRead(policy: ConvergenceTests.Policy,
