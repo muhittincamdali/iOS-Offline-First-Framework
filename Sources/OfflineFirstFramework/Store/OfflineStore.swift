@@ -35,6 +35,10 @@ public actor OfflineStore<Record: SyncableRecord> {
         /// Epochs the store left for a later one, oldest first; a page that names one is
         /// refused. ``OfflineStore/resetChangeToken()`` keeps them.
         var retiredEpochs: [String] = []
+        /// Set when a push answer stood over a version a pull kept back and nothing told which
+        /// of the two is newer (``OfflineStore/weigh(keptBack:against:in:)``): the next sync
+        /// forgets the token and pulls from the beginning.
+        var pullsFromBeginning = false
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -312,7 +316,8 @@ public actor OfflineStore<Record: SyncableRecord> {
                              serverEpoch: state.serverEpoch, epochIsConfirmed: state.epochIsConfirmed ? true : nil,
                              history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
-                             retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs)
+                             retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs,
+                             pullsFromBeginning: state.pullsFromBeginning ? true : nil)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         guard let fileKey else {
             try storage.write(data, to: fileName)

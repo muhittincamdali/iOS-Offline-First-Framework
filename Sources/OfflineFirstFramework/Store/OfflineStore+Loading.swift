@@ -52,7 +52,7 @@ extension OfflineStore {
                      serverIdentity: file.serverIdentity, serverEpoch: file.serverEpoch,
                      epochIsConfirmed: file.serverEpoch != nil && file.epochIsConfirmed == true, history: file.history ?? 0,
                      quarantine: Array((file.quarantine ?? []).suffix(maximumQuarantinedChanges)),
-                     retiredEpochs: file.retiredEpochs ?? [])
+                     retiredEpochs: file.retiredEpochs ?? [], pullsFromBeginning: file.pullsFromBeginning == true)
     }
 }
 

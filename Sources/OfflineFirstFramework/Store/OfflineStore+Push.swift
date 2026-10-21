@@ -121,9 +121,9 @@ extension OfflineStore {
                     entry.deferredRemote = nil
                     if let current, Self.isConsistent(current, for: entry.id) {
                         receive(current, in: &state)
-                        let taken = newer(deferred, than: current)
-                        entry = Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration)
-                        if taken.revision == current.revision { entry.pushedInHistory = state.history }
+                        let answered = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
+                        entry = weigh(keptBack: deferred, against: answered, in: &state)
+                        if entry.revision == current.revision { entry.pushedInHistory = state.history }
                     } else {
                         entry.pending?.isParked = true
                         entry.pending?.nextAttemptAt = nil
@@ -143,13 +143,19 @@ extension OfflineStore {
         // every version up to the one it replaced is known to be older: by its sequence, or by
         // its revision when the store does not know that sequence in the current history (an
         // earlier accepted write of this store without an echo, a version of an earlier history
-        // after a pull of the new one stopped before the record).
+        // after a pull of the new one stopped before the record). A write based on no version
+        // was applied while the server held none of the record, so every version the server
+        // sends of it besides that write is newer.
         let knowsReplacedSequence = entry.history == state.history && entry.sequence != nil
         var olderRevisions = knowsReplacedSequence ? [] : entry.olderRevisions
         if !knowsReplacedSequence, let replaced = entry.revision {
             olderRevisions.append(replaced)
         }
-        entry.minimumSequence = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
+        if entry.revision == nil {
+            entry.minimumSequence = 0
+        } else {
+            entry.minimumSequence = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
+        }
         entry.revision = revision
         entry.history = state.history
         entry.pushedInHistory = state.history
@@ -163,12 +169,14 @@ extension OfflineStore {
         Self.settleVersionsInDoubt(of: &entry)
         guard isCurrent else { return }
         entry.pending = nil
-        // A pull brought a newer version while this change was in doubt; the change was
-        // applied before it, so that version is the server's current one.
-        if let deferred, deferred.revision != revision {
-            report.pulled += 1
-            entry = Self.entry(from: deferred, replacing: entry, in: &state, configuration: configuration)
-        }
+        // A version a pull kept back while the change was in doubt follows the rule of every
+        // push answer (weigh(keptBack:against:in:)): it replaces the write only when the
+        // server's sequences show it came after it. Otherwise it may be a stale page (a lagging
+        // replica, a cache after resetChangeToken()), and showing it would make the next edit
+        // drop what the write held.
+        let accepted = entry
+        entry = weigh(keptBack: deferred, against: accepted, in: &state)
+        if entry.revision != accepted.revision { report.pulled += 1 }
     }
 
     /// Handles the server's answer that `entry`'s pending change conflicts with `answer`.
@@ -176,7 +184,8 @@ extension OfflineStore {
     /// Who wrote the version the answer names decides first: the device's own write is never a
     /// conflict, whatever a pull kept back meanwhile. Only for another device's version may a
     /// version a pull kept back while the change was in doubt take the answer's place, and only
-    /// when the server's sequences show it is newer (see ``newer(_:than:)``).
+    /// when the server's sequences show it is newer (see ``order(ofKeptBack:against:in:)``), the
+    /// rule an accepted answer and a rejection follow too.
     private func settle(_ entry: inout StoredEntry<Record>, conflictingWith answer: RemoteChange<Record>, pushesInThisSync: Int,
                         in state: inout State, report: inout SyncReport) throws {
         // The server did not apply the change, so it is no longer in doubt, and neither are its
@@ -212,7 +221,8 @@ extension OfflineStore {
             // The server holds this very change: an earlier push of it was applied.
             report.pushed += 1
             entry.rememberOwnWrite(changeID: entry.pending?.changeID, timestamp: entry.timestamp)
-            entry = Self.entry(from: newer(deferred, than: answer), replacing: entry, in: &state, configuration: configuration)
+            let answered = Self.entry(from: answer, replacing: entry, in: &state, configuration: configuration)
+            entry = weigh(keptBack: deferred, against: answered, in: &state)
         case .earlierWrite:
             // The device's own earlier write: applied although its answer was lost, or accepted
             // before a stale page took the record back. The pending change was made on this
@@ -224,7 +234,10 @@ extension OfflineStore {
                 entry.pending = conflictAttempt(renewed(pending), pushesInThisSync: pushesInThisSync, report: &report)
             }
         case .other:
-            if let pending = entry.pending, isUnordered(deferred, answer) {
+            var answered = entry
+            Self.base(&answered, on: answer, in: state, configuration: configuration)
+            let keptBack = order(ofKeptBack: deferred, against: answered, in: state)
+            if let pending = entry.pending, keptBack == .unknown {
                 // A pull kept another version back, and no sequences tell which of the two the
                 // server holds now: the answer may come from the server's memory of change IDs,
                 // from before the version pulled since, and the pulled version may come from a
@@ -234,30 +247,12 @@ extension OfflineStore {
                 return
             }
             report.conflicts += 1
-            entry = try resolve(entry, against: newer(deferred, than: answer), in: &state, pushesInThisSync: pushesInThisSync,
-                                report: &report)
+            let current = keptBack == .newer ? deferred ?? answer : answer
+            entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
         }
         // Every path above makes the version the answer named, or a newer one the server's
         // sequences show, the version the entry is based on.
         entry.pushedInHistory = state.history
-    }
-
-    /// The version a push answer leaves a record at: `answer`, the version the server named,
-    /// unless the server's sequences show it is older than `deferred`, a version a pull
-    /// brought while the change was in doubt. A repeated push is answered from the server's
-    /// memory of change IDs, with the version that was current then, so a version pulled since
-    /// may be newer; but the pull may also have come from a stale replica or cache. Only the
-    /// sequences tell the two apart, so without them the server's answer stands.
-    func newer(_ deferred: RemoteChange<Record>?, than answer: RemoteChange<Record>) -> RemoteChange<Record> {
-        guard let deferred, deferred.revision != answer.revision, isOlder(answer, than: deferred) else { return answer }
-        return deferred
-    }
-
-    /// Whether `deferred` is another version than `answer` whose order the server's sequences
-    /// do not tell.
-    func isUnordered(_ deferred: RemoteChange<Record>?, _ answer: RemoteChange<Record>) -> Bool {
-        guard let deferred, deferred.revision != answer.revision else { return false }
-        return !isOlder(deferred, than: answer) && !isOlder(answer, than: deferred)
     }
 
     private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, notInDoubt: Set<UUID>,

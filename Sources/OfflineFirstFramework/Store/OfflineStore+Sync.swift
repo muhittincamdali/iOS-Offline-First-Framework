@@ -55,6 +55,7 @@ extension OfflineStore {
             throw failed(with: wait.error)
         }
         try bind(to: transport)
+        try startPullOverIfPlanned()
         // The circuit breaker pauses pulls only. Due changes are pushed anyway: each waits for
         // its own retry date, so a server that is down is not hit harder, and a server whose
         // pulls fail still gets the device's edits.
@@ -116,6 +117,19 @@ extension OfflineStore {
             }
             state.serverIdentity = identity
         }
+    }
+
+    /// Forgets the token when a push answer of an earlier sync stood over a version a pull kept
+    /// back without anything to tell which is newer (``State/pullsFromBeginning``): this sync
+    /// pulls from the beginning, which brings the server's current version of the record. A pull
+    /// that is on its way starts over.
+    private func startPullOverIfPlanned() throws {
+        guard state.pullsFromBeginning else { return }
+        try update { state in
+            state.token = nil
+            state.pullsFromBeginning = false
+        }
+        tokenGeneration &+= 1
     }
 
     func setStatus(_ newStatus: SyncStatus) {

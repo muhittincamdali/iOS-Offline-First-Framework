@@ -23,8 +23,8 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     var sequence: UInt64? = nil
     /// Every server version of the record whose sequence is at most this one is older than
     /// the version ``revision`` names. Set when the server accepted the store's own write on top
-    /// of a version whose sequence the store knew; the write's echo in a pull tells its own
-    /// ``sequence``.
+    /// of a version whose sequence the store knew, or on top of none (0: every other version
+    /// came after it); the write's echo in a pull tells its own ``sequence``.
     var minimumSequence: UInt64? = nil
     /// Revisions of versions that the store's own accepted writes replaced, up to ``revision``,
     /// whose order the sequences do not tell: earlier writes of the store without an echo, and
@@ -157,6 +157,8 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var quarantine: [QuarantinedChange]? = nil
     /// Epochs the store left for a later one, oldest first; `nil` when there are none.
     var retiredEpochs: [String]? = nil
+    /// Whether the next sync pulls from the beginning; `nil` when not.
+    var pullsFromBeginning: Bool? = nil
 }
 
 /// The two fields read before the rest of the file, to pick the migrations.
