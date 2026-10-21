@@ -104,6 +104,20 @@ extension StoredEntry {
         ownChangeIDs = try Array((container.decodeIfPresent([UUID].self, forKey: .ownChangeIDs) ?? []).suffix(Self.maximumOwnWrites))
         ownTimestamps = try Array((container.decodeIfPresent([HLCTimestamp].self, forKey: .ownTimestamps) ?? [])
             .suffix(Self.maximumOwnWrites))
+        // A file of 2.0.0 does not say whether a pending change is in doubt. One that may have
+        // gone out (the record was sent, or the server holds it) counts as in doubt, so only its
+        // push under the same change ID settles it and a pull keeps the server's versions back
+        // meanwhile. Read as not in doubt, a pull before its retry met a later edit made on top
+        // of it as a conflict, and the resolver could put the change back over that edit.
+        if pending != nil, revision != nil || wasSent,
+           try container.decodeIfPresent(InDoubtMark.self, forKey: .pending)?.isInDoubt == nil {
+            pending?.isInDoubt = true
+        }
+    }
+
+    /// Whether a pending change in the file says if it is in doubt; files of 2.0.0 do not.
+    private struct InDoubtMark: Decodable {
+        var isInDoubt: Bool?
     }
 
     func encode(to encoder: any Encoder) throws {
