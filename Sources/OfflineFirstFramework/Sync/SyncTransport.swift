@@ -148,11 +148,11 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// reports the later epoch too, and keeps its own pending changes. It refuses a page that
     /// names an earlier epoch than its own in every sync, also after
     /// ``OfflineStore/resetChangeToken()``, since only a stale replica or cache sends one: never
-    /// report an epoch again once you reported a later one. The first epoch a store with a token
-    /// or records hears of is believed, like a later one, once a pull from the beginning reports
-    /// it too. Once you report an epoch, report one on every page: while the store holds an epoch
-    /// that two requests reported, it refuses a page without one, as one from another deployment
-    /// behind the same URL.
+    /// report an epoch again once you reported a later one. The first epoch a store hears of,
+    /// also on a new store's first page, is believed, like a later one, once a second request of
+    /// the sync reports it too. Once you report an epoch, report one on every page: while the
+    /// store holds an epoch that two requests reported, it refuses a page without one, as one from
+    /// another deployment behind the same URL.
     public let epoch: String?
 
     /// Changes in this page the transport could not read, for example a record that does not

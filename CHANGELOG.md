@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh and twelfth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth and thirteenth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -223,10 +223,27 @@ now state what the store promises and what it needs from the server.
   behind the same URL therefore locked a store of a server without epochs out for good: every
   later page of the server named no epoch and was refused, also after `resetChangeToken()` and
   `retryFailedChanges()`, other devices' records never arrived, and with sequences the device's
-  edit was parked. A store with a token or records now takes its first epoch only when the pull
-  from the beginning reports it too, and goes on after its token. A new store still takes it
-  from its first page, but a page without an epoch is refused only once a second request
-  reported the store's epoch; before that, two requests without one start a new history.
+  edit was parked. A store now takes its first epoch only when a second request reports it
+  too, and goes on after its token.
+- A new store took its first page from a single request. From another deployment behind the
+  same URL that page brought records the server never held, which stayed on the device and
+  were created on the server once edited; a token the pull went on after and sequences that hid
+  the server's versions, so the device showed the other copy, other devices' edits never
+  arrived and its own edit never reached the server, while every sync succeeded; and with a
+  later epoch than the server's, every later sync failed, also after a server restart and
+  `resetChangeToken()`. A new store's first page, with an epoch or without, is now checked by a
+  pull after its token; when the two disagree, a third pull from the beginning decides, and the
+  other page is dropped. A store file that holds an epoch only one request reported checks it on
+  its next sync, and an earlier epoch or none that two requests report instead starts a new
+  history, in which the records the unchecked history brought go unless they have a pending
+  change; after such a history without an epoch, the server's epoch starts a new history
+  instead of going on after the other deployment's token.
+- When a page, or a conflict answer from a server that does not remember change IDs, showed
+  that the device's change had been applied although its answer was lost, the store did not
+  record the version the change replaced as older, as it does after an accepted answer. From a
+  server without sequences a stale page (a lagging replica after `resetChangeToken()`) then
+  brought that version back, and the user's edit of it replaced the applied write without a
+  conflict. All three ways now follow one rule.
 - An accepted push answer took a version a pull had kept back for the change whenever it was
   another one, while a conflict answer already followed the server's sequences. A stale page (a
   cache after `resetChangeToken()`, a replica that sticks to the device) thus replaced the
@@ -274,8 +291,10 @@ now state what the store promises and what it needs from the server.
   one more than the last epoch they handed out in the process or, with `--data`, saved.
 - Servers that report an epoch must report it on every page: while the store holds an epoch that
   two requests reported, it refuses a page without one, and a server that stops reporting epochs
-  is refused until it reports one again. A store with a token or records checks the first epoch
-  it hears of with one more pull from the beginning.
+  is refused until it reports one again. A store checks the first epoch it hears of with a
+  second request, a new store too: the pull after its first page's token, and when the two
+  disagree a third one from the beginning, so a new store's first sync makes one or two pulls
+  more, and a server should answer a token it did not hand out as the pull from the beginning.
 - Servers should send back the change ID that wrote each version and may bound pushed
   timestamps by their clock; a server without change IDs has to keep timestamps as they were
   pushed. The reference servers do the first and bound timestamps to five minutes ahead.

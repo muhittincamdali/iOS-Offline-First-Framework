@@ -32,8 +32,12 @@ version whose answer was lost, a lagging replica that brings an older own write 
 edit of a newer version waits, and a version a pull kept back for a change in doubt, stale or
 newer, against a conflict or an accepted push answer from the server's memory of change IDs.
 Further tests give a store of a server without epochs one page with an epoch from another
-deployment, a new store too. Device clocks a year ahead for a moment, or an hour ahead for good,
-run against servers without sequences.
+deployment, and a new store a first page from another deployment, with an earlier, a later or
+no epoch and a record the server never held. A third property test makes three devices append
+to records only they write, through the same faults, another deployment that answers one
+request and a server that starts to report epochs, and checks that each record ends as its last
+save. Device clocks a year ahead for a moment, or an hour ahead for good, run against servers
+without sequences.
 
 ## Guarantees
 
@@ -92,18 +96,21 @@ run against servers without sequences.
   the pull from the beginning after the pull with the token, or, without a token, the pull after
   the first page's token. One page from another deployment behind the same URL, a lagging
   replica or a stale cache therefore does not move the store or roll it back. The first epoch a
-  store with a token or records hears of (a server that starts to report epochs, or another one)
-  counts the same way: it is taken once the pull from the beginning reports it too, and the pull
-  goes on after the token. A new store takes its first epoch from its first page and counts it as
-  reported twice once another request reports it. A page that names no epoch, once two requests
+  store hears of (a server that starts to report epochs, or another one) counts the same way: it
+  is taken once a second request reports it too, and the pull goes on after the token. So does a
+  new store's first page, with an epoch or without: when the second request disagrees, a third
+  one, from the beginning, decides, and the first page is dropped, so one page from another
+  deployment brings a new store neither records the server never held, nor a token, nor
+  sequences, nor an epoch that would lock it out. A page that names no epoch, once two requests
   reported the store's, is checked the same way and never taken, since a server that reports
   epochs reports one on every page: one such page from another deployment cannot bring its
   revisions and sequences into the store, where a sequence from elsewhere would make the
-  server's own answers look older and park every later edit of the record. Against an epoch
-  that only a new store's first page reported, such a page is not refused: when both requests
-  name no epoch, the store starts a new history without one. So one page with an epoch from
-  another deployment cannot lock a store out of a server without epochs. And since both
-  requests belong to one step, a sync that fetches a single page
+  server's own answers look older and park every later edit of the record. So one page with an
+  epoch from another deployment cannot lock a store out of a server without epochs either. A
+  store file that holds an epoch only one request reported, as one written before this check
+  can, checks it on its next sync; when two requests report an earlier epoch or none instead,
+  that starts a new history, and the records without a pending change that the unchecked history
+  brought go. And since both requests belong to one step, a sync that fetches a single page
   (``OfflineStore/Configuration/maximumPullPages``) still follows a restart.
 - **Epochs go one way.** An earlier epoch than the store's is never taken, however many
   requests or syncs report it: an epoch the store left for a later one (the store keeps the
@@ -265,7 +272,7 @@ run against servers without sequences.
   raised, and ``OfflineStore/discardChange(for:)`` drops the change. The same holds for a single
   change the server refuses with status 413.
 - **An earlier epoch stays refused.** A store that took a later epoch from another deployment
-  behind the same URL, from two requests it answered or, in a new store, from the first page,
+  behind the same URL, from two requests of one sync it answered, a new store's first sync too,
   refuses the real server's earlier one in every sync, also after
   ``OfflineStore/resetChangeToken()``, and keeps its records and pending changes; it follows that
   server again once the server reports an epoch later than the one the store holds. A server whose epoch went back, after a restart with its clock set back and
@@ -273,17 +280,19 @@ run against servers without sequences.
   So is a page without an epoch once two requests reported the store's: a server that stops
   reporting epochs is refused in every sync until it reports one again, its last one or a later
   one; its pushes still go out.
-- **A server without sequences gets no order guarantee.** The store does not order versions
-  by timestamps, which device clocks write, so it takes every server version a page brings as
-  the newest: a stale page (out of order, from a lagging replica or a cache) can roll a record
+- **A server without sequences gets no order guarantee.** The store does not order versions by
+  timestamps, which device clocks write, so it takes every server version a page brings as the
+  newest: a stale page (out of order, from a lagging replica or a cache) can roll a record
   without a local change back, also to a version from before its deletion, until the record
   changes again, and devices then differ until it does. No write is lost and no change is parked
-  for it: a pull leaves a pending change to its push. When the version a stale page replaced was
-  the device's own accepted write, an edit made on the stale copy still replaces that write
-  without a conflict. When a push answer stands over a version a pull kept back meanwhile because
-  nothing orders the two, the device shows the answer's version, its own accepted write
-  included, until the next sync, whose pull from the beginning brings a newer version the server
-  holds.
+  for it: a pull leaves a pending change to its push. The device's own write knows the version
+  it replaced as older, whether an accepted answer, a page or a conflict answer showed it
+  applied, so a stale page with that version is skipped; when a stale page brings an older
+  version still in place of the device's own accepted write, an edit made on the stale copy
+  replaces that write without a conflict. When a push answer stands over a version a pull kept
+  back meanwhile because nothing orders the two, the device shows the answer's version, its own
+  accepted write included, until the next sync, whose pull from the beginning brings a newer
+  version the server holds.
 - **A copied store file shares its node ID.** A file restored onto a second device, or moved
   with a migration while the first device stays in use, stamps its writes with the same node
   ID. The store neither orders versions nor recognises its own writes by the node ID alone,

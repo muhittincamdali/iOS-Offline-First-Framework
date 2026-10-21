@@ -46,8 +46,8 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 350 Swift Testing tests on macOS and an iPhone simulator, among
-  them two property tests that run every conflict policy through lost requests, restarts, token
+- **Tested against a real server** — 369 Swift Testing tests on macOS and an iPhone simulator, among
+  them three property tests that run every conflict policy through lost requests, restarts, token
   resets, overlapping syncs, small page limits, stale pages, operations at once and crashes, also
   against a server without sequences, scenario tests of a replica that answers a device for many
   syncs, of a stale page that brings back an older own write or meets an accepted push, of a crash
@@ -348,16 +348,15 @@ app and server restarts and stale pages, as long as the server follows the
   meanwhile takes its place only when the server's `sequence` shows it is newer. When nothing tells,
   a conflict sends the change once more for a fresh answer, and any other answer stands while the
   next sync pulls from the beginning.
-- Another server epoch, and the first one a store with records hears of, counts only when two
-  requests of one sync report it, the pull with the token and the pull from the beginning, so a
-  stale cache or another deployment behind the same URL cannot roll the store back or lock it out of
-  a server without epochs. A page without an epoch, once two requests reported one, is never taken
-  either.
-  A sync that fetches a single page still follows a server restart, and when the two requests
-  disagree the sync fails instead of reporting success. Epochs go one way: an earlier epoch than the
-  store's, one it left or one it never held, is never taken, also after `resetChangeToken()`, so a
-  stale replica or cache that answers both requests, however many syncs in a row, cannot take the
-  store back either.
+- Another server epoch, and the first one a store hears of, also on a new store's first page, counts
+  only when two requests of one sync report it, the pull with the token and the pull from the
+  beginning, so one page from a stale cache or another deployment behind the same URL cannot roll
+  the store back, bring a new store records the server never held, or lock a store out. A page
+  without an epoch, once two requests reported one, is never taken either. A sync that fetches a
+  single page still follows a server restart, and when the two requests disagree the sync fails
+  instead of reporting success. Epochs go one way: an earlier epoch than the store's, one it left or
+  one it never held, is never taken, also after `resetChangeToken()`, so a stale replica or cache
+  that answers both requests, however many syncs in a row, cannot take the store back either.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
   pull everything again and keep its pending changes, which meet the new history through their
   push's answer, not through a page. A record the app cannot decode, or one nested deeper than 64
