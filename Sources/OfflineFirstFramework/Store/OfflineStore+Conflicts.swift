@@ -18,7 +18,8 @@ extension OfflineStore {
         switch configuration.conflictResolver.resolve(conflict) {
         case .keepRemote:
             return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
-        case .merged(let merged) where merged.id != entry.id:
+        case .merged(let merged) where merged.id != entry.id || NestingDepth.exceeds(merged, limit: Self.maximumRecordDepth):
+            // A merge for another record, or one the store could not write: the server's version.
             return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
         case .merged(let merged):
             result.record = merged

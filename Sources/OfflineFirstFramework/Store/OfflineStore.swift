@@ -165,8 +165,9 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Stores `record`, replacing a record with the same ID, and queues it for the server.
     ///
-    /// - Throws: ``OfflineFirstError/outboxFull(limit:)`` when too many changes wait, or a
-    ///   storage error; the store is unchanged then.
+    /// - Throws: ``OfflineFirstError/outboxFull(limit:)`` when too many changes wait,
+    ///   ``OfflineFirstError/recordNestedTooDeeply(limit:)`` for a record that nests deeper than
+    ///   ``maximumRecordDepth``, or a storage error; the store is unchanged then.
     public func save(_ record: Record) throws {
         try save(contentsOf: [record])
     }
@@ -324,6 +325,9 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Writes a local version (`nil` for a deletion) and queues it.
     static func write(_ record: Record?, id: Record.ID, into state: inout State, configuration: Configuration) throws {
+        if let record, NestingDepth.exceeds(record, limit: maximumRecordDepth) {
+            throw OfflineFirstError.recordNestedTooDeeply(limit: maximumRecordDepth)
+        }
         let timestamp = try tick(&state, configuration: configuration)
         var entry = state.entries[id]
             ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil,

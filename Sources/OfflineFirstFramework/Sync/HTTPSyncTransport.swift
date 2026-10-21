@@ -110,54 +110,139 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
 
     // MARK: - Reading answers
 
-    /// The outcomes of a push answer, each read on its own: one that cannot be read, also one
-    /// nested deeper than `JSONDecoder` reads, leaves only its own change without an answer; the
-    /// store retries that change and settles the others.
+    /// How deep a push outcome may nest: the outcome, the change it names as current, and that
+    /// change's record.
+    private static var maximumOutcomeDepth: Int { OfflineStore<Record>.maximumRecordDepth + 2 }
+
+    /// The outcomes of a push answer, each measured and read on its own: one that cannot be
+    /// read, also one nested deeper than a record may, leaves only its own change without an
+    /// answer; the store retries that change and settles the others.
     static func outcomes(from data: Data) throws -> [UUID: PushOutcome<Record>] {
-        let answer = try WireDocument(data)
-        guard let outcomes = try answer.member("outcomes") else { throw WireDocument.missing("outcomes") }
-        var result: [UUID: PushOutcome<Record>] = [:]
-        for member in try answer.members(of: outcomes) {
-            guard let key = try? answer.decode(String.self, at: member.key), let id = UUID(uuidString: key),
-                  let outcome = try? answer.decode(WireOutcome.self, at: member.value).pushOutcome() else { continue }
-            result[id] = outcome
+        try JSONLayout.read(data) { answer in
+            var result: [UUID: PushOutcome<Record>] = [:]
+            var found = false
+            try answer.forEachRootMember { key, start in
+                guard !found, answer.string(at: key) == "outcomes" else { return try answer.value(at: start).range.upperBound }
+                found = true
+                return try answer.forEachMember(ofObjectAt: start) { key, start in
+                    let value = try answer.value(at: start)
+                    if value.depth <= maximumOutcomeDepth, let id = answer.string(at: key).flatMap(UUID.init(uuidString:)),
+                       let outcome = try? answer.decode(WireOutcome.self, at: value.range).pushOutcome() {
+                        result[id] = outcome
+                    }
+                    return value.range.upperBound
+                }
+            }
+            guard found else { throw JSONLayout.missing("outcomes") }
+            return result
         }
-        return result
     }
 
-    /// A page, each change read on its own: one that cannot be read, also one nested deeper
-    /// than `JSONDecoder` reads, is set aside and the rest of the page is used.
+    /// A page, each change measured and read on its own: one that cannot be read, also one
+    /// nested deeper than a record may, is set aside and the rest of the page is used. The first
+    /// of two members with the same name counts.
     static func page(from data: Data) throws -> PullResponse<Record> {
-        let page = try WireDocument(data)
-        guard let list = try page.member("changes") else { throw WireDocument.missing("changes") }
-        guard let hasMore = try page.member("hasMore") else { throw WireDocument.missing("hasMore") }
-        var changes: [RemoteChange<Record>] = []
-        var quarantined: [QuarantinedChange] = []
-        for element in try page.elements(of: list) {
-            switch change(in: page, at: element) {
-            case .readable(let change): changes.append(change)
-            case .unreadable(let entry): quarantined.append(entry)
+        try JSONLayout.read(data) { page in
+            var changes: [RemoteChange<Record>] = []
+            var quarantined: [QuarantinedChange] = []
+            var fields: [String: Range<Int>] = [:]
+            try page.forEachRootMember { key, start in
+                let name = page.string(at: key) ?? ""
+                guard fields[name] == nil else { return try page.value(at: start).range.upperBound }
+                switch name {
+                case "changes":
+                    let end = try page.forEachElement(ofArrayAt: start) { start in
+                        let (end, element) = try change(in: page, at: start)
+                        switch element {
+                        case .readable(let change): changes.append(change)
+                        case .unreadable(let entry): quarantined.append(entry)
+                        }
+                        return end
+                    }
+                    fields[name] = start..<end
+                    return end
+                case "token", "hasMore", "epoch":
+                    let value = try page.value(at: start)
+                    fields[name] = value.range
+                    return value.range.upperBound
+                default:
+                    return try page.value(at: start).range.upperBound
+                }
             }
+            guard fields["changes"] != nil else { throw JSONLayout.missing("changes") }
+            guard let hasMore = fields["hasMore"] else { throw JSONLayout.missing("hasMore") }
+            return PullResponse(changes: changes, token: try fields["token"].flatMap { try page.decode(String?.self, at: $0) },
+                                hasMore: try page.decode(Bool.self, at: hasMore),
+                                epoch: try fields["epoch"].flatMap { try page.decode(String?.self, at: $0) }, quarantined: quarantined)
         }
-        return PullResponse(changes: changes, token: try page.member("token").flatMap { try page.decode(String?.self, at: $0) },
-                            hasMore: try page.decode(Bool.self, at: hasMore),
-                            epoch: try page.member("epoch").flatMap { try page.decode(String?.self, at: $0) }, quarantined: quarantined)
     }
 
-    /// The change at `range`. When the decoder refuses it as a whole (nested deeper than it
-    /// reads, or not valid JSON), its record ID and revision are read on their own.
-    private static func change(in page: WireDocument, at range: Range<Int>) -> LossyChange {
-        do {
-            return try page.decode(LossyChange.self, at: range)
-        } catch {
-            let fields = (try? page.members(of: range)) ?? []
-            func field<T: Decodable>(_ name: String, as type: T.Type) -> T? {
-                fields.first { (try? page.decode(String.self, at: $0.key)) == name }.flatMap { try? page.decode(T.self, at: $0.value) }
-            }
-            let recordID = field("recordID", as: Record.ID.self).map(OfflineStore<Record>.describe)
-            return .unreadable(QuarantinedChange(recordID: recordID ?? "null", revision: field("revision", as: String.self),
-                                                 reason: LossyChange.describe(error)))
+    /// One change of a page, or why it cannot be used, so one bad record does not make the
+    /// whole page, and every later pull, fail.
+    private enum Change {
+        case readable(RemoteChange<Record>)
+        case unreadable(QuarantinedChange)
+    }
+
+    /// The change that starts at `start`, walked once for its depth, record ID and revision, and
+    /// decoded unless one of its fields nests deeper than a record may. Of a change that cannot
+    /// be used, only the record ID and the revision are read, each as the type it should have and
+    /// only when it is not nested too deeply itself. Returns the index after the change.
+    private static func change(in page: JSONLayout, at start: Int) throws -> (end: Int, change: Change) {
+        guard page.isObject(at: start) else {
+            let value = try page.value(at: start)
+            return (value.range.upperBound, unreadable(page, reason: "The change is not an object.", recordID: nil, revision: nil))
         }
+        var deepest = 0
+        var recordID: JSONLayout.Value?
+        var revision: JSONLayout.Value?
+        let end = try page.forEachMember(ofObjectAt: start) { key, start in
+            let value = try page.value(at: start)
+            deepest = max(deepest, value.depth)
+            switch page.string(at: key) {
+            case "recordID" where recordID == nil: recordID = value
+            case "revision" where revision == nil: revision = value
+            default: break
+            }
+            return value.range.upperBound
+        }
+        guard deepest <= OfflineStore<Record>.maximumRecordDepth else {
+            let reason = "The change nests objects and arrays deeper than \(OfflineStore<Record>.maximumRecordDepth) levels."
+            return (end, unreadable(page, reason: reason, recordID: recordID, revision: revision))
+        }
+        return (end, readable(page, at: start..<end, recordID: recordID, revision: revision))
+    }
+
+    private static func readable(_ page: JSONLayout, at range: Range<Int>, recordID: JSONLayout.Value?,
+                                 revision: JSONLayout.Value?) -> Change {
+        do {
+            return .readable(try page.decode(RemoteChange<Record>.self, at: range))
+        } catch {
+            return unreadable(page, reason: describe(error), recordID: recordID, revision: revision)
+        }
+    }
+
+    private static func unreadable(_ page: JSONLayout, reason: String, recordID: JSONLayout.Value?,
+                                   revision: JSONLayout.Value?) -> Change {
+        func read<T: Decodable>(_ value: JSONLayout.Value?, as type: T.Type) -> T? {
+            guard let value, value.depth <= OfflineStore<Record>.maximumRecordDepth else { return nil }
+            return try? page.decode(type, at: value.range)
+        }
+        return .unreadable(QuarantinedChange(recordID: read(recordID, as: Record.ID.self).map(OfflineStore<Record>.describe) ?? "null",
+                                             revision: read(revision, as: String.self), reason: reason))
+    }
+
+    static func describe(_ error: any Error) -> String {
+        guard let error = error as? DecodingError else { return String(describing: error) }
+        let context: DecodingError.Context
+        switch error {
+        case .typeMismatch(_, let found), .valueNotFound(_, let found), .keyNotFound(_, let found), .dataCorrupted(let found):
+            context = found
+        @unknown default:
+            return String(describing: error)
+        }
+        let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+        return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
     }
 
     // MARK: - HTTP
@@ -250,44 +335,6 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    /// One change of a page, or why it cannot be read, so one bad record does not make the
-    /// whole page, and every later pull, fail.
-    private enum LossyChange: Decodable {
-        case readable(RemoteChange<Record>)
-        case unreadable(QuarantinedChange)
-
-        private enum Field: String, CodingKey {
-            case recordID, revision
-        }
-
-        /// Of a change that cannot be read, only the record ID and the revision are read, each
-        /// as the type it should have. Reading the rest as a generic JSON value would recurse as
-        /// deep as the server nests it, and a few hundred levels, about a kilobyte of brackets,
-        /// overflow the stack of the task that decodes the page and end the process.
-        init(from decoder: any Decoder) throws {
-            do {
-                self = .readable(try RemoteChange<Record>(from: decoder))
-            } catch {
-                let fields = try? decoder.container(keyedBy: Field.self)
-                let recordID = (try? fields?.decode(Record.ID.self, forKey: .recordID)).map(OfflineStore<Record>.describe)
-                let revision = try? fields?.decode(String.self, forKey: .revision)
-                self = .unreadable(QuarantinedChange(recordID: recordID ?? "null", revision: revision, reason: Self.describe(error)))
-            }
-        }
-
-        static func describe(_ error: any Error) -> String {
-            guard let error = error as? DecodingError else { return String(describing: error) }
-            let context: DecodingError.Context
-            switch error {
-            case .typeMismatch(_, let found), .valueNotFound(_, let found), .keyNotFound(_, let found), .dataCorrupted(let found):
-                context = found
-            @unknown default:
-                return String(describing: error)
-            }
-            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
-            return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
-        }
-    }
 }
 
 /// The characters a change token keeps unencoded in the query: the URL query characters without

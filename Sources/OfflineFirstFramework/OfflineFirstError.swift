@@ -52,6 +52,10 @@ public enum OfflineFirstError: Error, Equatable, Sendable {
     /// read it. The write is refused, because it would drop the other instance's changes; use
     /// one instance per file, or open the store again to see the current file.
     case storeChangedElsewhere(name: String)
+
+    /// The record nests objects and arrays deeper than ``OfflineStore/maximumRecordDepth``
+    /// levels, deeper than the store can write safely.
+    case recordNestedTooDeeply(limit: Int)
 }
 
 extension OfflineFirstError: LocalizedError {
@@ -87,6 +91,8 @@ extension OfflineFirstError: LocalizedError {
             "The sync clock failed: \(failure)."
         case .storeChangedElsewhere(let name):
             "Another instance of the store “\(name)” changed its file; open the store again before writing."
+        case .recordNestedTooDeeply(let limit):
+            "The record nests objects and arrays deeper than \(limit) levels."
         }
     }
 }

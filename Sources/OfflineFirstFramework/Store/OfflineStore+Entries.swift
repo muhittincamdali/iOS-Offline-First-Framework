@@ -9,6 +9,19 @@ extension OfflineStore {
     /// The longest node ID, in UTF-8 bytes, accepted in a server timestamp.
     static var maximumNodeIDLength: Int { 256 }
 
+    /// How deep a record may nest objects and arrays when it is encoded as JSON, its own object
+    /// counting as one level, as the reference server counts: 64.
+    ///
+    /// `JSONEncoder` and `JSONDecoder` call themselves once per level, on the stack of the task
+    /// that syncs, and a record nested a few hundred levels ends the process when the store file
+    /// is written. So a deeper record never enters the store: ``save(_:)`` throws
+    /// ``OfflineFirstError/recordNestedTooDeeply(limit:)``, a server version is set aside in
+    /// ``quarantinedChanges()``, a push answer that names one leaves its change unanswered, and
+    /// a merge that makes one keeps the server's version. ``HTTPSyncTransport`` measures each
+    /// change before it decodes it; a custom ``SyncTransport`` that decodes pages itself should
+    /// limit the depth its decoder reads as well.
+    public static var maximumRecordDepth: Int { 64 }
+
     /// Revisions an entry remembers as older than its own accepted write
     /// (``StoredEntry/olderRevisions``): one per accepted write without an echo, the oldest
     /// dropped first.
@@ -202,8 +215,9 @@ extension OfflineStore {
         }
     }
 
-    /// A server record is not used when its own ID differs from the ID it was sent for, or when
-    /// its revision or timestamp is longer than the limits.
+    /// A server record is not used when its own ID differs from the ID it was sent for, when
+    /// its revision or timestamp is longer than the limits, or when it nests deeper than
+    /// ``maximumRecordDepth``.
     static func isConsistent(_ change: RemoteChange<Record>, for id: Record.ID) -> Bool {
         inconsistency(of: change, for: id) == nil
     }
@@ -221,6 +235,9 @@ extension OfflineStore {
         }
         if let timestamp = change.timestamp, timestamp.nodeID.utf8.count > maximumNodeIDLength {
             return "The timestamp's node ID is longer than \(maximumNodeIDLength) bytes."
+        }
+        if let record = change.record, NestingDepth.exceeds(record, limit: maximumRecordDepth) {
+            return "The record nests objects and arrays deeper than \(maximumRecordDepth) levels."
         }
         return nil
     }
