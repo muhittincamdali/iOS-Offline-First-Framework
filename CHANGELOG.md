@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth and fifth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth and sixth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -132,6 +132,19 @@ now state what the store promises and what it needs from the server.
   change of the batch failed with status 413 until it was parked. The transport splits a push
   into requests of at most `maximumRequestSize`, halves a request the server refuses with 413,
   and rejects a single change the server refuses so.
+- After one failed write of its data file (a full disk, a missing permission), the reference
+  server never wrote the file again, and pages showed a push whose write had failed: a device
+  that pulled it took its own write for applied, and a restart lost the write on the server
+  only. Writes now go on after a failure, and pages show a push only once the file holds it.
+- A server that ignored `limit` could send a 16 MiB page of half a million small, valid changes:
+  the transport read them all and the store applied them in one step of seconds and more than a
+  gigabyte that no deadline stopped, on every launch. A page with more changes than its pull
+  asked for is now refused, by `HTTPSyncTransport` as soon as the change after the limit starts,
+  and by the store from any transport beyond 1,000.
+- Setting aside a change larger than the response limit read the page without a limit: a change
+  that never ended was read until the sync's deadline, and a page that ignored `limit=1` was
+  read to its end. That read now stops when a second change starts and after four times
+  `maximumResponseSize`, or before it starts when the page announces more.
 
 ### Added
 
@@ -145,6 +158,7 @@ now state what the store promises and what it needs from the server.
 - `OfflineStore.maximumRecordDepth`, `OfflineFirstError.recordNestedTooDeeply(limit:)`,
   `PullResponse.quarantinedCount`, and the `pageSize` and `maximumRequestSize` parameters of
   `HTTPSyncTransport`.
+- `OfflineStore.maximumChangesPerPage` (1,000).
 
 ### Changed
 
@@ -173,6 +187,13 @@ now state what the store promises and what it needs from the server.
 - `HTTPSyncTransport` sends `limit` with every pull and pushes in requests of at most 1 MiB.
   Servers must keep every page within the client's response limit: at most `limit` changes, cut
   by bytes, at least one change per page. The reference server cuts pages at 8 MiB.
+- A page may hold at most the `limit` its pull asked for and, from any transport, 1,000 changes;
+  `InMemorySyncServer.pageSize` is at most 1,000. A page beyond `limit` fails with a
+  `DecodingError` instead of `HTTPSyncTransport.Failure.responseTooLarge`, and a single change
+  larger than four times `maximumResponseSize` is no longer set aside.
+- The Node reference server's `Collection.push` takes `{ publish: false }` and `publish()`, and
+  `createSyncServer` runs the saves one after another itself: a push is answered and shown in
+  pages once its save succeeded.
 
 ## [2.0.0] - 2026-10-15
 

@@ -99,14 +99,16 @@ A change without `record` is a deletion. `timestamp`, `sequence`, `changeID` and
 optional. Conflict and rejection answers name the server's version in the same form.
 
 A page must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by default). Return at most
-`limit` changes (``HTTPSyncTransport/pageSize``, 100 by default), cut the page by bytes as well,
-and put at least one change in every page; the reference server cuts its pages at 8 MiB. Send
-`Content-Length`, so a page that is too large is refused before it is read. While a page is
-larger than the limit, the transport asks for half as many changes, down to one. A single change
-that is larger on its own is read as it streams in, without what it holds, set aside in
-``OfflineStore/quarantinedChanges()``, and the token moves past it. A server that ignores
-`limit` and sends a page that is too large fails every sync with
-``HTTPSyncTransport/Failure/responseTooLarge(limit:)``.
+`limit` changes (``HTTPSyncTransport/pageSize``, 100 by default, 1,000 at most), cut the page by
+bytes as well, and put at least one change in every page; the reference server cuts its pages at
+8 MiB. Send `Content-Length`, so a page that is too large is refused before it is read. While a
+page is larger than the limit, the transport asks for half as many changes, down to one. A
+single change that is larger on its own is read as it streams in, without what it holds, set
+aside in ``OfflineStore/quarantinedChanges()``, and the token moves past it; that read stops
+after four times the limit, so a larger change fails every sync with
+``HTTPSyncTransport/Failure/responseTooLarge(limit:)``. A page with more changes than `limit`
+is cancelled as soon as the change after the limit starts and refused with a `DecodingError`,
+so a server that ignores `limit` fails every sync.
 Return changes oldest first, at most one per record, and a `token` the server understands as
 "after these". While `hasMore` is `true` the store asks again right away, up to
 ``OfflineStore/Configuration/maximumPullPages`` pages per sync; the token of such a page must
@@ -140,18 +142,25 @@ A change the app cannot decode, for example a field of another type, is set asid
 transport walks each page once and measures every change before it decodes it: a change that is
 not an object, has no `recordID` or `revision`, or nests deeper than a record may is set aside
 without being decoded. A page lists the first 100 changes it sets aside and counts the others
-(``PullResponse/quarantinedCount``); a page with more than 1,000 changes that cannot be read is
-refused with a `DecodingError` and changes nothing. A push outcome that cannot be read, also one
+(``PullResponse/quarantinedCount``). A push outcome that cannot be read, also one
 that nests deeper than the outcome, its current change and a record allow, leaves only its own
 change unanswered.
 
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its
-``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes.
+``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes of
+an answer, and four times as many to set a single change aside.
+
+Answer a push, and show its writes in pages, only once they are stored durably. A device that
+pulls a write the server then loses, in a crash or a restart, takes it for applied (its own
+write, by the change ID) and keeps it, and no other device ever gets it.
 The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB (status
 413), pushes at 500 changes and pages at `limit` changes (1,000 at most) and 8 MiB, rejects
 records nested deeper than 64 levels or larger than 256 KiB,
 accepts only timestamps that a JavaScript number holds exactly, moves a pushed wall time more
 than five minutes ahead of its clock back to that limit, sends back the change ID with every
-version, and saves the answers to the last 10,000 change IDs with its data.
+version, and saves the answers to the last 10,000 change IDs with its data. With `--data` it
+writes its data file after every push and answers the push, and shows its writes in pages, only
+once the file holds them; a failed write answers status 500 and keeps the writes out of pages
+until a later write of the file succeeds.

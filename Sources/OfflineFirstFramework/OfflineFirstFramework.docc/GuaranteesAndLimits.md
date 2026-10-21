@@ -14,9 +14,11 @@ pages of two, three or a hundred changes and one to a hundred pages per sync, fo
 wins, server wins, client wins and a merge. It
 checks the end state, that no accepted write is applied again after a later one, that no device
 goes back to an older server version of a record, and that no resolver is asked about a
-device's own write. Further tests send the HTTP transport pages of junk, deeply nested records
-and pages larger than its limit, in debug and release builds, measure the memory a 16 MiB page
-costs, and run 68 records of 250 KiB against the reference server, also across its restart.
+device's own write. Further tests send the HTTP transport pages of junk, deeply nested records,
+pages larger than its limit and pages with more changes than it asked for, in debug and release
+builds, stream pages that never end over a real socket, measure the memory a 16 MiB page costs,
+and run 68 records of 250 KiB against the reference server, also across its restart, and a
+write whose save failed across a restart of the reference server.
 
 ## Guarantees
 
@@ -73,12 +75,17 @@ costs, and run 68 records of 250 KiB against the reference server, also across i
   without being decoded, and no record that deep enters the store from a page, a push answer, a
   merge or a save, from any transport: decoding, storing and encoding a record recurses once per
   level on the 512 KiB stack of the task that syncs, and a few hundred levels ended the process
-  on every sync. A page lists at most 100 changes it sets aside and is refused beyond 1,000 that
-  cannot be read, so a 16 MiB page of junk costs milliseconds and a few times its size in
-  memory, not seconds and gigabytes. A page larger than
-  ``HTTPSyncTransport/maximumResponseSize`` makes the pull ask for half as many changes, down
-  to one, and a single change larger than the limit is set aside while the pull moves past it,
-  so no first page can lock out a device that pulls from the beginning. A push is sent in
+  on every sync. A page holds at most the `limit` its pull asked for, readable or not, and
+  1,000 changes (``OfflineStore/maximumChangesPerPage``) from any transport: the transport
+  cancels the download as soon as the change after the limit starts, and the store refuses a
+  longer page before it stores any of it, so a 16 MiB page of junk or of half a million small
+  valid changes costs milliseconds and kilobytes, not seconds and gigabytes. A page lists at
+  most 100 changes it sets aside. An answer is read up to
+  ``HTTPSyncTransport/maximumResponseSize`` and cancelled before it is read when it announces
+  more. A page larger than the limit makes the pull ask for half as many changes, down to one,
+  and a single change larger than the limit is set aside while the pull moves past it, reading
+  four times the limit at most, so no first page can lock out a device that pulls from the
+  beginning. A push is sent in
   requests of at most ``HTTPSyncTransport/maximumRequestSize``, halved when the server answers
   413. A body may start with a UTF-8 byte order mark.
 - **A wrong clock has a bounded effect.** The reference servers move a pushed timestamp more
@@ -124,9 +131,14 @@ costs, and run 68 records of 250 KiB against the reference server, also across i
   conflict with the device's own earlier write.
 - Remember the answers to change IDs for as long as a device may retry them, also across
   restarts; the reference servers keep the last 10,000.
+- Answer a push, and show its writes in pages, only once they are stored durably. A device that
+  pulled a write the server then lost in a crash or restart takes it for applied and keeps it,
+  and no other device gets it. The reference server writes its data file before it answers a
+  push or shows it; when the write fails it answers status 500, the device pushes again, and
+  the next write of the file that succeeds keeps the changes of both pushes.
 - Keep every page within the transport's response limit (16 MiB by default): return at most
-  `limit` changes, cut pages by bytes too, and put at least one change in each, as the
-  reference server does with 8 MiB. Answer a push body larger than you accept with status 413.
+  `limit` changes (a longer page is refused), cut pages by bytes too, and put at least one
+  change in each, as the reference server does with 8 MiB. Answer a push body larger than you accept with status 413.
 - In a custom ``SyncTransport``, stop when the task is cancelled, so the deadline and
   cancellation can end a request.
 
@@ -165,10 +177,11 @@ costs, and run 68 records of 250 KiB against the reference server, also across i
   server's version. A custom ``SyncTransport`` that decodes pages itself has to limit the depth
   its decoder reads: the store measures the records it is handed, but the transport's decoder
   runs first.
-- **A broken page stops the pull until the server changes it.** A page with more than 1,000
-  changes that cannot be read, a page whose structure is broken, and a page larger than the
-  response limit from a server that ignores `limit` fail every sync, without a change to the
-  store.
+- **A broken page stops the pull until the server changes it.** A page with more changes than
+  its pull asked for (more than 1,000 from a custom transport), a page whose structure is
+  broken, and a single change larger than four times the response limit fail every sync,
+  without a change to the store. Finding such a change costs up to four times the response
+  limit per sync; raise ``HTTPSyncTransport/maximumResponseSize`` for records that large.
 - **A server without sequences and timestamps cannot be checked for order.** The store then
   takes every server version as the newest, so a stale page can roll a record back until the
   next change of it. The same holds without sequences for a version whose timestamp is missing

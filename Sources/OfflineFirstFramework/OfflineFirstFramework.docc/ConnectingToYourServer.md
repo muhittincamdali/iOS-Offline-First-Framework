@@ -27,8 +27,9 @@ The `headers` closure runs before every request, so it can refresh an expired to
 outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` and the store
 retries the changes later. Responses longer than
 ``HTTPSyncTransport/maximumResponseSize`` are not read: a pull asks for
-``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer. A push is sent in
-requests of at most ``HTTPSyncTransport/maximumRequestSize``.
+``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer, and refuses a page
+with more changes than it asked for. A push is sent in requests of at most
+``HTTPSyncTransport/maximumRequestSize``.
 
 ## Write your own transport
 
@@ -75,6 +76,11 @@ The rules that keep sync correct:
 - **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
   `true`; a token that stays the same makes the sync fail with
   ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
+- **Page length.** Return at most ``OfflineStore/maximumChangesPerPage`` (1,000) changes per
+  page, ``PullResponse/quarantined`` included; the store refuses a longer page, since it
+  applies a page in one step that no deadline interrupts.
+- **Durability.** Answer a push, and show its writes in pages, only once they are stored
+  durably; a device that pulled a write the server then lost keeps it alone.
 - **Timestamps and change IDs.** Send ``RemoteChange/timestamp`` back as it was pushed if you
   store it, with a wall time far ahead of the server's clock moved back to a limit, as the
   reference servers do with five minutes; without it, ``ConflictResolver/lastWriteWins`` lets
