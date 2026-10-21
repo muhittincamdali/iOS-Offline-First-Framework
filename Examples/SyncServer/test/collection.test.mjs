@@ -99,6 +99,55 @@ test('pages changes after a token', () => {
   assert.equal(notes.changes(`${notes.epoch}.1`, 1e9).changes.length, 2);
 });
 
+/** Pushes `count` records of `kibibytes` KiB of text, four per push as a 1 MiB body allows. */
+function pushLarge(notes, count, kibibytes) {
+  const text = 'x'.repeat(kibibytes * 1024);
+  for (let first = 0; first < count; first += 4) {
+    const changes = [];
+    for (let index = first; index < Math.min(count, first + 4); index += 1) {
+      changes.push(change({ recordID: `big-${index}`, record: { id: `big-${index}`, text } }));
+    }
+    assert.ok(Buffer.byteLength(JSON.stringify({ changes })) <= 1024 * 1024);
+    const outcomes = Object.values(notes.push({ changes }).outcomes);
+    assert.ok(outcomes.every((outcome) => outcome.status === 'accepted'));
+  }
+}
+
+/** Follows the pages from the beginning and returns them. */
+function allPages(notes) {
+  const pages = [notes.changes(null)];
+  while (pages.at(-1).hasMore) pages.push(notes.changes(pages.at(-1).token));
+  return pages;
+}
+
+test('cuts a page at 8 MiB of changes, so it fits in a client\'s response limit', () => {
+  // Every push and record is within the limits; 100 such changes would be a page of 25 MiB.
+  const notes = new Collection();
+  pushLarge(notes, 68, 250);
+  const check = (pages) => {
+    for (const page of pages) {
+      assert.ok(page.changes.length >= 1);
+      assert.ok(Buffer.byteLength(JSON.stringify(page)) <= LIMITS.pageBytes + 1024);
+    }
+    assert.deepEqual(pages.flatMap((page) => page.changes.map((c) => c.recordID)), Array.from({ length: 68 }, (_, index) => `big-${index}`));
+  };
+  const pages = allPages(notes);
+  assert.ok(pages.length > 1);
+  check(pages);
+  // After a restart (a new epoch) every device pulls from the beginning again, in pages as small.
+  const restarted = new Collection({ state: notes.snapshot() });
+  assert.notEqual(restarted.epoch, notes.epoch);
+  check(allPages(restarted));
+});
+
+test('a page holds one change even when that change alone is over the budget', () => {
+  const notes = new Collection({ pageBytes: 100 });
+  for (const id of ['a', 'b', 'c']) notes.push({ changes: [change({ recordID: id, record: { id, text: 'y'.repeat(200) } })] });
+  const pages = allPages(notes);
+  assert.deepEqual(pages.map((page) => page.changes.map((c) => c.recordID)), [['a'], ['b'], ['c']]);
+  assert.equal(pages.at(-1).hasMore, false);
+});
+
 test('starts from the beginning for a token of another epoch or one ahead', () => {
   const before = new Collection();
   for (const id of ['a', 'b', 'c']) before.push({ changes: [change({ recordID: id, record: { id } })] });

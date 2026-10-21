@@ -58,6 +58,31 @@ test('errors have status codes', async () => {
   assert.equal(tooLarge.status, 413);
 });
 
+test('large records reach a device that pulls from the beginning', async () => {
+  // 17 pushes of four records of 250 KiB, each push within the 1 MiB body limit.
+  const text = 'x'.repeat(250 * 1024);
+  for (let first = 0; first < 68; first += 4) {
+    const changes = [0, 1, 2, 3].map((offset) => {
+      const id = `big-${first + offset}`;
+      return { id: randomUUID(), recordID: id, operation: 'upsert', record: { id, text }, timestamp };
+    });
+    const answer = await (await push('large', changes)).json();
+    assert.ok(Object.values(answer.outcomes).every((outcome) => outcome.status === 'accepted'));
+  }
+  const received = [];
+  let token = null;
+  for (;;) {
+    const response = await fetch(`${base}/sync/large/changes${token ? `?since=${token}` : ''}`);
+    const body = await response.text();
+    assert.ok(Buffer.byteLength(body) <= 8 * 1024 * 1024 + 1024, `a page of ${Buffer.byteLength(body)} bytes`);
+    const page = JSON.parse(body);
+    received.push(...page.changes.map((c) => c.recordID));
+    token = page.token;
+    if (!page.hasMore) break;
+  }
+  assert.equal(received.length, 68);
+});
+
 test('the number of collections is limited', async () => {
   const limited = createSyncServer();
   await new Promise((resolve) => limited.listen(0, resolve));

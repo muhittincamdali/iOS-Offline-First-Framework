@@ -17,6 +17,10 @@ export const LIMITS = Object.freeze({
   // record nested deeper than their decoder reads is still set aside on every device.
   recordDepth: 64,
   recordBytes: 256 * 1024,
+  // How many bytes of JSON the changes of one page may take. A page must fit in a client's
+  // response limit (16 MiB for HTTPSyncTransport by default); it holds at least one change, and
+  // a change is at most recordBytes of record and a few hundred bytes more, so every page fits.
+  pageBytes: 8 * 1024 * 1024,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -119,12 +123,19 @@ export class Collection {
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
    * deleted ones included, so clients cannot grow the server's memory without limit. `now`
-   * returns the server's time in milliseconds.
+   * returns the server's time in milliseconds. `pageBytes` bounds the JSON of a page's changes.
    */
-  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection, now = () => Date.now() } = {}) {
+  constructor({
+    validate = () => null,
+    state,
+    maxRecords = LIMITS.recordsPerCollection,
+    now = () => Date.now(),
+    pageBytes = LIMITS.pageBytes,
+  } = {}) {
     this.validate = validate;
     this.maxRecords = maxRecords;
     this.now = now;
+    this.pageBytes = pageBytes;
     if (state) this.#restore(state);
   }
 
@@ -151,8 +162,9 @@ export class Collection {
   }
 
   /**
-   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first, and the epoch. A token
-   * of another epoch, or one ahead of this collection, starts from the beginning, so the client
+   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first, and the epoch: at most
+   * `limit` of them, and no more than `pageBytes` of JSON, but always at least one. A token of
+   * another epoch, or one ahead of this collection, starts from the beginning, so the client
    * gets every record again instead of waiting for writes that never come.
    */
   changes(token, limit = LIMITS.pageSize) {
@@ -161,9 +173,19 @@ export class Collection {
     const since = position <= this.#sequence ? position : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
     const changed = [...this.#records.values()].filter((entry) => entry.sequence > since).sort((a, b) => a.sequence - b.sequence);
-    const page = changed.slice(0, size);
+    const page = [];
+    let bytes = 0;
+    for (const entry of changed) {
+      if (page.length === size) break;
+      const remote = this.#remote(entry);
+      // The change's JSON and the comma before the next one.
+      const length = Buffer.byteLength(JSON.stringify(remote)) + 1;
+      if (page.length > 0 && bytes + length > this.pageBytes) break;
+      page.push(remote);
+      bytes += length;
+    }
     return {
-      changes: page.map((entry) => this.#remote(entry)),
+      changes: page,
       token: `${this.#epoch}.${page.at(-1)?.sequence ?? since}`,
       hasMore: changed.length > page.length,
       epoch: this.#epoch,

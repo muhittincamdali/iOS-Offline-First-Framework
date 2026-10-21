@@ -6,6 +6,8 @@
 // GET  /sync/<collection>/changes?since=<token>&limit=<n>
 //                                   ->  {"changes": [...], "token": "...", "hasMore": false}
 //
+// A page holds at most `limit` changes (100 by default, 1,000 at most) and 8 MiB of them.
+//
 // It keeps the data in memory and, with --data, in a JSON file written after every push.
 // It has no authentication: put it behind your own auth before you expose it.
 import { createServer } from 'node:http';

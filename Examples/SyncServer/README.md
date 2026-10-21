@@ -24,10 +24,10 @@ records and revisions.
 
 ## Endpoints
 
-| Request                                        | Body / answer                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------ |
-| `POST /sync/<collection>/push`                 | `{"changes": [...]}` → `{"outcomes": {"<change ID>": {...}}}`            |
-| `GET /sync/<collection>/changes?since=<token>` | → `{"changes": [...], "token": "...", "hasMore": false, "epoch": "..."}` |
+| Request                                                  | Body / answer                                                            |
+| -------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `POST /sync/<collection>/push`                           | `{"changes": [...]}` → `{"outcomes": {"<change ID>": {...}}}`            |
+| `GET /sync/<collection>/changes?since=<token>&limit=<n>` | → `{"changes": [...], "token": "...", "hasMore": false, "epoch": "..."}` |
 
 A change is
 `{"id": "<UUID>", "recordID": "a", "operation": "upsert" | "delete", "record": {...},
@@ -61,6 +61,9 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 - A change token is `<epoch>.<n>`, and every page names the epoch. A token of another epoch or
   past the newest write starts the pull from the beginning, so after a restart each client
   pulls every record once instead of waiting for writes that never come.
+- A page holds at most `limit` changes (100 by default, 1,000 at most) and at most 8 MiB of
+  them, but always at least one, so it fits in the client's response limit (16 MiB by
+  default) however large the records are.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
   collections, 100,000 records per collection (deleted ones included), record IDs of at most
   256 characters, timestamps that a JavaScript number holds exactly. Requests outside them get
