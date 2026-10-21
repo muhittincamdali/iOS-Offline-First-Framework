@@ -118,6 +118,8 @@ extension OfflineStore {
             for change in response.quarantined {
                 Self.quarantine(change, in: &state, report: &report)
             }
+            // Changes the transport only counted.
+            report.quarantined += response.quarantinedCount - response.quarantined.count
             for change in response.changes {
                 try applyRemote(change, to: &state, report: &report)
             }

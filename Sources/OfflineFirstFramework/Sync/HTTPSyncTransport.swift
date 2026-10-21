@@ -92,7 +92,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(PushBody(changes: changes.map(WireChange.init)))
-        return try Self.outcomes(from: try await send(request))
+        return try Self.outcomes(from: try await send(request), for: Set(changes.map(\.id)))
     }
 
     public func pull(since token: String?) async throws -> PullResponse<Record> {
@@ -114,10 +114,21 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// change's record.
     private static var maximumOutcomeDepth: Int { OfflineStore<Record>.maximumRecordDepth + 2 }
 
+    /// Unreadable changes of one page that are listed with their record ID and revision, as many
+    /// as the store keeps; the others are only counted (``PullResponse/quarantinedCount``).
+    static var listedQuarantinePerPage: Int { OfflineStore<Record>.maximumQuarantinedChanges }
+
+    /// A page with more changes that cannot be read is refused. Each one costs a decoding
+    /// attempt, and a 16 MiB page holds millions of elements: without the limit such a page
+    /// took seconds and gigabytes on every sync. A page of the reference server (1,000 changes
+    /// at most) can always be set aside in full.
+    static var maximumUnreadableChangesPerPage: Int { 1_000 }
+
     /// The outcomes of a push answer, each measured and read on its own: one that cannot be
     /// read, also one nested deeper than a record may, leaves only its own change without an
-    /// answer; the store retries that change and settles the others.
-    static func outcomes(from data: Data) throws -> [UUID: PushOutcome<Record>] {
+    /// answer; the store retries that change and settles the others. Outcomes for change IDs
+    /// that are not in `sent` are skipped without being decoded.
+    static func outcomes(from data: Data, for sent: Set<UUID>) throws -> [UUID: PushOutcome<Record>] {
         try JSONLayout.read(data) { answer in
             var result: [UUID: PushOutcome<Record>] = [:]
             var found = false
@@ -125,8 +136,9 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
                 guard !found, answer.string(at: key) == "outcomes" else { return try answer.value(at: start).range.upperBound }
                 found = true
                 return try answer.forEachMember(ofObjectAt: start) { key, start in
+                    try Task.checkCancellation()
                     let value = try answer.value(at: start)
-                    if value.depth <= maximumOutcomeDepth, let id = answer.string(at: key).flatMap(UUID.init(uuidString:)),
+                    if value.depth <= maximumOutcomeDepth, let id = answer.string(at: key).flatMap(UUID.init(uuidString:)), sent.contains(id),
                        let outcome = try? answer.decode(WireOutcome.self, at: value.range).pushOutcome() {
                         result[id] = outcome
                     }
@@ -141,10 +153,17 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// A page, each change measured and read on its own: one that cannot be read, also one
     /// nested deeper than a record may, is set aside and the rest of the page is used. The first
     /// of two members with the same name counts.
+    ///
+    /// What an untrusted page costs stays bounded: the page is walked once without being copied,
+    /// only the first ``listedQuarantinePerPage`` unreadable changes are listed, a page with more
+    /// than ``maximumUnreadableChangesPerPage`` of them is refused with a `DecodingError`, and the
+    /// walk stops with `CancellationError` once its task is cancelled, as the store does when a
+    /// sync passes ``OfflineStore/Configuration/syncTimeout``.
     static func page(from data: Data) throws -> PullResponse<Record> {
         try JSONLayout.read(data) { page in
             var changes: [RemoteChange<Record>] = []
             var quarantined: [QuarantinedChange] = []
+            var unreadable = 0
             var fields: [String: Range<Int>] = [:]
             try page.forEachRootMember { key, start in
                 let name = page.string(at: key) ?? ""
@@ -152,10 +171,18 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
                 switch name {
                 case "changes":
                     let end = try page.forEachElement(ofArrayAt: start) { start in
-                        let (end, element) = try change(in: page, at: start)
+                        try Task.checkCancellation()
+                        let (end, element) = try change(in: page, at: start, listing: quarantined.count < listedQuarantinePerPage)
                         switch element {
-                        case .readable(let change): changes.append(change)
-                        case .unreadable(let entry): quarantined.append(entry)
+                        case .readable(let change):
+                            changes.append(change)
+                        case .unreadable(let entry):
+                            unreadable += 1
+                            guard unreadable <= maximumUnreadableChangesPerPage else {
+                                throw JSONLayout.corrupted(
+                                    "More than \(maximumUnreadableChangesPerPage) changes of the page cannot be read; the page is refused.")
+                            }
+                            if let entry { quarantined.append(entry) }
                         }
                         return end
                     }
@@ -173,25 +200,29 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             guard let hasMore = fields["hasMore"] else { throw JSONLayout.missing("hasMore") }
             return PullResponse(changes: changes, token: try fields["token"].flatMap { try page.decode(String?.self, at: $0) },
                                 hasMore: try page.decode(Bool.self, at: hasMore),
-                                epoch: try fields["epoch"].flatMap { try page.decode(String?.self, at: $0) }, quarantined: quarantined)
+                                epoch: try fields["epoch"].flatMap { try page.decode(String?.self, at: $0) }, quarantined: quarantined,
+                                quarantinedCount: unreadable)
         }
     }
 
     /// One change of a page, or why it cannot be used, so one bad record does not make the
-    /// whole page, and every later pull, fail.
+    /// whole page, and every later pull, fail. An unreadable change beyond those a page lists
+    /// has no entry.
     private enum Change {
         case readable(RemoteChange<Record>)
-        case unreadable(QuarantinedChange)
+        case unreadable(QuarantinedChange?)
     }
 
     /// The change that starts at `start`, walked once for its depth, record ID and revision, and
-    /// decoded unless one of its fields nests deeper than a record may. Of a change that cannot
-    /// be used, only the record ID and the revision are read, each as the type it should have and
-    /// only when it is not nested too deeply itself. Returns the index after the change.
-    private static func change(in page: JSONLayout, at start: Int) throws -> (end: Int, change: Change) {
+    /// decoded unless it lacks either of them or one of its fields nests deeper than a record
+    /// may. Of a change that cannot be used, only the record ID and the revision are read, each
+    /// as the type it should have, only when it is not nested too deeply itself, and only while
+    /// `listing`. Returns the index after the change.
+    private static func change(in page: JSONLayout, at start: Int, listing: Bool) throws -> (end: Int, change: Change) {
         guard page.isObject(at: start) else {
             let value = try page.value(at: start)
-            return (value.range.upperBound, unreadable(page, reason: "The change is not an object.", recordID: nil, revision: nil))
+            return (value.range.upperBound, unreadable(page, reason: "The change is not an object.", recordID: nil, revision: nil,
+                                                       listing: listing))
         }
         var deepest = 0
         var recordID: JSONLayout.Value?
@@ -206,24 +237,24 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             }
             return value.range.upperBound
         }
+        guard recordID != nil, revision != nil else {
+            return (end, unreadable(page, reason: "The change has no recordID or no revision.", recordID: recordID, revision: revision,
+                                    listing: listing))
+        }
         guard deepest <= OfflineStore<Record>.maximumRecordDepth else {
             let reason = "The change nests objects and arrays deeper than \(OfflineStore<Record>.maximumRecordDepth) levels."
-            return (end, unreadable(page, reason: reason, recordID: recordID, revision: revision))
+            return (end, unreadable(page, reason: reason, recordID: recordID, revision: revision, listing: listing))
         }
-        return (end, readable(page, at: start..<end, recordID: recordID, revision: revision))
-    }
-
-    private static func readable(_ page: JSONLayout, at range: Range<Int>, recordID: JSONLayout.Value?,
-                                 revision: JSONLayout.Value?) -> Change {
         do {
-            return .readable(try page.decode(RemoteChange<Record>.self, at: range))
+            return (end, .readable(try page.decode(RemoteChange<Record>.self, at: start..<end)))
         } catch {
-            return unreadable(page, reason: describe(error), recordID: recordID, revision: revision)
+            return (end, unreadable(page, reason: describe(error), recordID: recordID, revision: revision, listing: listing))
         }
     }
 
-    private static func unreadable(_ page: JSONLayout, reason: String, recordID: JSONLayout.Value?,
-                                   revision: JSONLayout.Value?) -> Change {
+    private static func unreadable(_ page: JSONLayout, reason: String, recordID: JSONLayout.Value?, revision: JSONLayout.Value?,
+                                   listing: Bool) -> Change {
+        guard listing else { return .unreadable(nil) }
         func read<T: Decodable>(_ value: JSONLayout.Value?, as type: T.Type) -> T? {
             guard let value, value.depth <= OfflineStore<Record>.maximumRecordDepth else { return nil }
             return try? page.decode(type, at: value.range)

@@ -153,14 +153,23 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// goes on with the rest of the page.
     public let quarantined: [QuarantinedChange]
 
+    /// How many changes of this page the transport set aside: those in ``quarantined`` and those
+    /// it only counted. ``HTTPSyncTransport`` lists the first 100 of a page. The store adds the
+    /// count to ``SyncReport/quarantined``.
+    public let quarantinedCount: Int
+
     /// Creates a page.
+    ///
+    /// - Parameter quarantinedCount: How many changes the transport set aside; at least, and by
+    ///   default, the number of `quarantined`.
     public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil,
-                quarantined: [QuarantinedChange] = []) {
+                quarantined: [QuarantinedChange] = [], quarantinedCount: Int? = nil) {
         self.changes = changes
         self.token = token
         self.hasMore = hasMore
         self.epoch = epoch
         self.quarantined = quarantined
+        self.quarantinedCount = max(quarantined.count, quarantinedCount ?? 0)
     }
 }
 
