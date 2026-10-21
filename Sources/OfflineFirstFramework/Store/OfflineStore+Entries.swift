@@ -164,6 +164,35 @@ extension OfflineStore {
         return false
     }
 
+    /// Makes `entry`, a write of this store the server applied on top of the version `replaced`
+    /// is based on, know which versions are older than it until a page tells its sequence:
+    /// every version up to the replaced one, by that version's sequence
+    /// (``StoredEntry/minimumSequence``), or by its revision when the store does not know that
+    /// sequence in the current history (``StoredEntry/olderRevisions``), with the revisions the
+    /// store's earlier writes replaced: an earlier accepted write without an echo, a version of
+    /// an earlier history the write was based on. A write based on no version was applied while
+    /// the server held none of the record, so every version the server sends of it besides that
+    /// write is newer.
+    ///
+    /// The same whether the push's answer told it (accepted, or a conflict that names the change
+    /// itself) or a page did, after the answer was lost: otherwise a stale page (a lagging replica,
+    /// a cache after ``OfflineStore/resetChangeToken()``) took the record back to the replaced
+    /// version only on the second way, and an edit of what the app showed replaced the write
+    /// without a conflict.
+    static func order(_ entry: inout StoredEntry<Record>, asWriteReplacing replaced: StoredEntry<Record>, in state: State) {
+        let knowsReplacedSequence = replaced.history == state.history && replaced.sequence != nil
+        var olderRevisions = knowsReplacedSequence ? [] : replaced.olderRevisions
+        if !knowsReplacedSequence, let revision = replaced.revision {
+            olderRevisions.append(revision)
+        }
+        if replaced.revision == nil {
+            entry.minimumSequence = 0
+        } else {
+            entry.minimumSequence = replaced.history == state.history ? (replaced.sequence ?? replaced.minimumSequence) : nil
+        }
+        entry.olderRevisions = Array(olderRevisions.suffix(maximumOlderRevisions))
+    }
+
     /// Whether the server's sequences show that `change` is newer than the version `entry` is
     /// based on, both of the current history: by the entry's sequence, or, before the echo of
     /// the store's own accepted write, by the version that write replaced. Without sequences

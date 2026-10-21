@@ -140,27 +140,13 @@ extension OfflineStore {
     private func accept(_ change: OutgoingChange<Record>, as revision: String, into entry: inout StoredEntry<Record>, isCurrent: Bool,
                         in state: inout State, report: inout SyncReport) {
         // The answer does not say where the write stands; its echo in a pull will. Until then
-        // every version up to the one it replaced is known to be older: by its sequence, or by
-        // its revision when the store does not know that sequence in the current history (an
-        // earlier accepted write of this store without an echo, a version of an earlier history
-        // after a pull of the new one stopped before the record). A write based on no version
-        // was applied while the server held none of the record, so every version the server
-        // sends of it besides that write is newer.
-        let knowsReplacedSequence = entry.history == state.history && entry.sequence != nil
-        var olderRevisions = knowsReplacedSequence ? [] : entry.olderRevisions
-        if !knowsReplacedSequence, let replaced = entry.revision {
-            olderRevisions.append(replaced)
-        }
-        if entry.revision == nil {
-            entry.minimumSequence = 0
-        } else {
-            entry.minimumSequence = entry.history == state.history ? (entry.sequence ?? entry.minimumSequence) : nil
-        }
+        // the versions up to the one it replaced are known to be older.
+        let replaced = entry
         entry.revision = revision
         entry.history = state.history
         entry.pushedInHistory = state.history
         entry.sequence = nil
-        entry.olderRevisions = Array(olderRevisions.suffix(Self.maximumOlderRevisions))
+        Self.order(&entry, asWriteReplacing: replaced, in: state)
         entry.rememberOwnWrite(changeID: change.id, timestamp: change.timestamp)
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
@@ -218,10 +204,12 @@ extension OfflineStore {
         }
         switch authorship(of: answer, comparedWith: entry) {
         case .pendingChange:
-            // The server holds this very change: an earlier push of it was applied.
+            // The server holds this very change: an earlier push of it was applied, on top of
+            // the version the change is based on, as for an accepted answer.
             report.pushed += 1
             entry.rememberOwnWrite(changeID: entry.pending?.changeID, timestamp: entry.timestamp)
-            let answered = Self.entry(from: answer, replacing: entry, in: &state, configuration: configuration)
+            var answered = Self.entry(from: answer, replacing: entry, in: &state, configuration: configuration)
+            if answer.sequence == nil { Self.order(&answered, asWriteReplacing: entry, in: state) }
             entry = weigh(keptBack: deferred, against: answered, in: &state)
         case .earlierWrite:
             // The device's own earlier write: applied although its answer was lost, or accepted

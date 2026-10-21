@@ -120,6 +120,43 @@ struct OwnWriteTests {
         #expect(conflicts.withLock { $0 }.isEmpty)
     }
 
+    /// A push the server applied, its answer lost. The server, which does not remember change
+    /// IDs, answers the retry with a conflict that names the change itself. The version the
+    /// change replaced is older, as after an accepted answer: a page that brings it back is
+    /// skipped, and the edit made on what the app shows keeps the write. Before, the store took
+    /// that page, and the edit replaced the write without a conflict (verifier C12).
+    @Test(arguments: ConvergenceTests.Policy.allCases, [true, false])
+    func aConflictAnswerThatNamesTheChangeItselfKnowsTheVersionItReplaced(policy: ConvergenceTests.Policy,
+                                                                          changeIDs: Bool) async throws {
+        let server = OneRecordServer(sendsChangeIDs: changeIDs)
+        let conflicts = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let (store, transport) = try makeStore(server: server, conflicts: conflicts, policy: policy)
+        try await store.save(Note(id: "r", text: "A#1"))
+        try await store.sync()
+        let replaced = try #require(await server.current)
+        clock.advance(by: 1)
+        try await store.save(Note(id: "r", text: "A#1|2"))
+        await transport.onPush { changes in
+            _ = await server.push(changes)
+            throw URLError(.networkConnectionLost)
+        }
+        await #expect(throws: URLError.self) { try await store.sync() }
+        await transport.onPush { await server.push($0) }
+        clock.advance(by: 60)
+        try await store.sync()
+        #expect(await store.pendingChanges().isEmpty)
+
+        await server.serve(replaced)
+        try await store.sync()
+        await server.serve(nil)
+        let shown = await store.record("r")?.text ?? "nil"
+        #expect(shown == "A#1|2", "\(policy) cid=\(changeIDs)")
+        try await store.save(Note(id: "r", text: shown + "|3"))
+        try await store.sync()
+        #expect(await server.current?.record?.text == "A#1|2|3", "\(policy) cid=\(changeIDs): the applied write was lost")
+        #expect(conflicts.withLock { $0 }.isEmpty)
+    }
+
     /// An entry remembers sixteen own writes at most, and a file keeps them.
     @Test func ownWritesAreBoundedAndKeptInTheFile() async throws {
         let storage = InMemoryStorage()

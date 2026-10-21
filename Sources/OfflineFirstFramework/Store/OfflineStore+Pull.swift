@@ -214,12 +214,15 @@ extension OfflineStore {
         var keepsBack = pending.isInDoubt || entry.history != state.history || change.sequence == nil
         switch authorship(of: change, comparedWith: entry) {
         case .pendingChange:
-            // The pending change itself: the server applied it, although no answer said so. A
-            // version kept back for it came earlier in the pull, so it is older, unless the
-            // server's sequences say otherwise.
+            // The pending change itself: the server applied it, although no answer said so,
+            // on top of the version the change is based on, which is older, as after an accepted
+            // answer. A version kept back for it came earlier in the pull, so it is older too,
+            // unless the server's sequences say otherwise.
             entry.rememberOwnWrite(changeID: pending.changeID, timestamp: entry.timestamp)
             let taken = entry.deferredRemote.flatMap { isOlder(change, than: $0) ? $0 : nil } ?? change
-            Self.store(Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration), in: &state)
+            var applied = Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration)
+            if taken.revision == change.revision, change.sequence == nil { Self.order(&applied, asWriteReplacing: entry, in: state) }
+            Self.store(applied, in: &state)
             return
         case .earlierWrite:
             // The device's own earlier write: the pending change was made on top of it, so it is
