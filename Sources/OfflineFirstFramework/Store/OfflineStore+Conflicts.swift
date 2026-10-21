@@ -29,7 +29,7 @@ extension OfflineStore {
         }
         // The local or merged version goes out again on top of the server's revision.
         Self.base(&result, on: remote, in: state, configuration: configuration)
-        var pending = rebased(entry.pending
+        var pending = renewed(entry.pending
             ?? PendingWrite(changeID: UUID(), sequence: state.takeSequence(), attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false))
         if let pushesInThisSync {
             pending = conflictAttempt(pending, pushesInThisSync: pushesInThisSync, report: &report)
@@ -38,16 +38,36 @@ extension OfflineStore {
         return result
     }
 
-    /// `pending` under a new change ID, so the server does not answer its push on a new base
-    /// from an idempotency cache. On the new base, no earlier version in doubt can become the
-    /// server's current one: its request names an older base.
-    func rebased(_ pending: PendingWrite) -> PendingWrite {
+    /// `pending` under a new change ID, for a push on a new base: the server does not answer it
+    /// from its memory of change IDs with the answer to the old base.
+    ///
+    /// The earlier versions in doubt stay with the change (``PendingWrite/supersededInDoubt``).
+    /// The server may hold one of them although no answer said so, and a new base from a page
+    /// does not tell otherwise: a page out of order, or the first page of a new epoch, can list
+    /// an older version before them, also an older write of the device itself. Only a push
+    /// answer settles them (``settleVersionsInDoubt(of:)``).
+    func renewed(_ pending: PendingWrite) -> PendingWrite {
         var pending = pending
         pending.changeID = UUID()
-        pending.isInDoubt = false
-        pending.supersededInDoubt = []
-        pending.supersededChangeIDs = []
         return pending
+    }
+
+    /// Settles the earlier versions in doubt of `entry`'s pending change once a push answer
+    /// showed the server's current version, accepted or in conflict: from then on the server's
+    /// answers tell where the change stands. The server may have applied one of those versions
+    /// before, or apply one whose request is still on its way, so they move to the device's own
+    /// writes (``StoredEntry/ownChangeIDs``): a page or an answer that brings one of them later
+    /// is the device's own write, never a conflict.
+    static func settleVersionsInDoubt(of entry: inout StoredEntry<Record>) {
+        guard let pending = entry.pending else { return }
+        for changeID in pending.supersededChangeIDs {
+            entry.rememberOwnWrite(changeID: changeID, timestamp: nil)
+        }
+        for timestamp in pending.supersededInDoubt {
+            entry.rememberOwnWrite(changeID: nil, timestamp: timestamp)
+        }
+        entry.pending?.supersededInDoubt = []
+        entry.pending?.supersededChangeIDs = []
     }
 
     /// Counts a conflict answer as a failed attempt of the resolved change. The first one in a

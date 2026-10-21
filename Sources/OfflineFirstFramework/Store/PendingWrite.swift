@@ -19,8 +19,9 @@ struct PendingWrite: Codable, Hashable, Sendable {
     /// The timestamps of earlier versions of this change that were in doubt when the record
     /// changed again, newest last. The server may have applied any of them; a server version
     /// with one of these timestamps is the device's own earlier write, which the pending change
-    /// was made on top of, not another device's. Emptied once the server's answer or a new
-    /// base shows that none of them can be the server's current version.
+    /// was made on top of, not another device's. A new base from a page keeps them, since a
+    /// page may list an older version before them; a push answer settles them, and they move
+    /// to the entry's own writes (``StoredEntry/ownTimestamps``).
     var supersededInDoubt: [HLCTimestamp] = []
     /// The change IDs of the same earlier versions, for a server that names the change that
     /// wrote a version (``RemoteChange/changeID``).

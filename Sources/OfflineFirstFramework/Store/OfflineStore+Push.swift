@@ -161,8 +161,7 @@ extension OfflineStore {
         entry.deferredRemote = nil
         // The server applied this change on top of the version it was based on, so no earlier
         // version in doubt can be its current one any more.
-        entry.pending?.supersededInDoubt = []
-        entry.pending?.supersededChangeIDs = []
+        Self.settleVersionsInDoubt(of: &entry)
         guard isCurrent else { return }
         entry.pending = nil
         // A pull brought a newer version while this change was in doubt; the change was
@@ -176,8 +175,10 @@ extension OfflineStore {
     /// Handles the server's answer that `entry`'s pending change conflicts with `current`.
     private func settle(_ entry: inout StoredEntry<Record>, conflictingWith current: RemoteChange<Record>, pushesInThisSync: Int,
                         in state: inout State, report: inout SyncReport) throws {
-        // The server did not apply the change, so it is no longer in doubt.
+        // The server did not apply the change, so it is no longer in doubt, and neither are its
+        // earlier versions; those the server may have applied stay known as the device's own.
         entry.pending?.isInDoubt = false
+        Self.settleVersionsInDoubt(of: &entry)
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
         guard Self.isConsistent(current, for: entry.id) else {
@@ -211,7 +212,7 @@ extension OfflineStore {
             entry.rememberOwnWrite(changeID: current.changeID, timestamp: current.timestamp)
             Self.base(&entry, on: current, in: state, configuration: configuration)
             if let pending = entry.pending {
-                entry.pending = conflictAttempt(rebased(pending), pushesInThisSync: pushesInThisSync, report: &report)
+                entry.pending = conflictAttempt(renewed(pending), pushesInThisSync: pushesInThisSync, report: &report)
             }
         case .other:
             report.conflicts += 1

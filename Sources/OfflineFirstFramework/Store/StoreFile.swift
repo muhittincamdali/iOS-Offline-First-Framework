@@ -52,7 +52,9 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// a pull brought, kept until the change is sent.
     var deferredRemote: RemoteChange<Record>? = nil
     /// The change IDs of this store's writes of the record that the server holds or held: those
-    /// it accepted, and those a pull or a conflict answer showed it applied. Newest last, at most
+    /// it accepted, those a pull or a conflict answer showed it applied, and the versions of a
+    /// change that were in doubt when a push answer settled it, which the server may have
+    /// applied (``PendingWrite/supersededChangeIDs``). Newest last, at most
     /// ``maximumOwnWrites``. A server version that one of them wrote is the device's own write,
     /// whatever the store shows for the record: when a stale page took the record back to an
     /// older version and the user edited on top of that, the server's answer that names the

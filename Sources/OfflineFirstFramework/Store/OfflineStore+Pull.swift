@@ -198,18 +198,25 @@ extension OfflineStore {
                                   configuration: configuration), in: &state)
             return
         case .earlierWrite:
-            // The device's own earlier write: the pending change was made on top of it. A
-            // change in doubt learns from its next push where it stands; one that is not goes
-            // out on this revision.
+            // The device's own earlier write: the pending change was made on top of it, so it is
+            // not a conflict. The change's earlier versions in doubt stay known: a page out of
+            // order, or the first page of a new epoch, may list this write before a newer one
+            // of them, and only a push answer settles them.
             entry.rememberOwnWrite(changeID: change.changeID, timestamp: change.timestamp)
+            // A change in doubt learns from its next push where it stands; this version is
+            // older than it, so it is not kept back either.
             guard !pending.isInDoubt else {
                 state.entries[change.recordID] = entry
                 return
             }
-            Self.base(&entry, on: change, in: state, configuration: configuration)
-            entry.pending = rebased(pending)
-            state.entries[change.recordID] = entry
-            return
+            // A change of the current history goes out on this revision. One of an earlier
+            // history keeps the version back like any other, below.
+            if entry.history == state.history {
+                Self.base(&entry, on: change, in: state, configuration: configuration)
+                entry.pending = renewed(pending)
+                state.entries[change.recordID] = entry
+                return
+            }
         case .other:
             break
         }
@@ -222,11 +229,10 @@ extension OfflineStore {
         // conflict answer says what it holds now. The store believes a later epoch on two
         // answers of one sync, which a source that answers both requests passes; its version
         // would make the resolver weigh the edit against a copy the server may no longer hold.
+        // The device's own earlier write, for a change of an earlier history, waits the same way.
         if pending.isInDoubt || entry.history != state.history {
-            if let deferred = entry.deferredRemote, deferred.revision == change.revision || isOlder(change, than: deferred, in: state) {
-                return
-            }
-            entry.deferredRemote = change
+            let keepsDeferred = entry.deferredRemote.map { $0.revision == change.revision || isOlder(change, than: $0, in: state) }
+            if keepsDeferred != true { entry.deferredRemote = change }
             state.entries[change.recordID] = entry
             return
         }

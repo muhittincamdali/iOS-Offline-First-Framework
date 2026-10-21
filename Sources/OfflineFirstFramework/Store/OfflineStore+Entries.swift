@@ -188,11 +188,12 @@ extension OfflineStore {
     /// restored onto a second device writes with the same node ID.
     ///
     /// Those writes are the pending change, its earlier versions in doubt, and the writes of
-    /// the record the server accepted or showed it applied (``StoredEntry/ownChangeIDs``). The
-    /// last ones count whatever the store shows for the record: a stale page, or a restore, may
-    /// have taken the record back to an older version, and an edit the user made on top of it
-    /// was still made on this device after its own accepted write. So the device's own write
-    /// never reaches the resolver as a conflict.
+    /// the record the server accepted, showed it applied or may have applied before a push
+    /// answer settled them (``StoredEntry/ownChangeIDs``). The last ones count whatever the
+    /// store shows for the record: a stale page, or a restore, may have taken the record back
+    /// to an older version, and an edit the user made on top of it was still made on this
+    /// device after its own accepted write. So the device's own write never reaches the
+    /// resolver as a conflict.
     enum Authorship {
         /// The pending change itself, applied by the server.
         case pendingChange
