@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@c97932c6fcb187fccf9243f0065f064a9acdadad status=reviewed -->
+<!-- i18n-source: README.md@32533c914c9f319650d038821923dece93d857ab status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,15 +51,16 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 293 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 300 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
-  Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
-  Seitengrenzen und veraltete Seiten schickt, und Tests, die Seiten voller unbrauchbarer Daten,
-  sehr tief verschachtelte Datensätze, Seiten über dem Antwortlimit und Seiten mit mehr Änderungen
-  als angefordert senden, auch endlos über einen Socket gestreamt; 28 Node-Tests für den Server;
-  und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch den Server synchronisiert,
-  auch mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg und mit einem
-  Schreibvorgang, dessen Speichern vor einem Neustart fehlschlug.
+  Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine Seitengrenzen
+  und veraltete Seiten schickt, und Tests, die Seiten voller unbrauchbarer Daten, sehr tief
+  verschachtelte Datensätze, Seiten über dem Antwortlimit und Seiten mit mehr Änderungen als
+  angefordert senden, auch endlos über einen Socket gestreamt; 28 Node-Tests für den Server; und
+  eine End-to-End-Testsuite in der CI, die Stores über HTTP durch den Server synchronisiert, auch
+  mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg, mit 70 Konfliktantworten zu 250
+  KiB, die zusammen das Antwortlimit überschreiten, und mit einem Schreibvorgang, dessen Speichern
+  vor einem Neustart fehlschlug.
 
 ### Was enthalten ist
 
@@ -359,10 +360,12 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   verschachtelt ist, gelangt nie in den Store, sodass das Schreiben der Datei den Stack nicht
   überlaufen lassen kann; eine Seite voller unbrauchbarer Daten oder mit mehr Änderungen, als der
   Abruf angefordert hat (höchstens 1.000), wird in Millisekunden abgewiesen, statt Gigabytes zu
-  belegen, und ihr Download abgebrochen; eine Seite, die größer als das Antwortlimit ist, lässt
-  den Abruf weniger Änderungen anfordern, und eine einzelne Änderung, die allein größer als das
-  Limit ist, wird bis zum Vierfachen des Limits zurückgestellt; eine Übertragung wird in Anfragen
-  aufgeteilt, die das Body-Limit des Servers annimmt; eine UTF-8-Byte-Order-Mark wird gelesen.
+  belegen, und ihr Download abgebrochen; eine Seite, die größer als das Antwortlimit ist, lässt den
+  Abruf weniger Änderungen anfordern, und eine einzelne Änderung, die allein größer als das Limit
+  ist, wird bis zum Vierfachen des Limits zurückgestellt; eine Übertragung wird in Anfragen
+  aufgeteilt, die das Body-Limit des Servers annimmt, und in Hälften erneut gesendet, solange ihre
+  Antwort länger als das Antwortlimit ist, und eine Änderung, deren Antwort allein länger ist, wird
+  geparkt; eine UTF-8-Byte-Order-Mark wird gelesen.
 - Eine vorgehende oder zurückgestellte Uhr, ein Server, der jede Übertragung mit einem Konflikt
   beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
   wirken nur begrenzt: Die Referenzserver speichern einen übertragenen Zeitstempel höchstens fünf
@@ -372,18 +375,21 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   werden kann.
 
 Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
-die nur zu späteren wechselt (länger oder Byte für Byte größer), eine `sequence`, die über
-Neustarts weiterzählt, die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt,
-auf eine Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss
-sich Änderungs-IDs über Neustarts hinweg merken, einen Schreibvorgang erst in Seiten zeigen, wenn
-er gespeichert ist, und jede Seite innerhalb des Antwortlimits des Clients halten (höchstens
-`limit` Änderungen, auch nach Bytes begrenzt, mindestens eine Änderung pro Seite). Grenzen:
-Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht erneut
-hochgeladen, ein Datensatz, der direkt nach `discardChange(for:)` erneut gespeichert wird, trifft
-die Kopie des Servers als Konflikt, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder
-Änderung geschrieben, Datensätze sind höchstens 64 Ebenen tief verschachtelt, eine Seite enthält
-höchstens 1.000 Änderungen, eine einzelne Änderung, die größer als das Vierfache des Antwortlimits
-ist, hält den Abruf an, und Löschungen jenseits von 10.000 werden vergessen. [Garantien und
+die nur zu späteren wechselt (länger oder Byte für Byte größer), eine `sequence`, die über Neustarts
+weiterzählt, die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt, auf eine
+Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss sich
+Änderungs-IDs über Neustarts hinweg merken, einen Schreibvorgang erst in Seiten zeigen, wenn er
+gespeichert ist, und jede Seite sowie die Antwort auf jede übertragene Änderung innerhalb des
+Antwortlimits des Clients halten (eine Seite enthält höchstens `limit` Änderungen, auch nach Bytes
+begrenzt, mindestens eine Änderung pro Seite). Grenzen: Schreibvorgänge, die ein Server bei einer
+Wiederherstellung verloren hat, werden nicht erneut hochgeladen, ein Datensatz, der direkt nach
+`discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als Konflikt, eine
+Store-Instanz pro Datei (durchgesetzt für `FileStore`, `InMemoryStorage` und eigene Backends, die
+eine `claimIdentity` melden), die ganze Datei wird bei jeder Änderung geschrieben, Datensätze sind
+höchstens 64 Ebenen tief verschachtelt, eine Seite enthält höchstens 1.000 Änderungen, eine einzelne
+Änderung, die größer als das Vierfache des Antwortlimits ist, hält den Abruf an, eine Änderung,
+deren Übertragungsantwort allein größer als das Antwortlimit ist, wird geparkt, und Löschungen
+jenseits von 10.000 werden vergessen. [Garantien und
 Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
 die vollständige Liste.
 
