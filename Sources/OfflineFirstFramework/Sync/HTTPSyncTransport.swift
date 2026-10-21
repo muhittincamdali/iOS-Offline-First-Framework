@@ -22,11 +22,13 @@ import Foundation
 /// retries the changes with its ``RetryPolicy``. Responses are read up to
 /// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded, at once
 /// when it announces its length. A push is split into requests of at most
-/// ``maximumRequestSize`` bytes. A pull asks for ``pageSize`` changes and, while the page is
-/// larger than that, for half as many; a single change that is larger on its own, up to four
-/// times ``maximumResponseSize``, is set aside in ``OfflineStore/quarantinedChanges()`` and the
-/// pull moves past it. A page with more changes than the pull asked for is cancelled as soon as
-/// the change after the limit starts, and refused.
+/// ``maximumRequestSize`` bytes, and a request is halved while the server answers it with
+/// status 413 or with more than ``maximumResponseSize``. A pull asks for ``pageSize`` changes
+/// and, while the page is larger than that, for half as many; a single change that is larger on
+/// its own, up to four times ``maximumResponseSize``, is set aside in
+/// ``OfflineStore/quarantinedChanges()`` and the pull moves past it. A page with more changes
+/// than the pull asked for is cancelled as soon as the change after the limit starts, and
+/// refused.
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
@@ -110,11 +112,16 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         self.headers = headers
     }
 
-    /// Pushes `changes` in requests of at most ``maximumRequestSize`` bytes, in order. A request
-    /// the server refuses as too large (status 413) is sent again as two halves; a single change
-    /// it refuses so is answered ``PushOutcome/rejected(reason:current:)``, since it can never
-    /// succeed, and is parked. When a request fails after earlier ones were answered, their
-    /// outcomes are returned, and the changes without an answer are retried later.
+    /// Pushes `changes` in requests of at most ``maximumRequestSize`` bytes, in order.
+    ///
+    /// A request the server refuses as too large (status 413), or whose answer is longer than
+    /// ``maximumResponseSize`` (conflicts that each bring a large version), is sent again as two
+    /// halves; the server answers the changes it already applied from its memory of change IDs.
+    /// A single change that stays too large is answered ``PushOutcome/rejected(reason:current:)``
+    /// and parked, since the same request can never succeed: with status 413, or with
+    /// ``answerTooLarge`` when its answer alone is longer than the limit. A push of n changes
+    /// takes at most 2n − 1 requests. When a request fails after earlier ones were answered,
+    /// their outcomes are returned, and the changes without an answer are retried later.
     public func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>] {
         let encoder = JSONEncoder()
         let encoded = try changes.map { EncodedChange(id: $0.id, json: try encoder.encode(WireChange($0))) }
@@ -124,11 +131,15 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             let batch = requests.removeFirst()
             do {
                 outcomes.merge(try await push(batch)) { _, answer in answer }
-            } catch Failure.unexpectedStatus(code: 413, body: _) where batch.count > 1 {
+            } catch Failure.unexpectedStatus(code: 413, body: _) where batch.count > 1,
+                    Failure.responseTooLarge(limit: _) where batch.count > 1 {
                 let half = batch.count / 2
                 requests.insert(contentsOf: [Array(batch[..<half]), Array(batch[half...])], at: 0)
             } catch Failure.unexpectedStatus(code: 413, body: let body) {
                 let reason = "The sync server refused the change as too large (status 413)" + (body.isEmpty ? "." : ": \(body)")
+                outcomes[batch[0].id] = .rejected(reason: reason, current: nil)
+            } catch Failure.responseTooLarge(limit: let limit) {
+                let reason = "\(Self.answerTooLarge): the sync server's answer to this change alone was longer than \(limit) bytes."
                 outcomes[batch[0].id] = .rejected(reason: reason, current: nil)
             } catch where !outcomes.isEmpty && !(error is CancellationError) {
                 return outcomes
@@ -136,6 +147,13 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
         return outcomes
     }
+
+    /// Starts the ``PendingChange/lastError`` of a change that is parked because the server's
+    /// answer to it alone was longer than ``maximumResponseSize``. The server has to keep that
+    /// answer within the limit (the documentation article "Server protocol"); until then,
+    /// ``OfflineStore/retryFailedChanges()`` meets the same answer, and
+    /// ``OfflineStore/discardChange(for:)`` drops the change.
+    public static var answerTooLarge: String { "answerTooLarge" }
 
     /// One pushed change as the JSON it is sent as.
     private struct EncodedChange {
