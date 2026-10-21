@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@32533c914c9f319650d038821923dece93d857ab status=reviewed -->
+<!-- i18n-source: README.md@17ca3fe66e195ea475a0b15e41fc1d8962c24ea6 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,16 +53,19 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 300 tests Swift Testing sur macOS et sur un simulateur
-  d’iPhone, dont un test de propriétés qui soumet chaque politique de conflit à des requêtes
-  perdues, des redémarrages, des réinitialisations du jeton, des synchronisations simultanées, de
-  petites limites de pages et des pages périmées, et des tests qui envoient des pages de données
-  inutilisables, des enregistrements très profondément imbriqués, des pages plus grandes que la
-  limite de réponse et des pages avec plus de modifications que demandé, aussi diffusées sans fin
-  sur un socket ; 28 tests Node pour le serveur ; et une suite de tests de bout en bout dans la CI
-  qui synchronise des stores via le serveur en HTTP, aussi avec 68 enregistrements de 250 Kio à
-  travers un redémarrage du serveur, avec 70 réponses de conflit de 250 Kio qui ensemble dépassent
-  la limite de réponse, et avec une écriture dont la sauvegarde a échoué avant un redémarrage.
+- **Testé contre un vrai serveur** — 311 tests Swift Testing sur macOS et sur un simulateur
+  d’iPhone, dont deux tests de propriétés qui soumettent chaque politique de conflit à des
+  requêtes perdues, des redémarrages, des réinitialisations du jeton, des synchronisations
+  simultanées, de petites limites de pages, des pages périmées, des opérations simultanées et des
+  plantages, et des tests qui envoient des pages de données inutilisables, des enregistrements
+  très profondément imbriqués, des pages plus grandes que la limite de réponse et des pages avec
+  plus de modifications que demandé, aussi diffusées sans fin sur un socket ; 28 tests Node pour
+  le serveur ; et une suite de tests de bout en bout dans la CI qui synchronise des stores via le
+  serveur en HTTP, aussi avec 68 enregistrements de 250 Kio à travers un redémarrage du serveur,
+  avec 70 réponses de conflit de 250 Kio qui ensemble dépassent la limite de réponse, avec une
+  écriture dont la sauvegarde a échoué avant un redémarrage, avec un envoi que le serveur a
+  appliqué derrière un proxy qui répond 504, et avec une réplique qui sert des pages d’avant un
+  redémarrage après une réinitialisation du jeton.
 
 ### Contenu
 
@@ -345,31 +348,40 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
 
 - Un enregistrement ou une suppression est dans le fichier avant que l’appel ne rende la main, et
   une modification en attente est envoyée jusqu’à ce que le serveur y réponde. Une nouvelle
-  tentative garde l’ID de la modification, si bien que le serveur ne l’applique qu’une fois.
+  tentative garde l’ID de la modification, si bien que le serveur ne l’applique qu’une fois. Seule
+  une réponse lue règle une modification : après un statut d’erreur, une connexion perdue ou une
+  réponse trop longue pour être lue, la modification reste incertaine jusqu’à son prochain envoi.
 - Une copie périmée ne remplace jamais une écriture acceptée par le serveur : le résolveur n’est
   consulté que lorsqu’un enregistrement a changé sur l’appareil et sur un autre appareil, et une
   version plus ancienne du serveur est ignorée, y compris juste après l’acceptation d’une écriture
   de l’appareil lui-même, même après un redémarrage du serveur que l’appareil n’a pas encore vu et
   après `resetChangeToken()`.
 - Un autre epoch du serveur ne compte que lorsque deux requêtes d’une même synchronisation le
-  signalent, la récupération avec le jeton et la récupération depuis le début : un cache périmé
-  ou un autre déploiement derrière la même URL ne peut donc pas faire revenir le store en
-  arrière. Une synchronisation qui ne récupère qu’une page suit quand même un redémarrage du
-  serveur, et quand les deux requêtes ne concordent pas, la synchronisation échoue au lieu de
-  signaler un succès.
+  signalent, la récupération avec le jeton et la récupération depuis le début : un cache périmé ou
+  un autre déploiement derrière la même URL ne peut donc pas faire revenir le store en arrière.
+  Une synchronisation qui ne récupère qu’une page suit quand même un redémarrage du serveur, et
+  quand les deux requêtes ne concordent pas, la synchronisation échoue au lieu de signaler un
+  succès. Les epochs vont dans un seul sens : un epoch que le store a quitté pour un epoch
+  ultérieur n’est jamais repris, même après `resetChangeToken()`, si bien qu’une réplique ou un
+  cache périmé qui répond aux deux requêtes ne peut pas non plus faire revenir le store en
+  arrière.
 - Les enregistrements supprimés le restent. Un serveur qui a perdu ses données, ou un autre
-  serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente. Un
+  serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente ; elles
+  rencontrent le nouvel historique par la réponse à leur envoi, pas par une page. Un
   enregistrement que l’app ne sait pas décoder, ou imbriqué sur plus de 64 niveaux, est mis de
   côté dans `quarantinedChanges()` au lieu d’arrêter la récupération.
 - Les réponses d’un serveur ont un coût borné. Un enregistrement imbriqué sur plus de 64 niveaux
   n’entre jamais dans le store, si bien qu’écrire le fichier ne peut pas faire déborder la pile ;
-  une page de données inutilisables, ou de plus de modifications que la récupération n’en a demandé
-  (1 000 au plus), est refusée en quelques millisecondes au lieu d’occuper des gigaoctets, et son
-  téléchargement est annulé ; une page plus grande que la limite de réponse fait demander moins de
-  modifications, et une modification qui dépasse seule la limite, jusqu’à quatre fois celle-ci, est
-  mise de côté ; un envoi est découpé en requêtes que la limite de corps du serveur accepte et
-  renvoyé par moitiés tant que sa réponse dépasse la limite de réponse, et une modification dont la
-  réponse seule la dépasse est mise en attente ; une marque d’ordre des octets UTF-8 est lue.
+  une page de données inutilisables, ou de plus de modifications que la récupération n’en a
+  demandé (1 000 au plus), est refusée en quelques millisecondes au lieu d’occuper des gigaoctets,
+  et son téléchargement est annulé ; une page plus grande que la limite de réponse fait demander
+  moins de modifications, et une modification qui dépasse seule la limite, jusqu’à quatre fois
+  celle-ci, est mise de côté ; un envoi est découpé en requêtes que la limite de corps du serveur
+  accepte et renvoyé par moitiés, avec 16 requêtes de plus au maximum, tant que le serveur répond
+  413 ou qu’une réponse 2xx dépasse la limite de réponse, et une modification dont la réponse
+  seule la dépasse reste incertaine ; d’un statut d’erreur, seuls les 4 premiers Kio sont lus, si
+  bien qu’une passerelle en difficulté coûte une seule tentative échouée ; une marque d’ordre des
+  octets UTF-8 est lue.
 - Une horloge en avance ou reculée, un serveur qui répond à chaque envoi par un conflit, un
   serveur qui ne répond jamais et un fichier impossible à écrire ont un effet borné : les
   serveurs de référence gardent un horodatage reçu au plus cinq minutes au-delà de leur propre
@@ -380,20 +392,24 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
 
 Le serveur ne doit jamais donner la même révision à deux versions d’un enregistrement, devrait
 envoyer un `epoch` qui ne passe qu’à des epochs ultérieurs (plus longs, ou plus grands octet par
-octet), un `sequence` qui continue de compter après un redémarrage, les horodatages reçus (une heure
-très en avance sur son horloge ramenée à une limite) et le `changeID` qui a écrit chaque version,
-doit retenir les ID de modification d’un redémarrage à l’autre, ne montrer une écriture dans les
-pages qu’une fois enregistrée et garder chaque page et la réponse à chaque modification envoyée dans
-la limite de réponse du client (une page contient au plus `limit` modifications, découpée aussi par
-octets, au moins une modification par page). Limites : les écritures qu’un serveur a perdues lors
-d’une restauration ne sont pas renvoyées, un enregistrement sauvegardé de nouveau juste après
-`discardChange(for:)` rencontre la copie du serveur comme un conflit, une seule instance du store
-par fichier (garanti avec `FileStore`, `InMemoryStorage` et les backends personnalisés qui
-fournissent une `claimIdentity`), le fichier entier est écrit à chaque modification, les
-enregistrements s’imbriquent sur 64 niveaux au plus, une page contient au plus 1 000 modifications,
-une modification seule plus grande que quatre fois la limite de réponse arrête la récupération, une
-modification dont la réponse d’envoi seule dépasse la limite de réponse est mise en attente, et les
-suppressions au-delà de 10 000 sont oubliées. [Garanties et
+octet) et ne revient jamais, un `sequence` qui continue de compter après un redémarrage, les
+horodatages reçus (une heure très en avance sur son horloge ramenée à une limite) et le `changeID`
+qui a écrit chaque version, doit retenir les ID de modification d’un redémarrage à l’autre, ne
+montrer une écriture dans les pages qu’une fois enregistrée et garder chaque page et la réponse à
+chaque modification envoyée dans la limite de réponse du client (une page contient au plus `limit`
+modifications, découpée aussi par octets, au moins une modification par page). Limites : les
+écritures qu’un serveur a perdues lors d’une restauration ne sont pas renvoyées, un enregistrement
+sauvegardé de nouveau juste après `discardChange(for:)` rencontre la copie du serveur comme un
+conflit, une seule instance du store par fichier (garanti avec `FileStore`, `InMemoryStorage` et
+les backends personnalisés qui fournissent une `claimIdentity`), le fichier entier est écrit à
+chaque modification, les enregistrements s’imbriquent sur 64 niveaux au plus, une page contient au
+plus 1 000 modifications, une modification seule plus grande que quatre fois la limite de réponse
+arrête la récupération, une modification dont la réponse d’envoi seule dépasse la limite de
+réponse reste incertaine et est mise en attente après sa dernière tentative, un epoch que le store
+a quitté reste refusé jusqu’à ce que le serveur en annonce un nouveau, une réplique qui répond
+huit synchronisations de suite avec un epoch que le store n’a jamais eu montre ses enregistrements
+périmés jusqu’à ce que le serveur réponde de nouveau, et les suppressions au-delà de 10 000 sont
+oubliées. [Garanties et
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) donne la
 liste complète.
 
