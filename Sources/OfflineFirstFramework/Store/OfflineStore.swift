@@ -29,6 +29,10 @@ public actor OfflineStore<Record: SyncableRecord> {
         /// server), a page that names the store's epoch is checked like another epoch, and a page
         /// without an epoch is not refused for it.
         var epochIsConfirmed = false
+        /// Whether the store held an epoch of this server (``serverIdentity``). An epoch after a
+        /// history without one is then not a first one, which the pull goes on with after the
+        /// token, but starts a new history (``OfflineStore/EpochStanding/replacing``).
+        var hasHeldEpoch = false
         /// Grows by one whenever the server's history changes: a new epoch or another server.
         var history: UInt64
         /// Server changes set aside, oldest first.
@@ -315,6 +319,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
                              serverEpoch: state.serverEpoch, epochIsConfirmed: state.epochIsConfirmed ? true : nil,
+                             hasHeldEpoch: state.hasHeldEpoch && state.serverEpoch == nil ? true : nil,
                              history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
                              retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs,

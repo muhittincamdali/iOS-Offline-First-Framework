@@ -31,7 +31,7 @@ extension OfflineStore {
                 // A page is checked before it is stored, so a broken one changes nothing.
                 try Self.checkProgress(of: page.response, after: page.token, requested: requested)
                 try store(page.response, startingHistory: index == 0 && step.standing.startsHistory,
-                          isLaterEpoch: step.standing == .later, report: &report)
+                          standing: step.standing, report: &report)
             }
             guard step.pages.last?.response.hasMore == true else { return }
         }
@@ -45,9 +45,9 @@ extension OfflineStore {
     /// second request of the other kind reports the same epoch, or the same lack of one: a pull
     /// from the beginning after a pull with the token, or a pull with the first page's token
     /// after a pull from the beginning. That is a later epoch (``EpochStanding/later``), the first
-    /// epoch the store hears of (``EpochStanding/first``), no epoch while only one request
-    /// reported the store's (``EpochStanding/missingUnconfirmed``), and the store's own epoch,
-    /// or none, before two requests reported it (``EpochStanding/unconfirmed``): the first page
+    /// epoch the store hears of (``EpochStanding/first``), one that replaces an epoch the store
+    /// cannot go by (``EpochStanding/replacing``), and the store's own epoch, or none, before two
+    /// requests reported it (``EpochStanding/unconfirmed``): the first page
     /// of a new store too, so one page from another deployment brings it neither records nor a
     /// token nor an epoch. An earlier epoch (``EpochStanding/earlier`` or
     /// ``EpochStanding/retired``), and no epoch while the store holds one two requests reported
@@ -127,16 +127,17 @@ extension OfflineStore {
     }
 
     /// Stores a checked page: its epoch, its changes and its token.
-    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool,
+    private func store(_ response: PullResponse<Record>, startingHistory: Bool, standing: EpochStanding,
                        report: inout SyncReport) throws {
         try update { state in
             if startingHistory {
-                Self.beginHistory(epoch: response.epoch, isLaterEpoch: isLaterEpoch, in: &state)
+                Self.beginHistory(epoch: response.epoch, standing == .later ? .laterEpoch : .replacement, in: &state)
             } else {
                 // The store's epoch, or the one two requests of this step reported, or that the
                 // server reports none.
                 state.serverEpoch = response.epoch
                 state.epochIsConfirmed = true
+                if response.epoch != nil { state.hasHeldEpoch = true }
             }
             for change in response.quarantined {
                 Self.quarantine(change, in: &state, report: &report)

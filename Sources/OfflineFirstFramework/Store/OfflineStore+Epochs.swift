@@ -16,14 +16,22 @@ import Foundation
 /// another deployment would bring records the server never held, a token for the pull to go
 /// on after, and sequences that make the server's own versions look older; and a later epoch on
 /// it would make the store refuse every page of its real server. The store holds an epoch, or
-/// none, once two requests reported it (``State/epochIsConfirmed``). A page that names no epoch, once
-/// two requests reported the store's, belongs to no history the store knows: a server that
-/// reports epochs reports one on every page. It is refused like an earlier epoch, so one page
-/// from another deployment cannot bring revisions, sequences and a token of its own into the
-/// store's history. Against an epoch only one request reported (a store file from before this
-/// check), a page without an epoch is not refused: that epoch may come from another deployment,
-/// and refusing the server's pages for it would lock the store out of a server without epochs
-/// for good. When two requests of a sync report no epoch, a new history without one starts.
+/// none, once two requests reported it (``State/epochIsConfirmed``). A page that names no
+/// epoch, once two requests reported the store's, belongs to no history the store knows: a
+/// server that reports epochs reports one on every page. It is refused like an earlier epoch, so
+/// one page from another deployment cannot bring revisions, sequences and a token of its own
+/// into the store's history.
+///
+/// A store file from before this check may hold an epoch only one request reported. Its next
+/// sync checks that epoch like another one. When two requests report an earlier epoch or none
+/// instead, the store cannot tell which of the two came from its server, and refusing the pages
+/// of the server would lock the store out for good: such an epoch, or the lack of one, starts a
+/// new history (``EpochStanding/replacing``), and the epoch the store held is not retired. A
+/// later epoch starts one as always. Either way the records without a pending change that the
+/// unchecked history brought go, since they may come from another deployment; the server's
+/// pages bring its own again. And once a history without an epoch replaced one, an epoch that
+/// two requests report again starts a new history too, instead of going on after the token of
+/// the history without one, which may be another deployment's.
 ///
 /// Epochs go one way. An epoch the store left for a later one is retired: the store keeps the
 /// last ``maximumRetiredEpochs`` of them in its file, ``OfflineStore/resetChangeToken()`` keeps
@@ -50,17 +58,18 @@ extension OfflineStore {
         case first
         /// A later epoch than the store's: the server's history changed.
         case later
+        /// An epoch, or none, that replaces one the store cannot go by: an earlier epoch, or no
+        /// epoch, while no two requests reported the store's (a store file from before the
+        /// check), whose epoch may have come from another deployment behind the same URL; or an
+        /// epoch after a history without one replaced the store's. Once a second request reports
+        /// it too, it starts a new history; the store's epoch is not retired.
+        case replacing
         /// The page names no epoch although the store holds one that two requests reported. A
         /// server that reports epochs reports one on every page (see <doc:ServerProtocol>), so
         /// the page comes from somewhere else behind the same URL: another deployment, a server
         /// of an older version, a proxy or cache that answers for it. Its revisions, sequences
         /// and token belong to no history the store knows, so it is never taken.
         case missing
-        /// The page names no epoch while only one request reported the store's (a store file
-        /// from before the check): that epoch may have come from another deployment behind the
-        /// same URL. It is not refused; once a second request reports no epoch either, it starts
-        /// a new history without one.
-        case missingUnconfirmed
         /// An earlier epoch than the store's that the store never held: a stale replica or cache
         /// of a history between two the store saw, or a server whose epochs do not grow. It is
         /// never taken.
@@ -72,7 +81,7 @@ extension OfflineStore {
         /// Whether a page of this epoch, once a second request confirmed it, starts a new server
         /// history.
         var startsHistory: Bool {
-            self == .later || self == .missingUnconfirmed
+            self == .later || self == .replacing
         }
 
         /// Whether a page of this epoch is never stored.
@@ -87,9 +96,10 @@ extension OfflineStore {
         }
         if epoch == state.serverEpoch { return state.epochIsConfirmed ? .current : .unconfirmed }
         if let epoch, state.retiredEpochs.contains(epoch) { return .retired }
-        guard let known = state.serverEpoch else { return .first }
-        guard let epoch else { return state.epochIsConfirmed ? .missing : .missingUnconfirmed }
-        return isLater(epoch, than: known) ? .later : .earlier
+        guard let known = state.serverEpoch else { return state.hasHeldEpoch ? .replacing : .first }
+        if let epoch, isLater(epoch, than: known) { return .later }
+        guard state.epochIsConfirmed else { return .replacing }
+        return epoch == nil ? .missing : .earlier
     }
 
     /// The order of epochs: a longer one is later; of two as long, the one that is greater byte
@@ -118,39 +128,59 @@ extension OfflineStore {
             "The server answered from the epoch \(name), which the store left for a later one, as a stale replica or cache would.")
     }
 
+    /// Why a new server history starts.
+    enum HistoryChange: Equatable {
+        /// Two requests reported a later epoch than the store's (``EpochStanding/later``).
+        case laterEpoch
+        /// Two requests reported an epoch, or none, in place of one the store cannot go by
+        /// (``EpochStanding/replacing``).
+        case replacement
+        /// The transport names another server (``SyncTransport/serverIdentity``).
+        case anotherServer
+    }
+
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
     /// another server. The token goes, so the next pull starts from the beginning. Entries keep
     /// their revisions (a pending change still names its base) but belong to the old history:
     /// the server's current versions replace the ones without a pending change whatever their
     /// timestamps say, and a pending change learns where it stands from its push's answer.
     ///
-    /// `isLaterEpoch` is true for a later epoch of the same server, and false for another server
-    /// (``SyncTransport/serverIdentity``) and for pages without an epoch that replace one a
-    /// single request reported (``EpochStanding/missingUnconfirmed``). A later epoch retires the
-    /// store's previous one. And a version that a push answer brought and no pull has brought
-    /// since (``StoredEntry/pushedInHistory``) moves into the later history with what the store
-    /// knows about its order. The sync pushes before it pulls, so the server may have answered
-    /// after its restart: a page of the new epoch from before that answer (a shared cache, a
-    /// lagging replica) would otherwise roll back the store's accepted write, or the version a
-    /// conflict answer brought, and the next edit would be resolved against the device's own
-    /// write.
+    /// A later epoch retires the store's previous one. And a version that a push answer brought
+    /// and no pull has brought since (``StoredEntry/pushedInHistory``) moves into the later
+    /// history with what the store knows about its order. The sync pushes before it pulls, so
+    /// the server may have answered after its restart: a page of the new epoch from before that
+    /// answer (a shared cache, a lagging replica) would otherwise roll back the store's accepted
+    /// write, or the version a conflict answer brought, and the next edit would be resolved
+    /// against the device's own write.
+    ///
+    /// A history no two requests reported (a store file from before the check) may be another
+    /// deployment's. When pages start the next one, its entries without a pending change go, and
+    /// none moves into the next history; the pull from the beginning brings the server's versions.
     ///
     /// Two requests reported the new history's epoch, or that it has none, unless the store
-    /// talks to another server: then its first page is checked like a new store's.
-    static func beginHistory(epoch: String?, isLaterEpoch: Bool, isAnotherServer: Bool = false, in state: inout State) {
+    /// talks to another server: then its first page is checked like a new store's, and that
+    /// server's first epoch is a first one again.
+    static func beginHistory(epoch: String?, _ change: HistoryChange, in state: inout State) {
         let previous = state.history
-        if isLaterEpoch, let left = state.serverEpoch, left != epoch {
+        let leavesUncheckedHistory = change != .anotherServer && !state.epochIsConfirmed
+        if change == .laterEpoch, let left = state.serverEpoch, left != epoch {
             state.retiredEpochs.removeAll { $0 == left }
             state.retiredEpochs.append(left)
             state.retiredEpochs.removeFirst(max(0, state.retiredEpochs.count - maximumRetiredEpochs))
         }
         state.history &+= 1
         state.serverEpoch = epoch
-        state.epochIsConfirmed = !isAnotherServer
+        state.epochIsConfirmed = change != .anotherServer
+        state.hasHeldEpoch = change == .anotherServer ? false : state.hasHeldEpoch || epoch != nil
         state.token = nil
         state.quarantine.removeAll()
-        for (id, entry) in state.entries {
-            let keepsPosition = isLaterEpoch && entry.pushedInHistory != nil && entry.history == previous
+        for (id, entry) in state.entries where entry.history == previous || entry.deferredRemote != nil {
+            if leavesUncheckedHistory, entry.pending == nil, entry.history == previous {
+                state.entries[id] = nil
+                continue
+            }
+            let keepsPosition = change == .laterEpoch && !leavesUncheckedHistory && entry.pushedInHistory != nil
+                && entry.history == previous
             guard entry.deferredRemote != nil || keepsPosition else { continue }
             state.entries[id]?.deferredRemote = nil
             if keepsPosition { state.entries[id]?.history = state.history }

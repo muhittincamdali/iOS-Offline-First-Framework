@@ -5,7 +5,7 @@ import Testing
 
 /// A feed server with an epoch and positions for tokens, sequences optional: a token of
 /// another deployment makes it answer with nothing.
-private actor EpochFeedServer {
+actor EpochFeedServer {
     struct Stored { var record: Note?; var revision: String; var position: Int; var changeID: UUID? }
     let epoch: String
     let sendsSequences: Bool
