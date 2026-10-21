@@ -324,12 +324,7 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Writes a local version (`nil` for a deletion) and queues it.
     static func write(_ record: Record?, id: Record.ID, into state: inout State, configuration: Configuration) throws {
-        let timestamp: HLCTimestamp
-        do {
-            timestamp = try state.clock.tick(at: configuration.now())
-        } catch {
-            throw OfflineFirstError.clock(error)
-        }
+        let timestamp = try tick(&state, configuration: configuration)
         var entry = state.entries[id]
             ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil,
                            history: state.history)

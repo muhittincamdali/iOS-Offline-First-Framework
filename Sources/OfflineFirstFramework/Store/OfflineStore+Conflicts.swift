@@ -11,9 +11,9 @@ extension OfflineStore {
                  pushesInThisSync: Int?, report: inout SyncReport) throws -> StoredEntry<Record> {
         // Two deletions are a conflict too: with last write wins the newer one has to stay on the
         // server, or an older edit based on the older deletion would bring the record back.
-        let limit = Self.driftLimit(of: state, configuration: configuration)
-        let conflict = Conflict(recordID: entry.id, local: entry.record, localTimestamp: entry.timestamp,
-                                remote: remote.record, remoteTimestamp: Self.clamped(remote.timestamp, to: limit))
+        let conflict = Conflict(recordID: entry.id, local: entry.record, localTimestamp: entry.timestamp, remote: remote.record,
+                                remoteTimestamp: Self.clamped(remote.timestamp, to: Self.driftLimit(of: state, around: entry.timestamp,
+                                                                                                  configuration: configuration)))
         var result = entry
         switch configuration.conflictResolver.resolve(conflict) {
         case .keepRemote:
@@ -22,11 +22,7 @@ extension OfflineStore {
             return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
         case .merged(let merged):
             result.record = merged
-            do {
-                result.timestamp = try state.clock.tick(at: configuration.now())
-            } catch {
-                throw OfflineFirstError.clock(error)
-            }
+            result.timestamp = try Self.tick(&state, configuration: configuration)
         case .keepLocal:
             break
         }

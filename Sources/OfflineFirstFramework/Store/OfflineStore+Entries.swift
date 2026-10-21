@@ -18,7 +18,7 @@ extension OfflineStore {
     static func entry(from remote: RemoteChange<Record>, replacing existing: StoredEntry<Record>?, in state: inout State,
                       configuration: Configuration) -> StoredEntry<Record> {
         let limit = driftLimit(of: state, configuration: configuration)
-        let timestamp = clamped(remote.timestamp, to: limit) ?? (try? state.clock.tick(at: configuration.now())) ?? state.clock.latest
+        let timestamp = clamped(remote.timestamp, to: limit) ?? (try? tick(&state, configuration: configuration)) ?? state.clock.latest
         return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
                            position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
                            sequence: remote.sequence, serverTimestamp: orderable(remote.timestamp, below: limit))
@@ -41,16 +41,52 @@ extension OfflineStore {
 
     /// The latest wall time, in milliseconds, a server timestamp may carry:
     /// ``Configuration/maximumClockDrift`` after the device clock, or after the newest timestamp
-    /// the store wrote or took in when that is later. Counting from the newest timestamp keeps
-    /// the limit above every local write, so a device whose clock was set back does not move
-    /// other devices' later edits below its own earlier ones. The newest timestamp is itself at
-    /// most the drift ahead of the device clock when it was taken in, so the limit is never more
-    /// than twice the drift ahead of the latest time the device clock showed.
+    /// the store wrote or took in when that is later and itself at most the drift ahead. The
+    /// limit is therefore never more than twice the drift ahead of the device clock: a clock that
+    /// showed a time far ahead for a moment does not make the store trust timestamps that far
+    /// ahead.
     static func driftLimit(of state: State, configuration: Configuration) -> Int64 {
         let now = HybridLogicalClock.milliseconds(since1970: configuration.now())
-        let (limit, overflow) = max(now, state.clock.latest.wallTime)
-            .addingReportingOverflow(configuration.maximumClockDrift.clampedMilliseconds)
-        return overflow ? .max : limit
+        let drift = max(0, configuration.maximumClockDrift.clampedMilliseconds)
+        return adding(drift, to: max(now, min(state.clock.latest.wallTime, adding(drift, to: now))))
+    }
+
+    /// The limit for weighing a server version against a local write stamped `local`: the drift
+    /// limit, or the drift after the local write when that is later. A device whose clock was set
+    /// back after it wrote then still takes a newer edit from another device as newer than its
+    /// own older one.
+    static func driftLimit(of state: State, around local: HLCTimestamp, configuration: Configuration) -> Int64 {
+        let drift = max(0, configuration.maximumClockDrift.clampedMilliseconds)
+        return max(driftLimit(of: state, configuration: configuration), adding(drift, to: local.wallTime))
+    }
+
+    /// The next timestamp for a local write. A clock further ahead of the device clock than
+    /// ``Configuration/maximumClockDrift`` (the device clock showed a time far ahead for a while,
+    /// a game's time travel, and was set back) goes on from that limit instead: otherwise one
+    /// moment of a wrong clock would stamp every later write that far ahead, and last write wins
+    /// would prefer each of them over later edits on other devices for as long. The store's
+    /// timestamps then go back once; its own writes of a record are ordered by the revision
+    /// they are based on, not by their timestamps.
+    static func tick(_ state: inout State, configuration: Configuration) throws -> HLCTimestamp {
+        let now = configuration.now()
+        let ceiling = adding(max(0, configuration.maximumClockDrift.clampedMilliseconds), to: HybridLogicalClock.milliseconds(since1970: now))
+        if state.clock.latest.wallTime > ceiling {
+            let nodeID = state.clock.nodeID
+            state.clock = HybridLogicalClock(nodeID: nodeID, maximumDrift: configuration.maximumClockDrift,
+                                             latest: HLCTimestamp(wallTime: ceiling, counter: 0, nodeID: nodeID))
+        }
+        do {
+            return try state.clock.tick(at: now)
+        } catch {
+            throw OfflineFirstError.clock(error)
+        }
+    }
+
+    /// `value + amount`, at the end of the range instead of overflowing.
+    private static func adding(_ amount: Int64, to value: Int64) -> Int64 {
+        let (sum, overflow) = value.addingReportingOverflow(amount)
+        guard overflow else { return sum }
+        return amount > 0 ? .max : .min
     }
 
     /// `timestamp` moved back to `limit` when it is further ahead: how last write wins weighs a

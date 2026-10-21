@@ -119,6 +119,39 @@ struct ClockSkewTests {
         #expect(await b.record("x")?.text == "B edit, later in real time")
     }
 
+    /// The device clock shows a time a year ahead while the app saves another record, then is
+    /// set right. The store's clock does not stay a year ahead: a day later the device's edit
+    /// loses to an edit another device makes three hours after it, also when the device itself
+    /// weighs the two.
+    @Test(arguments: [true, false])
+    func aMomentOfAClockFarAheadDoesNotStampLaterWrites(deviceResolves: Bool) async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let device = TestClock()
+        let a = try makeStore(server, name: "a", clock: device)
+        let b = try makeStore(server, name: "b")
+        await server.write(Note(id: "x", text: "v0"))
+        try await a.sync()
+        try await b.sync()
+        device.advance(by: 365 * 86_400)
+        try await a.save(Note(id: "other", text: "saved during the time travel"))
+        device.advance(by: -365 * 86_400)
+        clock.advance(by: 86_400)
+        device.advance(by: 86_400)
+        try await a.save(Note(id: "x", text: "A edit"))
+        let stamped = try #require(await a.state.entries["x"]?.timestamp.wallTime)
+        #expect(stamped <= HybridLogicalClock.milliseconds(since1970: device.now) + 300_000)
+        if !deviceResolves { try await a.sync() }
+        clock.advance(by: 3 * 3_600)
+        device.advance(by: 3 * 3_600)
+        try await b.save(Note(id: "x", text: "B edit, three hours later"))
+        try await b.sync()
+        try await a.sync()
+        try await b.sync()
+        #expect(await server.record("x")?.text == "B edit, three hours later")
+        #expect(await a.record("x")?.text == "B edit, three hours later")
+        #expect(await b.record("x")?.text == "B edit, three hours later")
+    }
+
     /// X edits offline, then its clock is set back, by ten minutes or a day; Y edits an hour
     /// later. The drift limit must not push Y's newer edit below X's older one, or last write
     /// wins would put X's edit back on the server.

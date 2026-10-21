@@ -45,11 +45,13 @@ extension OfflineStore {
         /// Each takes a few hundred bytes in the file. Default: 10,000.
         public var maximumTombstones: Int
 
-        /// How far a server timestamp may be ahead of the device clock, or of the newest
-        /// timestamp the store holds when that is later (after the device clock was set back).
-        /// The store does not move its clock to a timestamp further ahead of the device clock;
-        /// last write wins weighs such a timestamp against local writes as if it were at the
-        /// limit, and server versions are not ordered by it. Default: 5 minutes.
+        /// How far a server timestamp may be ahead of the device clock, or of the local write
+        /// it is weighed against when that is later (after the device clock was set back). The
+        /// store does not move its clock to a timestamp further ahead of the device clock, and a
+        /// clock that is further ahead (the device clock showed a time far ahead and was set
+        /// back) goes on from the limit with the next local write; last write wins weighs a
+        /// server timestamp beyond the limit against local writes as if it were at the limit,
+        /// and server versions are not ordered by it. Default: 5 minutes.
         public var maximumClockDrift: Duration
 
         /// What happens when the store file cannot be read. Default: ``CorruptionPolicy/fail``.
