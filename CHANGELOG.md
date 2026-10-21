@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third and
-fourth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
+fourth and fifth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -109,7 +109,29 @@ now state what the store promises and what it needs from the server.
 - One change nested deeper than 512 levels, in its record or in a field the app ignores, made
   `JSONDecoder` refuse the whole page, so the token never moved and no later change arrived; one
   such conflict answer made the whole push answer unreadable. `HTTPSyncTransport` now reads each
-  change and each outcome on its own and sets such a change aside.
+  change and each outcome on its own and sets such a change aside. Reading them on its own also
+  made a page or push answer that starts with a UTF-8 byte order mark fail as a whole; the mark
+  is skipped again, and a body in UTF-16 or UTF-32 fails with an error that names the encoding.
+- A record nested a few hundred levels deep, such as an outline 180 blocks deep in a page of
+  5 KB, ended the process with a stack overflow when the store file was written, on every sync
+  and in debug and release builds alike, whatever server or transport delivered it. Records are
+  now limited to 64 levels (`OfflineStore.maximumRecordDepth`), as the reference server limits
+  them: a deeper one from a page or a push answer is set aside before it is decoded or stored,
+  a merge that makes one keeps the server's version, and `save(_:)` refuses one.
+- A 16 MiB page of elements that are not changes, `{"changes":[0,0,...]}`, took gigabytes of
+  memory and seconds of work on every sync, which iOS ends, so every launch crashed again. A page
+  now lists at most 100 changes it sets aside, is refused beyond 1,000 that cannot be read, and
+  stops being read when the sync is cancelled or passes its deadline.
+- Records within the reference server's limits added up to a first page larger than the 16 MiB
+  the transport reads (68 records of 250 KiB made 17 MB), so every device that pulled from the
+  beginning, a new one, one after `resetChangeToken()` and all of them after a server restart,
+  failed on that page for good. The reference server cuts its pages at 8 MiB; the transport sends
+  `limit`, asks for half as many changes while a page is too large, and sets aside a single
+  change that is larger than the limit, moving past it.
+- A few large records made a push larger than the reference server's 1 MiB body limit, so every
+  change of the batch failed with status 413 until it was parked. The transport splits a push
+  into requests of at most `maximumRequestSize`, halves a request the server refuses with 413,
+  and rejects a single change the server refuses so.
 
 ### Added
 
@@ -120,13 +142,16 @@ now state what the store promises and what it needs from the server.
 - `InMemorySyncServer.restart()` and `InMemorySyncServer.maximumClockDrift`.
 - `RemoteChange.changeID`: the ID of the pushed change that wrote a version, by which the store
   recognises its own writes; without it, the store compares the timestamps it pushed.
+- `OfflineStore.maximumRecordDepth`, `OfflineFirstError.recordNestedTooDeeply(limit:)`,
+  `PullResponse.quarantinedCount`, and the `pageSize` and `maximumRequestSize` parameters of
+  `HTTPSyncTransport`.
 
 ### Changed
 
 - The circuit breaker now pauses pulls only; changes that are due are still pushed, and
   `SyncReport.skipped` means the pull was skipped.
-- `OfflineFirstError` has the new case `storeChangedElsewhere(name:)`; a `switch` over it without
-  `default` needs that case.
+- `OfflineFirstError` has the new cases `storeChangedElsewhere(name:)` and
+  `recordNestedTooDeeply(limit:)`; a `switch` over it without `default` needs them.
 - `HTTPSyncTransport.Failure.unknownOutcome` is no longer thrown.
 - While a sync waits after a failed write of the store file, `sync()` throws that error without
   a request; the next write that succeeds ends the wait.
@@ -145,6 +170,9 @@ now state what the store promises and what it needs from the server.
   `OfflineFirstError.invalidServerResponse`.
 - The Node reference server rejects a record nested deeper than 64 levels or larger than 256 KiB
   of JSON, with a reason, and applies the other changes of the push.
+- `HTTPSyncTransport` sends `limit` with every pull and pushes in requests of at most 1 MiB.
+  Servers must keep every page within the client's response limit: at most `limit` changes, cut
+  by bytes, at least one change per page. The reference server cuts pages at 8 MiB.
 
 ## [2.0.0] - 2026-10-15
 

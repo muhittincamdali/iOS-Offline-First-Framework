@@ -46,10 +46,12 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 250 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 277 Swift Testing tests on macOS and an iPhone simulator,
   among them a property test that runs every conflict policy through lost requests, restarts,
-  token resets, overlapping syncs, small page limits and stale pages, 21 Node tests for the
-  server, and an end-to-end suite in CI that syncs two stores through the server over HTTP.
+  token resets, overlapping syncs, small page limits and stale pages, and tests that send pages of
+  junk, deeply nested records and pages larger than the response limit; 24 Node tests for the
+  server; and an end-to-end suite in CI that syncs stores through the server over HTTP, also with
+  68 records of 250 KiB across a server restart.
 
 ### What's included
 
@@ -336,9 +338,14 @@ app and server restarts and stale pages, as long as the server follows the
   URL cannot roll the store back. A sync that fetches a single page still follows a server
   restart, and when the two requests disagree the sync fails instead of reporting success.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
-  pull everything again and keep its pending changes. A record the app cannot decode, also one
-  nested deeper than `JSONDecoder` reads, is set aside in `quarantinedChanges()` instead of
-  stopping the pull.
+  pull everything again and keep its pending changes. A record the app cannot decode, or one
+  nested deeper than 64 levels, is set aside in `quarantinedChanges()` instead of stopping the
+  pull.
+- A server's answers have a bounded cost. A record nested deeper than 64 levels never enters
+  the store, so writing the file cannot overflow the stack; a page of junk is refused within
+  milliseconds instead of taking gigabytes; a page larger than the response limit makes the
+  pull ask for fewer changes, and a single change larger than the limit is set aside; a push is
+  split into requests the server's body limit takes; a UTF-8 byte order mark is read.
 - A clock that runs ahead or was set back, a server that answers every push with a conflict, a
   server that never answers and a file that cannot be written have a bounded effect: the
   reference servers keep a pushed timestamp at most five minutes past their own clock, a moment
@@ -349,9 +356,12 @@ The server must never give the same revision to two versions of a record, should
 `epoch` that only moves to later ones (longer, or greater byte by byte), a `sequence` that keeps
 counting across restarts, the pushed timestamps (a wall time far ahead of its clock moved back to
 a limit) and the `changeID` that wrote each version, and must remember change IDs across
-restarts. Limits: writes a server lost in a restore are not uploaded again, a record saved again
-right after `discardChange(for:)` meets the server's copy as a conflict, one store instance per
-file, the whole file is written on every change, and deletions beyond 10,000 are forgotten.
+restarts and keep every page within the client's response limit (at most `limit` changes, cut
+by bytes, at least one change per page). Limits: writes a server lost in a restore are not
+uploaded again, a record saved again right after `discardChange(for:)` meets the server's copy
+as a conflict, one store instance per file, the whole file is written on every change, records
+nest at most 64 levels, a page with more than 1,000 changes that cannot be read is refused, and
+deletions beyond 10,000 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

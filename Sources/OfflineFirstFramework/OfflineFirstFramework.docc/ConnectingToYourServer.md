@@ -26,7 +26,9 @@ let store = try OfflineStore<Todo>(name: "todos", transport: transport)
 The `headers` closure runs before every request, so it can refresh an expired token. A status
 outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` and the store
 retries the changes later. Responses longer than
-``HTTPSyncTransport/maximumResponseSize`` are not read.
+``HTTPSyncTransport/maximumResponseSize`` are not read: a pull asks for
+``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer. A push is sent in
+requests of at most ``HTTPSyncTransport/maximumRequestSize``.
 
 ## Write your own transport
 
@@ -80,6 +82,9 @@ The rules that keep sync correct:
   wrote the version, so the store recognises its own write after a lost answer; without it the
   store compares the timestamps it pushed, and a change made after a lost answer meets the
   resolver when the server changed the timestamp.
+- **Depth and size.** Records nest at most ``OfflineStore/maximumRecordDepth`` levels; the store
+  sets aside a deeper one it is handed, but a decoder runs before that and recurses once per
+  level, so limit the depth your decoder reads, and how much work one page may cost.
 - **Cancellation.** Stop both calls when their task is cancelled. The store cancels a request
   when every caller gave up and when the sync runs past
   ``OfflineStore/Configuration/syncTimeout``.

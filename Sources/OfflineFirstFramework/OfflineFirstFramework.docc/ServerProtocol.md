@@ -6,8 +6,10 @@ The two HTTP endpoints that ``HTTPSyncTransport`` calls, with every field.
 
 The transport is created with the URL of one collection, for example
 `https://api.example.com/sync/todos`, and adds `/push` and `/changes` to it. Bodies are JSON in
-UTF-8. Record IDs and records are encoded with the record type's own `Codable` conformance and
-the default `JSONEncoder` settings.
+UTF-8, with or without a byte order mark; an answer in UTF-16 or UTF-32 fails with a
+`DecodingError` that says so. Record IDs and records are encoded with the record type's own
+`Codable` conformance and the default `JSONEncoder` settings. A record nests objects and arrays
+at most ``OfflineStore/maximumRecordDepth`` (64) levels deep, its own object counting as one.
 
 ## Push
 
@@ -43,6 +45,13 @@ the default `JSONEncoder` settings.
 
 The answer has one outcome per change ID. A change without an outcome is retried later.
 
+The transport sends a push in requests of at most ``HTTPSyncTransport/maximumRequestSize``
+bytes (1 MiB by default), one after the other, and reads in each answer only the outcomes of
+that request's changes. Answer a request body that is larger than you accept with status 413:
+the transport sends it again as two halves, and a single change answered with 413 is rejected
+and parked, since it can never succeed. When a later request fails, the outcomes of the earlier
+ones still count.
+
 ```json
 {
   "outcomes": {
@@ -62,7 +71,7 @@ The answer has one outcome per change ID. A change without an outcome is retried
 
 ## Pull
 
-`GET <base>/changes` on the first sync, then `GET <base>/changes?since=<token>`.
+`GET <base>/changes?limit=<n>` on the first sync, then `GET <base>/changes?since=<token>&limit=<n>`.
 
 ```json
 {
@@ -88,6 +97,16 @@ The answer has one outcome per change ID. A change without an outcome is retried
 
 A change without `record` is a deletion. `timestamp`, `sequence`, `changeID` and `epoch` are
 optional. Conflict and rejection answers name the server's version in the same form.
+
+A page must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by default). Return at most
+`limit` changes (``HTTPSyncTransport/pageSize``, 100 by default), cut the page by bytes as well,
+and put at least one change in every page; the reference server cuts its pages at 8 MiB. Send
+`Content-Length`, so a page that is too large is refused before it is read. While a page is
+larger than the limit, the transport asks for half as many changes, down to one. A single change
+that is larger on its own is read as it streams in, without what it holds, set aside in
+``OfflineStore/quarantinedChanges()``, and the token moves past it. A server that ignores
+`limit` and sends a page that is too large fails every sync with
+``HTTPSyncTransport/Failure/responseTooLarge(limit:)``.
 Return changes oldest first, at most one per record, and a `token` the server understands as
 "after these". While `hasMore` is `true` the store asks again right away, up to
 ``OfflineStore/Configuration/maximumPullPages`` pages per sync; the token of such a page must
@@ -116,17 +135,23 @@ or cache sends, is refused until eight syncs in a row confirmed it, or taken at 
 change to the store. So serve the pull from the beginning (`GET <base>/changes` without
 `since`) from a cache only for a short time: every device asks for the same URL.
 
-A change the app cannot decode, for example a field of another type or one nested deeper than
-`JSONDecoder` reads (512 levels), is set aside in ``OfflineStore/quarantinedChanges()``; the
-rest of the page is used and the token moves on. A push outcome that cannot be read leaves only
-its own change unanswered.
+A change the app cannot decode, for example a field of another type, is set aside in
+``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. The
+transport walks each page once and measures every change before it decodes it: a change that is
+not an object, has no `recordID` or `revision`, or nests deeper than a record may is set aside
+without being decoded. A page lists the first 100 changes it sets aside and counts the others
+(``PullResponse/quarantinedCount``); a page with more than 1,000 changes that cannot be read is
+refused with a `DecodingError` and changes nothing. A push outcome that cannot be read, also one
+that nests deeper than the outcome, its current change and a record allow, leaves only its own
+change unanswered.
 
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its
 ``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes.
-The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB and
-pushes at 500 changes, rejects records nested deeper than 64 levels or larger than 256 KiB,
+The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB (status
+413), pushes at 500 changes and pages at `limit` changes (1,000 at most) and 8 MiB, rejects
+records nested deeper than 64 levels or larger than 256 KiB,
 accepts only timestamps that a JavaScript number holds exactly, moves a pushed wall time more
 than five minutes ahead of its clock back to that limit, sends back the change ID with every
 version, and saves the answers to the last 10,000 change IDs with its data.

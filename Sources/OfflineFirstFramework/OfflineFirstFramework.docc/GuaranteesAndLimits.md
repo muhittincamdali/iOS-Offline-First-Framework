@@ -14,7 +14,9 @@ pages of two, three or a hundred changes and one to a hundred pages per sync, fo
 wins, server wins, client wins and a merge. It
 checks the end state, that no accepted write is applied again after a later one, that no device
 goes back to an older server version of a record, and that no resolver is asked about a
-device's own write.
+device's own write. Further tests send the HTTP transport pages of junk, deeply nested records
+and pages larger than its limit, in debug and release builds, measure the memory a 16 MiB page
+costs, and run 68 records of 250 KiB against the reference server, also across its restart.
 
 ## Guarantees
 
@@ -61,9 +63,24 @@ device's own write.
   past a page that was not stored. When the two requests that check an epoch disagree (a cache
   answers the pull from the beginning with an older page), the sync fails without a change to
   the store instead of spending its pages and reporting success; it checks one epoch at most. A
-  change the app cannot read, also one nested deeper than `JSONDecoder` reads, is set aside in
+  change the app cannot read, also one nested too deeply, is set aside in
   ``OfflineStore/quarantinedChanges()`` and the rest of the page is used; a push outcome that
   cannot be read leaves only its own change unanswered.
+- **A server's answers have a bounded cost.** ``HTTPSyncTransport`` walks every page and push
+  answer once, without copying it, before it decodes any part, and stops when the sync is
+  cancelled or passes its deadline. A change or outcome nested deeper than
+  ``OfflineStore/maximumRecordDepth`` (64 levels, the record counting as one) is set aside
+  without being decoded, and no record that deep enters the store from a page, a push answer, a
+  merge or a save, from any transport: decoding, storing and encoding a record recurses once per
+  level on the 512 KiB stack of the task that syncs, and a few hundred levels ended the process
+  on every sync. A page lists at most 100 changes it sets aside and is refused beyond 1,000 that
+  cannot be read, so a 16 MiB page of junk costs milliseconds and a few times its size in
+  memory, not seconds and gigabytes. A page larger than
+  ``HTTPSyncTransport/maximumResponseSize`` makes the pull ask for half as many changes, down
+  to one, and a single change larger than the limit is set aside while the pull moves past it,
+  so no first page can lock out a device that pulls from the beginning. A push is sent in
+  requests of at most ``HTTPSyncTransport/maximumRequestSize``, halved when the server answers
+  413. A body may start with a UTF-8 byte order mark.
 - **A wrong clock has a bounded effect.** The reference servers move a pushed timestamp more
   than five minutes ahead of their clock back to that limit and send back the change ID that
   wrote each version (``RemoteChange/changeID``), by which the device recognises its own write.
@@ -107,6 +124,9 @@ device's own write.
   conflict with the device's own earlier write.
 - Remember the answers to change IDs for as long as a device may retry them, also across
   restarts; the reference servers keep the last 10,000.
+- Keep every page within the transport's response limit (16 MiB by default): return at most
+  `limit` changes, cut pages by bytes too, and put at least one change in each, as the
+  reference server does with 8 MiB. Answer a push body larger than you accept with status 413.
 - In a custom ``SyncTransport``, stop when the task is cancelled, so the deadline and
   cancellation can end a request.
 
@@ -137,8 +157,18 @@ device's own write.
 - **Old deletions are forgotten.** Beyond ``OfflineStore/Configuration/maximumTombstones``
   (10,000 by default) the oldest tombstones are dropped; a version of such a record that
   arrives late can bring it back.
-- **Quarantined changes wait.** A change the app cannot read is skipped until a newer version
-  of the record arrives or ``OfflineStore/resetChangeToken()`` pulls everything again.
+- **Quarantined changes wait.** A change the app cannot read, also one nested too deeply or
+  larger than the response limit on its own, is skipped until a newer version of the record
+  arrives or ``OfflineStore/resetChangeToken()`` pulls everything again.
+- **Records nest at most 64 levels.** ``OfflineStore/save(_:)`` refuses a deeper record with
+  ``OfflineFirstError/recordNestedTooDeeply(limit:)``, and a merge that makes one keeps the
+  server's version. A custom ``SyncTransport`` that decodes pages itself has to limit the depth
+  its decoder reads: the store measures the records it is handed, but the transport's decoder
+  runs first.
+- **A broken page stops the pull until the server changes it.** A page with more than 1,000
+  changes that cannot be read, a page whose structure is broken, and a page larger than the
+  response limit from a server that ignores `limit` fail every sync, without a change to the
+  store.
 - **A server without sequences and timestamps cannot be checked for order.** The store then
   takes every server version as the newest, so a stale page can roll a record back until the
   next change of it. The same holds without sequences for a version whose timestamp is missing

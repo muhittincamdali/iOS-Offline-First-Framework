@@ -160,8 +160,14 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 
     /// Creates a page.
     ///
-    /// - Parameter quarantinedCount: How many changes the transport set aside; at least, and by
-    ///   default, the number of `quarantined`.
+    /// - Parameters:
+    ///   - changes: Changed records, oldest first.
+    ///   - token: The position after these changes.
+    ///   - hasMore: Whether more changes follow.
+    ///   - epoch: The server's history, if the server reports it.
+    ///   - quarantined: Changes the transport could not read.
+    ///   - quarantinedCount: How many changes the transport set aside; at least, and by default,
+    ///     the number of `quarantined`.
     public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil,
                 quarantined: [QuarantinedChange] = [], quarantinedCount: Int? = nil) {
         self.changes = changes
