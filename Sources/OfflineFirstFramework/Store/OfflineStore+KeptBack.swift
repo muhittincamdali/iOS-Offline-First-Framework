@@ -5,14 +5,16 @@ import Foundation
 ///
 /// A pull leaves a change in doubt to its next push, and keeps the server versions it brings
 /// meanwhile. The push's answer then decides: accepted, a conflict or a rejection, it names the
-/// version the record is at now. The kept-back version takes that version's place only when the
-/// server's sequences show it is newer. A repeated push is answered from the server's memory of
-/// change IDs, with what was current then, so a version pulled since may be newer; but the pull
-/// may as well have come from a stale replica or cache, and a timestamp, which a device clock
-/// wrote, tells nothing. When nothing tells, the answer stands, and the next sync pulls from the
-/// beginning (``State/pullsFromBeginning``): that brings the server's current version, if it is
-/// another one, without taking a stale page over the answer. Not in the same sync, whose pull may
-/// go to the replica or cache the kept-back version came from.
+/// version the record is at now, and the kept-back version never takes its place. A repeated
+/// push is answered from the server's memory of change IDs, with what was current then, so a
+/// version pulled since may be newer; but the pull may as well have come from a stale replica or
+/// cache, and a timestamp, which a device clock wrote, tells nothing. Nor do the sequences: a push
+/// answer names no epoch, and after a restart that lost the data, or a restore, the server may
+/// have answered from a later history than the one the kept-back version came from, whose
+/// sequences start again. So the answer stands, and when the kept-back version may be newer, the
+/// next sync pulls from the beginning (``State/pullsFromBeginning``): that brings the server's
+/// current version, if it is another one, in the history the server is in. Not in the same sync,
+/// whose pull may go to the replica or cache the kept-back version came from.
 extension OfflineStore {
     /// How a version a pull kept back stands against the version a push answer names.
     enum KeptBackOrder: Equatable {
@@ -20,9 +22,8 @@ extension OfflineStore {
         case none
         /// The server's sequences show the kept-back version is older.
         case older
-        /// The server's sequences show the kept-back version is newer.
-        case newer
-        /// Nothing tells which of the two is newer.
+        /// Nothing tells which of the two is newer. A kept-back version with a later sequence
+        /// counts here too: the answer may come from a later history (see the type's notes).
         case unknown
     }
 
@@ -37,19 +38,15 @@ extension OfflineStore {
     /// before.
     func order(ofKeptBack deferred: RemoteChange<Record>?, against answered: StoredEntry<Record>, in state: State) -> KeptBackOrder {
         guard let deferred, deferred.revision != answered.revision else { return .none }
-        if isNewer(deferred, than: answered) { return .newer }
+        if isNewer(deferred, than: answered) { return .unknown }
         if isStale(deferred, comparedWith: answered, in: state) { return .older }
         return .unknown
     }
 
-    /// `answered`, or the version `deferred` in its place when the server's sequences show it is
-    /// newer. When nothing tells, `answered` stays and the next sync pulls from the beginning.
+    /// `answered`. When `deferred` may be newer, the next sync pulls from the beginning.
     func weigh(keptBack deferred: RemoteChange<Record>?, against answered: StoredEntry<Record>,
                in state: inout State) -> StoredEntry<Record> {
         switch order(ofKeptBack: deferred, against: answered, in: state) {
-        case .newer:
-            guard let deferred else { return answered }
-            return Self.entry(from: deferred, replacing: answered, in: &state, configuration: configuration)
         case .unknown:
             state.pullsFromBeginning = true
             return answered

@@ -86,7 +86,8 @@ struct DeliveryTests {
     /// The server applied A's change but the answer was lost; B then wrote on top of it. A pull
     /// that meets A's waiting change must not resolve it again under a new change ID, or A
     /// would put its change back over B's (with `.clientWins`). The next push, under the same
-    /// change ID, learns it was applied, and A takes B's version.
+    /// change ID, learns it was applied, and the sync after it, which pulls from the beginning,
+    /// brings B's version.
     @Test func aChangeWhoseAnswerWasLostIsNotPushedOverANewerWrite() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let transport = ScriptedTransport()
@@ -109,6 +110,7 @@ struct DeliveryTests {
         try await deviceA.sync()
         #expect(await deviceA.pendingChanges().count == 1)
         clock.advance(by: 10)
+        try await deviceA.sync()
         try await deviceA.sync()
         #expect(await server.record("x")?.text == "B, after seeing A")
         #expect(await deviceA.record("x")?.text == "B, after seeing A")
@@ -172,6 +174,7 @@ struct DeliveryTests {
         #expect(await deviceA.state.entries["x"]?.pending?.isInDoubt == true)
         try await deviceA.sync()
         clock.advance(by: 100)
+        try await deviceA.sync()
         try await deviceA.sync()
         #expect(await server.record("x")?.text == "B, after seeing A")
         #expect(await deviceA.record("x")?.text == "B, after seeing A")

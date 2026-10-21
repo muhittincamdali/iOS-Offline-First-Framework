@@ -136,10 +136,11 @@ struct AcceptedAnswerTests {
 
     /// The other way round: A#1 is applied and its answer lost; B pulls it and writes B#2 on
     /// top, and A pulls B#2 while A#1 is in doubt. The next push of A#1 is answered from the
-    /// server's memory: accepted. The kept-back version is the newer one here. With sequences
-    /// the store sees that and shows B#2 at once; without, it shows its own write, and the next
-    /// sync pulls from the beginning and brings B#2. No resolver is asked, and every device ends
-    /// with the server's version.
+    /// server's memory: accepted. The kept-back version is the newer one here, but a push answer
+    /// names no epoch, so its sequence cannot show that (after a restart that lost the data the
+    /// answer may come from a later history): the store shows its own write, and the next sync
+    /// pulls from the beginning and brings B#2. No resolver is asked, and every device ends with
+    /// the server's version.
     @Test(arguments: ScenarioPolicy.allCases, KeptBackVersionTests.options)
     func anAcceptedAnswerFromMemoryGivesWayToTheNewerVersionPulledSince(policy: ScenarioPolicy, options: ScenarioOptions) async throws {
         let world = ScenarioWorld(policy: policy, options: options)
@@ -162,7 +163,7 @@ struct AcceptedAnswerTests {
         world.clock.advance(by: 120)
         #expect(await scenarioSync(a.store) == nil)
         #expect(await a.store.pendingChanges().isEmpty)
-        #expect(await a.store.record("t")?.text == (options.sequences ? "B#2" : "A#1"))
+        #expect(await a.store.record("t")?.text == "A#1")
         // The app restarts; the pull from the beginning is still due.
         try a.reopen()
         #expect(await scenarioSync(a.store) == nil)

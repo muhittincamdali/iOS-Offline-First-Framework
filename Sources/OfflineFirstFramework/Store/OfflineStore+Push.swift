@@ -156,22 +156,20 @@ extension OfflineStore {
         guard isCurrent else { return }
         entry.pending = nil
         // A version a pull kept back while the change was in doubt follows the rule of every
-        // push answer (weigh(keptBack:against:in:)): it replaces the write only when the
-        // server's sequences show it came after it. Otherwise it may be a stale page (a lagging
-        // replica, a cache after resetChangeToken()), and showing it would make the next edit
-        // drop what the write held.
-        let accepted = entry
-        entry = weigh(keptBack: deferred, against: accepted, in: &state)
-        if entry.revision != accepted.revision { report.pulled += 1 }
+        // push answer (weigh(keptBack:against:in:)): it never replaces the write. It may be a
+        // stale page (a lagging replica, a cache after resetChangeToken()) or a version of the
+        // history before a restart that lost the data, and showing it would make the next edit
+        // drop what the write held. When it may be newer, the next sync pulls from the beginning.
+        entry = weigh(keptBack: deferred, against: entry, in: &state)
     }
 
     /// Handles the server's answer that `entry`'s pending change conflicts with `answer`.
     ///
     /// Who wrote the version the answer names decides first: the device's own write is never a
-    /// conflict, whatever a pull kept back meanwhile. Only for another device's version may a
-    /// version a pull kept back while the change was in doubt take the answer's place, and only
-    /// when the server's sequences show it is newer (see ``order(ofKeptBack:against:in:)``), the
-    /// rule an accepted answer and a rejection follow too.
+    /// conflict, whatever a pull kept back meanwhile. A version a pull kept back while the change
+    /// was in doubt never takes the answer's place (see ``order(ofKeptBack:against:in:)``), the
+    /// rule an accepted answer and a rejection follow too; when it may be newer, the change goes
+    /// out again under a new change ID, so the server answers with its current version.
     private func settle(_ entry: inout StoredEntry<Record>, conflictingWith answer: RemoteChange<Record>, pushesInThisSync: Int,
                         in state: inout State, report: inout SyncReport) throws {
         // The server did not apply the change, so it is no longer in doubt, and neither are its
@@ -226,20 +224,18 @@ extension OfflineStore {
             Self.base(&answered, on: answer, in: state, configuration: configuration)
             let keptBack = order(ofKeptBack: deferred, against: answered, in: state)
             if let pending = entry.pending, keptBack == .unknown {
-                // A pull kept another version back, and no sequences tell which of the two the
-                // server holds now: the answer may come from the server's memory of change IDs,
-                // from before the version pulled since, and the pulled version may come from a
-                // stale page. The resolver meets neither. The change goes out again under a new
+                // A pull kept another version back, and nothing tells which of the two the server
+                // holds now: the answer may come from the server's memory of change IDs, from
+                // before the version pulled since, the pulled version may come from a stale page,
+                // and a later sequence of it may belong to a history the server left. The resolver meets neither. The change goes out again under a new
                 // change ID on the same base, so the server answers with its current version.
                 entry.pending = conflictAttempt(renewed(pending), pushesInThisSync: pushesInThisSync, report: &report)
                 return
             }
             report.conflicts += 1
-            let current = keptBack == .newer ? deferred ?? answer : answer
-            entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
+            entry = try resolve(entry, against: answer, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
         }
-        // Every path above makes the version the answer named, or a newer one the server's
-        // sequences show, the version the entry is based on.
+        // Every path above makes the version the answer named the version the entry is based on.
         entry.pushedInHistory = state.history
     }
 
