@@ -106,23 +106,21 @@ struct Device {
     let name: String
     let storage = InMemoryStorage()
     let network: FlakyNetwork
-    let clock: TestClock
-    let resolver: ConflictResolver<Note>
+    let configuration: OfflineStore<Note>.Configuration
     var store: OfflineStore<Note>
 
-    init(name: String, network: FlakyNetwork, clock: TestClock, resolver: ConflictResolver<Note>) throws {
+    init(name: String, network: FlakyNetwork, clock: TestClock, resolver: ConflictResolver<Note>, pullPages: Int) throws {
         self.name = name
         self.network = network
-        self.clock = clock
-        self.resolver = resolver
-        store = try OfflineStore<Note>(name: name, storage: storage, transport: network,
-                                       configuration: makeConfiguration(clock: clock, resolver: resolver))
+        var configuration = makeConfiguration(clock: clock, resolver: resolver)
+        configuration.maximumPullPages = pullPages
+        self.configuration = configuration
+        store = try OfflineStore<Note>(name: name, storage: storage, transport: network, configuration: configuration)
     }
 
     /// The app ends and starts again with the same file.
     mutating func restart() throws {
-        store = try OfflineStore<Note>(name: name, storage: storage, transport: network,
-                                       configuration: makeConfiguration(clock: clock, resolver: resolver))
+        store = try OfflineStore<Note>(name: name, storage: storage, transport: network, configuration: configuration)
     }
 }
 

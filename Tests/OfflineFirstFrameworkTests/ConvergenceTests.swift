@@ -2,11 +2,13 @@ import Foundation
 import Testing
 @testable import OfflineFirstFramework
 
-/// Random saves, deletes, syncs and app restarts on two devices, with requests lost on the way,
-/// answers lost on the way back, stale pages from a lagging replica or a cache and server
-/// restarts; then a quiet network. For every conflict policy the server and both devices must
-/// end with the same records and nothing left in the queues, and a write the server accepted
-/// must never be accepted again after a later write replaced it (a lost update by a stale copy).
+/// Random saves, deletes, syncs (also two at once), app restarts and `resetChangeToken()` on two
+/// devices that fetch one, two, three or a hundred pages per sync from a server with small or
+/// large pages, with requests lost on the way, answers lost on the
+/// way back, stale pages from a lagging replica or a cache and server restarts; then a quiet
+/// network. For every conflict policy the server and both devices must end with the same
+/// records and nothing left in the queues, and a write the server accepted must never be
+/// accepted again after a later write replaced it (a lost update by a stale copy).
 /// Along the way no device may go back to an older server version of a record it holds without
 /// a local change (a stale page that rolls a record back), and no resolver may be asked about a
 /// version the device wrote itself (a conflict that is none). With last write wins every
@@ -51,14 +53,14 @@ struct ConvergenceTests {
     private func run(policy: Policy, seed: UInt64, sharedCache: Bool) async throws {
         let clock = TestClock()
         var random = SeededRandom(seed: seed)
-        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let server = InMemorySyncServer<Note>(pageSize: [2, 3, 100][Int(seed % 3)], now: { [clock] in clock.now })
         let ledger = Ledger()
         let resolver = Self.checking(policy.resolver, into: ledger)
         let shared = PageCache()
         var devices = try ["phone", "laptop"].enumerated().map { index, name in
             try Device(name: name, network: FlakyNetwork(server: server, ledger: ledger, cache: sharedCache ? shared : PageCache(),
                                                          seed: seed &+ UInt64(index)),
-                       clock: clock, resolver: resolver)
+                       clock: clock, resolver: resolver, pullPages: [1, 2, 3, 100][Int((seed &+ UInt64(index)) % 4)])
         }
         var oracle = Oracle()
         var held = HeldVersions()
@@ -68,7 +70,7 @@ struct ConvergenceTests {
             let id = Self.recordIDs[Int(random.next() % UInt64(Self.recordIDs.count))]
             let store = devices[device].store
             let name = devices[device].name
-            switch random.next() % 40 {
+            switch random.next() % 43 {
             case 0..<16:
                 let note = Note(id: id, text: "\(name) \(step)")
                 try await store.save(note)
@@ -82,11 +84,17 @@ struct ConvergenceTests {
                 } else {
                     oracle.removedOnTheDeviceOnly(device: name, id: id, accepted: await ledger.acceptedTimestamps(of: id))
                 }
-            case 22..<34:
+            case 22..<32:
                 _ = try? await store.sync()
+                await held.check(store, device: name, step: step, ledger: ledger)
+            case 32..<34:
+                async let first = try? store.sync()
+                async let second = try? store.sync()
+                _ = await (first, second)
                 await held.check(store, device: name, step: step, ledger: ledger)
             case 34..<36: try devices[device].restart()
             case 36: await server.restart()
+            case 37: try await store.resetChangeToken()
             default: clock.advance(by: Double(random.next() % 90))
             }
         }
@@ -98,7 +106,9 @@ struct ConvergenceTests {
             clock.advance(by: 3_600)
             for device in devices {
                 try await device.store.retryFailedChanges()
-                _ = try await device.store.sync()
+                // A device that fetches few pages per sync needs several syncs for a full pull.
+                var syncs = 0
+                while try await device.store.sync().hasMoreChanges, syncs < 10 { syncs += 1 }
                 await held.check(device.store, device: device.name, step: Self.steps, ledger: ledger)
             }
         }
