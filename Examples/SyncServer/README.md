@@ -53,8 +53,10 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 - Each epoch is later than the ones before: 16 hexadecimal digits of the start time in
   microseconds, or one more than the last epoch (also the one saved with `--data`) when that is
   later, so the server never reports an epoch again after a later one. Devices refuse a page
-  that names an earlier epoch than the one they know, as a stale replica or cache sends, and
-  never take back an epoch they left, also after `resetChangeToken()`.
+  that names an earlier epoch than the one they know in every sync, also after
+  `resetChangeToken()`, as a stale replica or cache sends one. Without `--data`, a start with
+  the clock set back before the previous start reports an earlier epoch, which devices refuse
+  for as long as that run lasts; run with `--data` where the clock may go back.
 - A change whose `baseRevision` is not the record's current revision gets a conflict with the
   current record.
 - The answers to the last 10,000 change IDs are remembered, and saved with `--data`, so a push

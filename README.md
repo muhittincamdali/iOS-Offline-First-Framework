@@ -46,16 +46,17 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 311 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 324 Swift Testing tests on macOS and an iPhone simulator,
   among them two property tests that run every conflict policy through lost requests, restarts,
   token resets, overlapping syncs, small page limits, stale pages, operations at once and crashes,
-  and tests that send pages of junk, deeply nested records, pages larger than the response limit
-  and pages with more changes than asked for, also streamed endlessly over a socket; 28 Node tests
-  for the server; and an end-to-end suite in CI that syncs stores through the server over HTTP,
-  also with 68 records of 250 KiB across a server restart, with 70 conflict answers of 250 KiB
-  that together exceed the response limit, with a write whose save failed before a restart, with a
-  push the server applied behind a proxy that answers 504, and with a replica that serves pages
-  from before a restart after a token reset.
+  scenario tests of a replica that answers a device for many syncs and of a crash at every write of
+  a sync, and tests that send pages of junk, deeply nested records, pages larger than the response
+  limit and pages with more changes than asked for, also streamed endlessly over a socket; 28 Node
+  tests for the server; and an end-to-end suite in CI that syncs stores through the server over
+  HTTP, also with 68 records of 250 KiB across a server restart, with 70 conflict answers of 250
+  KiB that together exceed the response limit, with a write whose save failed before a restart,
+  with a push the server applied behind a proxy that answers 504, and with a replica that serves
+  pages from before a restart after a token reset.
 
 ### What's included
 
@@ -338,14 +339,15 @@ app and server restarts and stale pages, as long as the server follows the
 - A stale copy never replaces a write the server accepted: the resolver is asked only when a
   record changed on the device and on another device, and an older server version is skipped,
   also right after the device's own write was accepted, even across a server restart the device
-  has not seen yet, and after `resetChangeToken()`.
+  has not seen yet, and after `resetChangeToken()`. A version the device wrote itself is never a
+  conflict, also when a stale page took the record back and the user edited on top of it.
 - Another server epoch counts only when two requests of one sync report it, the pull with the
   token and the pull from the beginning, so a stale cache or another deployment behind the same
   URL cannot roll the store back. A sync that fetches a single page still follows a server
   restart, and when the two requests disagree the sync fails instead of reporting success.
-  Epochs go one way: an epoch the store left for a later one is never taken again, also after
-  `resetChangeToken()`, so a stale replica or cache that answers both requests cannot take the
-  store back either.
+  Epochs go one way: an earlier epoch than the store's, one it left or one it never held, is
+  never taken, also after `resetChangeToken()`, so a stale replica or cache that answers both
+  requests, however many syncs in a row, cannot take the store back either.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
   pull everything again and keep its pending changes, which meet the new history through their
   push's answer, not through a page. A record the app cannot decode, or one nested deeper than 64
@@ -378,10 +380,8 @@ a conflict, one store instance per file (enforced for `FileStore`, `InMemoryStor
 backends that report a `claimIdentity`), the whole file is written on every change, records nest
 at most 64 levels, a page holds at most 1,000 changes, a single change larger than four times the
 response limit stops the pull, a change whose push answer alone is larger than the response limit
-stays in doubt and is parked after its last attempt, an epoch the store left stays refused until
-the server reports a new one, a replica that answers eight syncs in a row with an epoch the store
-never held shows its stale records until the server answers again, and deletions beyond 10,000 are
-forgotten.
+stays in doubt and is parked after its last attempt, an earlier epoch stays refused until the
+server reports one later than the store's, and deletions beyond 10,000 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

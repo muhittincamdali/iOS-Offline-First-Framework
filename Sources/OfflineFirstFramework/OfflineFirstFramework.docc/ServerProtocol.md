@@ -142,12 +142,15 @@ later epoch on every start, 16 hexadecimal digits of the time in microseconds, a
 front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). The store believes another epoch
 than its own only when two requests of one sync report it: the pull with its token and the
 pull from the beginning, or, without a token, the pull from the beginning and the pull after
-that page's token. A later epoch then starts a new history. **Never report an epoch again
-once you reported a later one**: the store retires an epoch it left for a later one, keeps the
-last 32 of them, and refuses a page that names one in every sync, as it comes from a stale
-replica or cache. An earlier epoch the store never held is refused until eight syncs in a row
-confirmed it, for a server whose epochs do not grow. ``OfflineStore/resetChangeToken()`` forgets
-the token only: the next sync pulls from the beginning, and the retired epochs stay refused.
+that page's token. A later epoch then starts a new history. **Never report an earlier epoch,
+and never report an epoch again once you reported a later one**: the store refuses a page that
+names an earlier epoch than its own in every sync, however many requests or syncs report it,
+as it comes from a stale replica or cache. That holds for an epoch the store left for a later
+one (it keeps the last 32 of them) and for one it never held, such as the epoch between two
+restarts. A server restored from a backup reports a new, later epoch; a server whose clock may
+go back keeps its last epoch and counts on from it, as the reference server does with `--data`.
+``OfflineStore/resetChangeToken()`` forgets the token only: the next sync pulls from the
+beginning, and earlier epochs stay refused.
 When the two requests disagree, the sync fails without a change to the store. So serve the pull
 from the beginning (`GET <base>/changes` without `since`) from a cache only for a short time:
 every device asks for the same URL, and right after a reset both requests of the check are

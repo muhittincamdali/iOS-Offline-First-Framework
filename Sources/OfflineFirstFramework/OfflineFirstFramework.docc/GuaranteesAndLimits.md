@@ -24,7 +24,9 @@ and run 68 records of 250 KiB against the reference server, also across its rest
 conflict answers of 250 KiB that together exceed the response limit, a write whose save
 failed across a restart of the reference server, a push the server applied behind a proxy that
 answers 504 or a 200 too long to read, and a replica that serves pages from before a restart
-after ``OfflineStore/resetChangeToken()``.
+after ``OfflineStore/resetChangeToken()``. Scenario tests run, for every policy, a replica of
+the epoch between two server restarts that answers a device for many syncs in a row, a change
+made during a pull, two syncs at once, and a crash at every write of a sync.
 
 ## Guarantees
 
@@ -40,8 +42,11 @@ after ``OfflineStore/resetChangeToken()``.
 - **A stale copy never replaces an acknowledged write.** A push names the revision it is based
   on, and the server applies it only while that revision is current. The resolver is asked only
   when a record changed on the device and, by another device, on the server: a version the
-  device wrote itself (a push applied although its answer was lost) is not a conflict, and the
-  change made on top of it goes out again on its revision. A server version older than the one
+  device wrote itself is not a conflict, and the change made on top of it goes out again on its
+  revision. That holds for a push applied although its answer was lost, and for a write the
+  server accepted even when a page the store could not order took the record back afterwards
+  and the user edited on top of that: the store keeps the change IDs and timestamps of the last
+  16 writes of each record the server holds or held. A server version older than the one
   the store holds (a page out of order, a lagging replica, a stale cache) is skipped and never
   pushed back, also right after the store's own write was accepted: until its echo arrives,
   the store knows the write is newer than every version up to the one it replaced, its own
@@ -66,16 +71,13 @@ after ``OfflineStore/resetChangeToken()``.
   replica or a stale cache therefore does not move the store or roll it back, and since both
   requests belong to one step, a sync that fetches a single page
   (``OfflineStore/Configuration/maximumPullPages``) still follows a restart.
-- **Epochs go one way.** An epoch the store left for a later one is never taken again: the store
-  keeps the last 32 it left in its file, ``OfflineStore/resetChangeToken()`` keeps them, and a
-  stale replica or a shared cache that answers both requests with one is refused in every
-  sync. After a reset both requests go to URLs that are the same for every device, so a cache
-  answers them easily.
-- **A refused epoch does not stop the store for good.** When the server keeps answering both
-  requests with an earlier epoch the store never held, eight syncs in a row, the store takes it
-  as the server's history, as a server whose epochs do not grow needs. Taking it retires
-  nothing, so when a stale source answered that long, the server's own later epoch brings the
-  store back.
+- **Epochs go one way.** An earlier epoch than the store's is never taken, however many
+  requests or syncs report it: an epoch the store left for a later one (the store keeps the
+  last 32 it left in its file, and ``OfflineStore/resetChangeToken()`` keeps them), and an
+  epoch the store never held, such as the one between two server restarts. A stale replica or
+  a shared cache that answers both requests with one is refused in every sync, also one that
+  sticks to a device for many syncs. After a reset both requests go to URLs that are the same
+  for every device, so a cache answers them easily.
 - **A pull either moves forward or fails visibly.** A page is checked before it is stored: a
   token that does not move or goes round in a circle fails the sync, and the token never moves
   past a page that was not stored. When the two requests that check an epoch disagree (a cache
@@ -142,9 +144,10 @@ after ``OfflineStore/resetChangeToken()``.
   counter.
 - Report an ``PullResponse/epoch`` that changes whenever its history may have changed, to a
   later one: longer, or as long and greater byte by byte (a counter, or the start time in
-  fixed-width digits, as the reference servers do). Never report an epoch again once you
-  reported a later one, and serve the pull from the beginning from a shared cache for a short
-  time at most. Report a ``RemoteChange/sequence`` that grows with
+  fixed-width digits, as the reference servers do). Never report an earlier epoch, also not
+  after a restore or with a clock set back: the store refuses it in every sync. Never report an
+  epoch again once you reported a later one, and serve the pull from the beginning from a
+  shared cache for a short time at most. Report a ``RemoteChange/sequence`` that grows with
   every write, also across a restart that keeps the data. Without a sequence the store orders
   versions by their timestamps, which matches the server's order only while the devices
   resolve conflicts by last write wins or a merge.
@@ -222,25 +225,25 @@ after ``OfflineStore/resetChangeToken()``.
   server's version of the record is smaller or ``HTTPSyncTransport/maximumResponseSize`` is
   raised, and ``OfflineStore/discardChange(for:)`` drops the change. The same holds for a single
   change the server refuses with status 413.
-- **An epoch the store left stays refused.** A store that took a later epoch from another
-  deployment behind the same URL refuses the first server's epoch for good, also after
-  ``OfflineStore/resetChangeToken()``; it follows that server again once it reports a new epoch.
-- **A replica that sticks to a device for eight syncs can roll records back for a while.** When
-  a stale source answers both requests of eight syncs in a row with an earlier epoch the store
-  never held, the store takes that history: records without a pending change show the stale
-  versions until the server's own later epoch answers again. Pending changes wait for their
-  push, so a parked change of the earlier history meets the server's version only once it is
-  retried.
+- **An earlier epoch stays refused.** A store that took a later epoch from another deployment
+  behind the same URL, also as its first epoch, refuses the real server's earlier one in every
+  sync, also after ``OfflineStore/resetChangeToken()``, and keeps its records and pending
+  changes; it follows that server again once the server reports an epoch later than the one the
+  store holds. A server whose epoch went back, after a restart with its clock set back and
+  without its saved epoch, is refused the same way until it reports one later than the store's.
 - **A server without sequences and timestamps cannot be checked for order.** The store then
   takes every server version as the newest, so a stale page can roll a record back until the
   next change of it. The same holds without sequences for a version whose timestamp is missing
   or beyond the drift limit; on a device whose clock is far behind, that can be every timestamp
-  from a correct clock.
+  from a correct clock. When the version a stale page replaced was the device's own accepted
+  write, an edit made on the stale copy still replaces that write without a conflict.
 - **A copied store file shares its node ID.** A file restored onto a second device, or moved
   with a migration while the first device stays in use, stamps its writes with the same node
   ID. The store neither orders versions nor recognises its own writes by the node ID alone,
-  but from a server without change IDs two of their timestamps can be equal; the store then
-  keeps the server's version.
+  but from a server without change IDs two of their timestamps can be equal, and the store then
+  takes the other copy's write for its own: a version with the timestamp of its pending change
+  replaces that change, and a pending change goes out over a version with the timestamp of one
+  of its accepted writes without the resolver. Writes from before the copy belong to both.
 - **A device whose clock is behind loses concurrent edits.** Its clock does not move to
   timestamps from correct clocks that are beyond the drift limit, so its edits carry earlier
   timestamps until its clock catches up. An edit it makes on top of a version it received

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh and eighth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth and ninth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -77,15 +77,14 @@ now state what the store promises and what it needs from the server.
   now counts from the newest timestamp the store holds when that is later than the device
   clock, and server versions are ordered only by timestamps within the limit.
 - After a server restart, a page from a stale replica or cache could roll records back. Epochs
-  now have an order (a longer one is later; of two as long, the greater byte by byte): a page
-  of another epoch than the store's counts only when two requests of one sync report that
-  epoch, so one page from another deployment behind the same URL or a stale replica does not
-  move the store. An earlier epoch the store never held that both requests report in eight
-  syncs in a row is taken, so a server whose epochs do not grow is still followed. What a push answer tells about a record (an accepted
-  write, or the version a conflict answer brought) moves into a later epoch until a pull
-  brings that version: the push may have been answered after a restart the store had not
-  seen, and a page of the new epoch from before it no longer rolls the write back or makes the
-  next edit meet the device's own write as a conflict.
+  now have an order (a longer one is later; of two as long, the greater byte by byte): a page of
+  another epoch than the store's counts only when two requests of one sync report that epoch, so
+  one page from another deployment behind the same URL or a stale replica does not move the
+  store. An earlier epoch is never taken. What a push answer tells about a record (an accepted
+  write, or the version a conflict answer brought) moves into a later epoch until a pull brings
+  that version: the push may have been answered after a restart the store had not seen, and a
+  page of the new epoch from before it no longer rolls the write back or makes the next edit
+  meet the device's own write as a conflict.
 - A push that failed while the device clock was far ahead waited for a retry date that far
   ahead after the clock was set right, unreported; the circuit breaker's pause and the wait
   after a failed file write did the same. A wait longer than the policy allows now counts as
@@ -180,8 +179,17 @@ now state what the store promises and what it needs from the server.
   keeps the last 32 in its file through resets and refuses them in every sync.
 - A replica that answered eight syncs in a row with an epoch the store never held decided
   pending edits from its stale pages. A change made on an earlier server history now meets the
-  new one through its push's answer only; records without a pending change still follow the
-  new history until the server's own later epoch answers again.
+  new one through its push's answer only.
+- That replica's epoch, the one between two server restarts, was still taken after eight syncs
+  in a row: every record without a pending change went back to the replica's copy, also the
+  device's own accepted write, and the user's next edit met that write in the resolver, so
+  `.serverWins` dropped the edit on the server and the device. An earlier epoch is now refused
+  in every sync, whether the store left it or never held it.
+- The store forgot a write once the server accepted it. When a page the store could not order
+  took the record back and the user edited on top of it, the server's answer, or a later page,
+  that named the device's accepted write met the edit as another device's version. Each record
+  now keeps the change IDs and timestamps of its last 16 writes the server holds or held, and a
+  version one of them wrote is the device's own, never a conflict.
 
 ### Added
 
@@ -234,9 +242,10 @@ now state what the store promises and what it needs from the server.
   `Failure.responseTooLarge` for 2xx answers only. Only a 2xx answer that was read settles a
   pushed change.
 - `resetChangeToken()` forgets the token only; it no longer takes an earlier epoch at once. A
-  store never takes back an epoch it left for a later one, so servers must never report an
-  epoch again once they reported a later one. A store that followed another deployment behind
-  the same URL returns to the first server once that server reports a new epoch.
+  store never takes an earlier epoch than its own, one it left or one it never held, so servers
+  must never report an earlier epoch, nor an epoch again once they reported a later one. A store
+  that followed another deployment behind the same URL with a later epoch returns to the first
+  server once that server reports an epoch later still.
 - A page may hold at most the `limit` its pull asked for and, from any transport, 1,000 changes;
   `InMemorySyncServer.pageSize` is at most 1,000. A page beyond `limit` fails with a
   `DecodingError` instead of `HTTPSyncTransport.Failure.responseTooLarge`, and a single change

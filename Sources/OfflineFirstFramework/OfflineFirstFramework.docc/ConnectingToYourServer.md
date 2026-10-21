@@ -62,8 +62,8 @@ The rules that keep sync correct:
   arrive late without trusting device clocks, and ``PullResponse/epoch``, which changes to a
   later one (longer, or as long and greater byte by byte) when the server restarted, lost or
   replaced its data, so the store pulls everything again, and never goes back to an epoch it
-  reported before a later one; the store refuses a page with an earlier epoch than its own, as
-  a stale replica or cache would send, and never takes back an epoch it left. Give the transport a
+  reported before a later one; the store refuses a page with an earlier epoch than its own in
+  every sync, as a stale replica or cache would send one. Give the transport a
   ``SyncTransport/serverIdentity`` (the HTTP transport uses its URL), so a store opened with
   another server does not send it the old server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
