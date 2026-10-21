@@ -305,3 +305,42 @@ without sequences.
   timestamps until its clock catches up. An edit it makes on top of a version it received
   still replaces that version (there is no conflict); with last write wins, an edit made at the
   same time as one on a correct clock loses.
+
+## Known limitations: answers from another deployment
+
+The epoch check covers pages: one page from another deployment behind the same URL, a stale
+replica or a cache never counts. Answers that reach another deployment in other ways, or a
+deployment that is all a new store ever hears, are not covered, and the store cannot tell them
+from the real server's. They come from a load balancer, DNS or proxy that sends requests to the
+wrong deployment (staging and production, two regions with separate data), or from a replica
+that still serves the history from before a data loss. A setup that never sends a device's
+requests anywhere but one deployment with one history is not affected.
+
+- **A new store's first sync answered only by another history.** When both requests of a new
+  store's first sync reach another deployment, the store takes that deployment's state as the
+  server's. Without an epoch, it goes on after that deployment's token; a server whose tokens
+  are positions, unlike the reference servers, then never sends the records before that
+  position, while every sync succeeds. With a later epoch than the server's, every later sync
+  fails as from an earlier history, until the server reports a later epoch still. A copy of a
+  record from that deployment with a sequence beyond the server's stays on the device, and an
+  edit of it meets the server's version as a conflict that names an older version and parks.
+  When both pulls of the first sync reach a replica that serves the history from before the
+  server lost its data, while the push goes to the server, the replica's version of a record
+  replaces the device's own accepted write on the device, and the next edit replaces that write
+  on the server.
+- **One push answer from another deployment.** A conflict or rejected answer that names that
+  deployment's copy of a record, with a sequence beyond the server's, makes the device show
+  that copy and skip the server's later versions of the record as older, without an error. With
+  ``ConflictResolver/lastWriteWins`` and ``ConflictResolver/serverWins`` the resolver decides the
+  device's edit against that copy, so the edit can go; with ``ConflictResolver/clientWins`` and a
+  merge the edit parks in ``OfflineStore/failedChanges()``. An accepted answer from another
+  deployment, after a first sync it answered too, counts as the server accepting the write: the
+  server never gets it, and the device keeps its copy while other devices' edits of the record
+  do not arrive.
+
+Recovery: ``OfflineStore/resetChangeToken()`` brings back the records a token without an epoch
+skipped. The other cases do not end by themselves, also not after a server restart: read
+``OfflineStore/records()``, ``OfflineStore/pendingChanges()`` and
+``OfflineStore/failedChanges()``, release the store, move `<name>.store` aside with the
+``StorageBackend`` (``StorageBackend/move(_:to:)``), open a new store, sync, and save again what
+the user still needs. The new store checks its first page with a second request.

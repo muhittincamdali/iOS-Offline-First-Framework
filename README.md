@@ -46,7 +46,7 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 369 Swift Testing tests on macOS and an iPhone simulator, among
+- **Tested against a real server** — 374 Swift Testing tests on macOS and an iPhone simulator, among
   them three property tests that run every conflict policy through lost requests, restarts, token
   resets, overlapping syncs, small page limits, stale pages, operations at once and crashes, also
   against a server without sequences, scenario tests of a replica that answers a device for many
@@ -398,6 +398,16 @@ than the store's and a page without an epoch until it reports one again, and del
 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
+
+**Known limitations.** Answers from another deployment behind the same URL (a load balancer or proxy
+that sends a request to staging or to a region with separate data, or a replica that serves the
+history from before a data loss) are kept out as single pages only. When a new store's first sync
+reaches only that deployment, or one push answer comes from it, a record can keep that deployment's
+copy without an error, an edit can be decided against it or park, and a write the server never got
+can count as accepted. `resetChangeToken()` brings back the records that deployment's token skipped;
+otherwise move the store file aside and start a new store. [Guarantees and
+limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) has the
+details.
 
 ## Demo
 

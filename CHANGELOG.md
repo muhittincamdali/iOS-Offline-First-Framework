@@ -5,10 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.1] - Unreleased
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth and thirteenth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth and thirteenth rounds, and of a review of this release, each with a test
+that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -252,6 +253,17 @@ now state what the store promises and what it needs from the server.
   answer's place only when the sequences show it is newer. When nothing tells, the answer
   stands and the next sync pulls from the beginning, which brings a newer version the server
   holds.
+- A schema migration rewrote the stored records but not a version a pull had kept back for a
+  change in doubt. After an app update with a `RecordMigration`, a file holding such a version
+  failed to open with `corruptStore`, and `.moveAsideAndStartEmpty` set the file aside with its
+  pending changes. The kept-back version is now migrated with the records.
+- A store file of 2.0.0 does not say whether a pending change is in doubt, and the store read it
+  as not in doubt. An edit whose push the server applied while its answer was lost then met a
+  later edit made on top of it, by another device, as a conflict in the first pull after the
+  update, and `.clientWins` and the merge put the device's edit back over it on the server. A
+  pending change of such a file now counts as in doubt when its record was sent or the server
+  holds it, so its push decides. A value of the sync state that the file holds but that cannot
+  be read fails the open instead of counting as missing.
 
 ### Added
 
@@ -325,6 +337,29 @@ now state what the store promises and what it needs from the server.
 - The Node reference server's `Collection.push` takes `{ publish: false }` and `publish()`, and
   `createSyncServer` runs the saves one after another itself: a push is answered and shown in
   pages once its save succeeded.
+
+### Known limitations
+
+Answers that come from another deployment than the server (a load balancer, DNS or proxy that
+sends a request to staging instead of production or to a region with separate data, or a
+replica that still serves the history from before a data loss) are only partly covered: the
+epoch check keeps out one page, not these cases. Details and the way back are in
+"Guarantees and limits".
+
+- A new store whose first sync reaches only another deployment takes that deployment's state:
+  without an epoch it goes on after that deployment's token, which a server whose tokens are
+  positions never corrects (`resetChangeToken()` does); with a later epoch every later sync
+  fails until the server reports a later epoch still; a copy with a sequence beyond the server's
+  stays, and an edit of it parks. When both pulls of the first sync reach a replica of the
+  history from before a data loss while the push reaches the server, the device's own accepted
+  write can be replaced on the device and then by its next edit on the server.
+- One push answer from another deployment, a conflict or rejected answer with a sequence beyond
+  the server's, makes the device show that deployment's copy and skip the server's later
+  versions of the record without an error; with `.lastWriteWins` and `.serverWins` the edit can
+  go, with `.clientWins` and a merge it parks. An accepted answer from another deployment, after
+  a first sync it answered too, leaves the write off the server while the device keeps it.
+- These cases do not end by themselves, also not after a server restart: move the store file
+  aside and start a new store, saving again what the old one held that the user still needs.
 
 ## [2.0.0] - 2026-10-15
 
@@ -414,6 +449,6 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
 First tagged release. It could not be added as a dependency by version (see 2.0.0) and is not
 supported; use 2.0.0.
 
-[Unreleased]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v2.0.0...HEAD
+[2.0.1]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases/tag/v1.0.0
