@@ -345,9 +345,9 @@ app and server restarts and stale pages, as long as the server follows the
   of it, or a page lists an older own write before a version whose answer was lost. Without
   sequences a pull leaves a pending change to its push, also when the page brings an older write of
   the device itself, and the push's answer decides, accepted or not: a version a pull kept back
-  meanwhile takes its place only when the server's `sequence` shows it is newer. When nothing tells,
-  a conflict sends the change once more for a fresh answer, and any other answer stands while the
-  next sync pulls from the beginning.
+  meanwhile never takes its place, since a push answer names no epoch. When that version may be
+  newer, a conflict sends the change once more for a fresh answer, and any other answer stands while
+  the next sync pulls from the beginning.
 - Another server epoch, and the first one a store hears of, also on a new store's first page, counts
   only when two requests of one sync report it, the pull with the token and the pull from the
   beginning, so one page from a stale cache or another deployment behind the same URL cannot roll
@@ -404,8 +404,10 @@ that sends a request to staging or to a region with separate data, or a replica 
 history from before a data loss) are kept out as single pages only. When a new store's first sync
 reaches only that deployment, or one push answer comes from it, a record can keep that deployment's
 copy without an error, an edit can be decided against it or park, and a write the server never got
-can count as accepted. `resetChangeToken()` brings back the records that deployment's token skipped;
-otherwise move the store file aside and start a new store. [Guarantees and
+can count as accepted. A replica of the history from before a data loss that answers a store's pulls
+while its push reaches the server can replace the device's own accepted write. `resetChangeToken()`
+brings back the records that deployment's token skipped; otherwise move the store file aside and
+start a new store. [Guarantees and
 limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) has the
 details.
 

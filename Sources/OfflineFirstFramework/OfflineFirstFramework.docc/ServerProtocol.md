@@ -55,6 +55,10 @@ An answer must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by defau
 one, such as conflicts that each bring a large version of their record, makes the transport
 send the request again as two halves; answer a change ID you already applied with the outcome
 you gave it, as the reference server does from its memory of the last 10,000 change IDs.
+Keep that memory across restarts, and restore it with the data: after a restore from a backup,
+keep only the answers the backup holds, or none. An answer kept from after the backup names a
+version of a history the server left; the store takes it for an older version than it holds
+and holds the change back until it parks.
 Halving adds at most ``HTTPSyncTransport/maximumSplitRequests`` (16) requests to a push, and
 only status 413 or a 2xx answer longer than the limit halves a request. **The answer to a single
 change must not be longer than ``HTTPSyncTransport/maximumResponseSize``**: only an answer the

@@ -212,9 +212,8 @@ now state what the store promises and what it needs from the server.
   server named: an answer that named the device's own write still asked the resolver,
   `.serverWins` dropped the user's last edit, and a merge brought back an item another device
   had removed. The answer now decides: the device's own write is never a conflict, a kept-back
-  version takes the answer's place only when the sequences show it is newer, and when they
-  cannot tell, the change goes out once more under a new change ID, so the server answers with
-  its current version.
+  version never takes the answer's place, and when it may be newer, the change goes out once
+  more under a new change ID, so the server answers with its current version.
 - A page without an epoch was taken from a single request while the store held an epoch: one
   page from another deployment behind the same URL could give a record a sequence that made
   every later conflict answer of the real server look older, so each edit of the record was
@@ -249,10 +248,15 @@ now state what the store promises and what it needs from the server.
   another one, while a conflict answer already followed the server's sequences. A stale page (a
   cache after `resetChangeToken()`, a replica that sticks to the device) thus replaced the
   device's accepted write, and an edit of what the app showed dropped what that write held,
-  without a conflict. Every push answer now follows one rule: the kept-back version takes the
-  answer's place only when the sequences show it is newer. When nothing tells, the answer
-  stands and the next sync pulls from the beginning, which brings a newer version the server
-  holds.
+  without a conflict. Every push answer now follows one rule: the kept-back version never takes
+  the answer's place. When it may be newer, the answer stands and the next sync pulls from the
+  beginning, which brings a newer version the server holds.
+- After a server restart that lost the data, or a restore from a backup, a push answered from
+  the later history before a pull showed the store that history lost to a version a pull had
+  kept back from the earlier history, by its higher sequence: the device showed that version
+  instead of its accepted write, with every policy, and the next edit replaced the write on the
+  server without the resolver. A push answer names no epoch, so a kept-back version no longer
+  outranks it by a sequence; a version that is newer in the same history shows one sync later.
 - A schema migration rewrote the stored records but not a version a pull had kept back for a
   change in doubt. After an app update with a `RecordMigration`, a file holding such a version
   failed to open with `corruptStore`, and `.moveAsideAndStartEmpty` set the file aside with its
@@ -350,9 +354,12 @@ epoch check keeps out one page, not these cases. Details and the way back are in
   without an epoch it goes on after that deployment's token, which a server whose tokens are
   positions never corrects (`resetChangeToken()` does); with a later epoch every later sync
   fails until the server reports a later epoch still; a copy with a sequence beyond the server's
-  stays, and an edit of it parks. When both pulls of the first sync reach a replica of the
-  history from before a data loss while the push reaches the server, the device's own accepted
-  write can be replaced on the device and then by its next edit on the server.
+  stays, and an edit of it parks.
+- When the pulls of a sync reach a replica of the history from before a data loss while the push
+  reaches the server, in a new store's first sync or in a store that holds the epoch the replica
+  reports, the device's own accepted write can be replaced on the device and then by its next
+  edit on the server (random runs: 2 of 24,000 for seeds 200 to 699, 8 of 24,000 for seeds 5000
+  to 5499, all with a server that lost its data).
 - One push answer from another deployment, a conflict or rejected answer with a sequence beyond
   the server's, makes the device show that deployment's copy and skip the server's later
   versions of the record without an error; with `.lastWriteWins` and `.serverWins` the edit can
@@ -360,6 +367,9 @@ epoch check keeps out one page, not these cases. Details and the way back are in
   a first sync it answered too, leaves the write off the server while the device keeps it.
 - These cases do not end by themselves, also not after a server restart: move the store file
   aside and start a new store, saving again what the old one held that the user still needs.
+- A server restored from a backup that keeps its answers to change IDs from after the backup
+  holds a retried change back until it parks. Servers should restore that memory with the data;
+  on the device, `discardChange(for:)`, a sync and the edit saved again get a fresh answer.
 
 ## [2.0.0] - 2026-10-15
 

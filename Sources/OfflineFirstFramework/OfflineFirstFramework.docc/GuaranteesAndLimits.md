@@ -72,15 +72,16 @@ without sequences.
   from a stale copy: it leaves a pending change to its push, also when the page brings an older
   write of the device itself, and the resolver meets the version the server names in its
   conflict answer, never a stale page. The push's answer decides over a version a pull kept back
-  while the change was in doubt, by one rule for every answer: the kept-back version takes the
-  place of the version the answer names only when the server's sequences show it is newer, for
-  an accepted write when it came after the version the write was based on. An answer that names
-  or accepts the device's own write settles the change on that write. When the sequences cannot
-  tell, the answer may come from the server's memory of change IDs and the kept-back version
-  from a stale page: a conflict with another device's version sends the change once more under a
-  new change ID, and the server answers with its current version; any other answer stands, an
-  accepted write included, and the next sync pulls from the beginning, which brings the server's
-  current version if it is a newer one.
+  while the change was in doubt, by one rule for every answer: the kept-back version never takes
+  the place of the version the answer names. A push answer names no epoch, so no sequence orders
+  the two: the answer may come from the server's memory of change IDs, from before the version
+  pulled since; the kept-back version may come from a stale page; and after a restart that lost
+  the data, or a restore, the answer may come from a later history, whose sequences start again.
+  An answer that names or accepts the device's own write settles the change on that write. When
+  the kept-back version may be newer, a conflict with another device's version sends the change
+  once more under a new change ID, and the server answers with its current version; any other
+  answer stands, an accepted write included, and the next sync pulls from the beginning, which
+  brings the server's current version if it is a newer one.
 - **Deleted records stay deleted.** Deletions are kept as tombstones, also for records the store
   never held, so an older version that arrives later from a server that sends sequences does
   not bring a record back.
@@ -202,7 +203,10 @@ without sequences.
   has to keep as it was pushed; otherwise a change made after a lost answer is taken for a
   conflict with the device's own earlier write.
 - Remember the answers to change IDs for as long as a device may retry them, also across
-  restarts; the reference servers keep the last 10,000.
+  restarts; the reference servers keep the last 10,000. Restore them with the data: after a
+  restore from a backup, keep only the answers the backup holds, or none. An answer kept from
+  after the backup names a version of a history the server left, and the change it answers is
+  held back (see the limits).
 - Answer a push, and show its writes in pages, only once they are stored durably. A device that
   pulled a write the server then lost in a crash or restart takes it for applied and keeps it,
   and no other device gets it. The reference server writes its data file before it answers a
@@ -305,6 +309,14 @@ without sequences.
   timestamps until its clock catches up. An edit it makes on top of a version it received
   still replaces that version (there is no conflict); with last write wins, an edit made at the
   same time as one on a correct clock loses.
+- **A change-ID memory kept across a restore holds a change back.** A server restored from a
+  backup that keeps its answers to change IDs from after the backup answers a retried change with
+  a conflict that names a version of the history it left. The store takes that version for an
+  older one than it holds and retries the change until it parks in
+  ``OfflineStore/failedChanges()``; ``OfflineStore/retryFailedChanges()`` meets the same answer.
+  Restore the memory with the data (see <doc:ServerProtocol>). On the device,
+  ``OfflineStore/discardChange(for:)``, a sync, and the edit saved again on the version the store
+  then shows get a fresh answer under a new change ID.
 
 ## Known limitations: answers from another deployment
 
@@ -324,10 +336,15 @@ requests anywhere but one deployment with one history is not affected.
   fails as from an earlier history, until the server reports a later epoch still. A copy of a
   record from that deployment with a sequence beyond the server's stays on the device, and an
   edit of it meets the server's version as a conflict that names an older version and parks.
-  When both pulls of the first sync reach a replica that serves the history from before the
-  server lost its data, while the push goes to the server, the replica's version of a record
-  replaces the device's own accepted write on the device, and the next edit replaces that write
-  on the server.
+- **A replica of the history from before a data loss.** When the pulls of a sync reach a replica
+  that still serves the server's history from before it lost its data, while the push reaches the
+  server, the store cannot tell the replica from the server: in a new store's first sync, and also
+  in a store that holds the epoch the replica reports, the one from before the loss. The
+  replica's version of a record then replaces the device's own accepted write on the device, and
+  the next edit replaces that write on the server. In random runs of two or three devices (500
+  seeds of 80 steps in 16 configurations and 3 option sets, 24,000 runs per range) with a server
+  that loses its data and such a replica, this happened in 2 runs of seeds 200 to 699 (one seed,
+  a first sync) and in 8 runs of seeds 5000 to 5499 (three seeds, stores that held the epoch).
 - **One push answer from another deployment.** A conflict or rejected answer that names that
   deployment's copy of a record, with a sequence beyond the server's, makes the device show
   that copy and skip the server's later versions of the record as older, without an error. With
@@ -339,7 +356,8 @@ requests anywhere but one deployment with one history is not affected.
   do not arrive.
 
 Recovery: ``OfflineStore/resetChangeToken()`` brings back the records a token without an epoch
-skipped. The other cases do not end by themselves, also not after a server restart: read
+skipped. A write a replica's version replaced is gone once the next edit reached the server. The
+other cases do not end by themselves, also not after a server restart: read
 ``OfflineStore/records()``, ``OfflineStore/pendingChanges()`` and
 ``OfflineStore/failedChanges()``, release the store, move `<name>.store` aside with the
 ``StorageBackend`` (``StorageBackend/move(_:to:)``), open a new store, sync, and save again what
