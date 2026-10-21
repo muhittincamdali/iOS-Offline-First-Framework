@@ -23,7 +23,9 @@ test('answers a stale base revision with the current record', () => {
   const stale = change({ record: { id: 'a', text: 'B' } });
   const answer = notes.push({ changes: [stale] }).outcomes[stale.id.toUpperCase()];
   assert.equal(answer.status, 'conflict');
-  assert.deepEqual(answer.current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: `${notes.epoch}.1`, sequence: 1, timestamp });
+  const { changeID, ...current } = answer.current;
+  assert.deepEqual(current, { recordID: 'a', record: { id: 'a', text: 'A' }, revision: `${notes.epoch}.1`, sequence: 1, timestamp });
+  assert.match(changeID, /^[0-9a-f-]{36}$/);
 
   const fresh = change({ record: { id: 'a', text: 'B' }, baseRevision: `${notes.epoch}.1` });
   assert.equal(notes.push({ changes: [fresh] }).outcomes[fresh.id.toUpperCase()].status, 'accepted');
@@ -41,9 +43,10 @@ test('applies a repeated change ID only once', () => {
 test('deletes keep a revision so other devices learn about them', () => {
   const notes = new Collection();
   notes.push({ changes: [change()] });
-  notes.push({ changes: [change({ operation: 'delete', record: undefined, baseRevision: `${notes.epoch}.1` })] });
+  const deletion = change({ operation: 'delete', record: undefined, baseRevision: `${notes.epoch}.1` });
+  notes.push({ changes: [deletion] });
   const page = notes.changes(`${notes.epoch}.1`);
-  assert.deepEqual(page.changes, [{ recordID: 'a', revision: `${notes.epoch}.2`, sequence: 2, timestamp }]);
+  assert.deepEqual(page.changes, [{ recordID: 'a', revision: `${notes.epoch}.2`, sequence: 2, timestamp, changeID: deletion.id }]);
 });
 
 test('rejects records the validator refuses', () => {
@@ -176,16 +179,18 @@ test('reads files written before revisions had an epoch', () => {
   assert.deepEqual(notes.push({ changes: [edit] }).outcomes[edit.id.toUpperCase()], { status: 'accepted', revision: `${notes.epoch}.3` });
 });
 
-test('keeps a timestamp from the future as it was pushed', () => {
-  // The pushing device recognises its own write by the exact timestamp after a lost answer;
+test('keeps a timestamp from the future as it was pushed and sends back the change ID', () => {
+  // The pushing device recognises its own write by the change ID after a lost answer;
   // devices count a timestamp that is too far ahead as at their drift limit themselves.
   const notes = new Collection();
   const ahead = { wallTime: 4_000_000_000_000, counter: 3, nodeID: 'ahead' };
   const pushed = change({ timestamp: ahead });
   notes.push({ changes: [pushed] });
   assert.deepEqual(notes.changes(null).changes[0].timestamp, ahead);
+  assert.equal(notes.changes(null).changes[0].changeID, pushed.id);
   const conflict = notes.push({ changes: [change({ record: { id: 'a', text: 'B' } })] }).outcomes;
   assert.deepEqual(Object.values(conflict)[0].current.timestamp, ahead);
+  assert.equal(Object.values(conflict)[0].current.changeID, pushed.id);
 });
 
 test('gives every start a later epoch of 16 hexadecimal digits', () => {

@@ -344,10 +344,12 @@ public actor OfflineStore<Record: SyncableRecord> {
             }
         }
         // The version this one replaces may have been applied although its answer was lost; its
-        // timestamp lets the store recognise it on the server as its own earlier write.
+        // change ID and timestamp let the store recognise it on the server as its own earlier write.
         var superseded = entry.pending?.supersededInDoubt ?? []
-        if entry.pending?.isInDoubt == true {
+        var supersededIDs = entry.pending?.supersededChangeIDs ?? []
+        if let pending = entry.pending, pending.isInDoubt {
             superseded.append(entry.timestamp)
+            supersededIDs.append(pending.changeID)
         }
         entry.record = record
         entry.timestamp = timestamp
@@ -355,7 +357,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         entry.deferredRemote = nil
         entry.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
                                      attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false,
-                                     supersededInDoubt: Array(superseded.suffix(PendingWrite.maximumSupersededInDoubt)))
+                                     supersededInDoubt: Array(superseded.suffix(PendingWrite.maximumSupersededInDoubt)),
+                                     supersededChangeIDs: Array(supersededIDs.suffix(PendingWrite.maximumSupersededInDoubt)))
         state.entries[id] = entry
     }
 }

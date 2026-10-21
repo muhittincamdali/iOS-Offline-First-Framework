@@ -87,13 +87,22 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// clocks.
     public let sequence: UInt64?
 
+    /// The ``OutgoingChange/id`` of the pushed change that wrote this version, if the server
+    /// keeps it; `nil` for a version written another way. The store recognises a write of its
+    /// own whose answer was lost by it: the version is then not a conflict with another
+    /// device's edit. Without it the store compares the ``timestamp`` with the ones it pushed,
+    /// which works only while the server keeps timestamps exactly as they were pushed.
+    public let changeID: UUID?
+
     /// Creates a server record.
-    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?, sequence: UInt64? = nil) {
+    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?, sequence: UInt64? = nil,
+                changeID: UUID? = nil) {
         self.recordID = recordID
         self.record = record
         self.revision = revision
         self.timestamp = timestamp
         self.sequence = sequence
+        self.changeID = changeID
     }
 }
 

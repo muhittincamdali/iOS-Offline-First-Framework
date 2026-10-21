@@ -49,6 +49,7 @@ extension OfflineStore {
         pending.changeID = UUID()
         pending.isInDoubt = false
         pending.supersededInDoubt = []
+        pending.supersededChangeIDs = []
         return pending
     }
 

@@ -22,6 +22,9 @@ struct PendingWrite: Codable, Hashable, Sendable {
     /// was made on top of, not another device's. Emptied once the server's answer or a new
     /// base shows that none of them can be the server's current version.
     var supersededInDoubt: [HLCTimestamp] = []
+    /// The change IDs of the same earlier versions, for a server that names the change that
+    /// wrote a version (``RemoteChange/changeID``).
+    var supersededChangeIDs: [UUID] = []
 
     /// Superseded versions in doubt a change remembers; more than one needs several lost
     /// answers between edits.
@@ -30,10 +33,11 @@ struct PendingWrite: Codable, Hashable, Sendable {
 
 extension PendingWrite {
     private enum CodingKeys: String, CodingKey {
-        case changeID, sequence, attempts, nextAttemptAt, lastError, isParked, isInDoubt, supersededInDoubt
+        case changeID, sequence, attempts, nextAttemptAt, lastError, isParked, isInDoubt, supersededInDoubt, supersededChangeIDs
     }
 
-    /// Files written before `isInDoubt` or `supersededInDoubt` existed have no such keys.
+    /// Files written before `isInDoubt`, `supersededInDoubt` or `supersededChangeIDs` existed
+    /// have no such keys.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         changeID = try container.decode(UUID.self, forKey: .changeID)
@@ -44,6 +48,7 @@ extension PendingWrite {
         isParked = try container.decode(Bool.self, forKey: .isParked)
         isInDoubt = try container.decodeIfPresent(Bool.self, forKey: .isInDoubt) ?? false
         supersededInDoubt = try container.decodeIfPresent([HLCTimestamp].self, forKey: .supersededInDoubt) ?? []
+        supersededChangeIDs = try container.decodeIfPresent([UUID].self, forKey: .supersededChangeIDs) ?? []
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -57,6 +62,9 @@ extension PendingWrite {
         try container.encode(isInDoubt, forKey: .isInDoubt)
         if !supersededInDoubt.isEmpty {
             try container.encode(supersededInDoubt, forKey: .supersededInDoubt)
+        }
+        if !supersededChangeIDs.isEmpty {
+            try container.encode(supersededChangeIDs, forKey: .supersededChangeIDs)
         }
     }
 }

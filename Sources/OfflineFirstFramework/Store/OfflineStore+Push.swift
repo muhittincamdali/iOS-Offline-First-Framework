@@ -157,6 +157,7 @@ extension OfflineStore {
         // The server applied this change on top of the version it was based on, so no earlier
         // version in doubt can be its current one any more.
         entry.pending?.supersededInDoubt = []
+        entry.pending?.supersededChangeIDs = []
         guard isCurrent else { return }
         entry.pending = nil
         // A pull brought a newer version while this change was in doubt; the change was

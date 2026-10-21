@@ -5,8 +5,8 @@ import os
 ///
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
-/// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
-/// connection. Revisions and change tokens start with an epoch that is new for every instance
+/// remembered so a repeated push is not applied twice and sent back with the version they wrote,
+/// and ``isOnline`` simulates losing the connection. Revisions and change tokens start with an epoch that is new for every instance
 /// and every ``restart()``, and later than every earlier one, so a revision is never handed out
 /// twice, a store that kept a token from an earlier instance (an app relaunched with a fresh demo
 /// server) pulls everything again, and a page answered from before a restart is recognised.
@@ -25,6 +25,9 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         /// The position of the write in the change feed.
         var sequence: Int
         var timestamp: HLCTimestamp
+        /// The pushed change that wrote this version; `nil` for ``write(_:at:)`` and
+        /// ``delete(_:at:)``.
+        var changeID: UUID?
     }
 
     /// Change IDs the server remembers for idempotent pushes; older ones are forgotten.
@@ -193,21 +196,21 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
             return .rejected(reason: reason, current: current.map { remote(change.recordID, $0) })
         }
         _ = try? clock.receive(change.timestamp, at: now())
-        // The timestamp is kept as it was pushed: the device recognises its own write by it
-        // after a lost answer. Devices count one too far ahead as at their drift limit.
-        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: change.timestamp))
+        // The timestamp is kept as it was pushed, and the change ID with it: the device
+        // recognises its own write by them after a lost answer.
+        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: change.timestamp, changeID: change.id))
     }
 
-    private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp) -> String {
+    private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp, changeID: UUID? = nil) -> String {
         sequence += 1
         let revision = "\(epoch).\(sequence)"
-        stored[id] = Stored(record: record, revision: revision, sequence: sequence, timestamp: timestamp)
+        stored[id] = Stored(record: record, revision: revision, sequence: sequence, timestamp: timestamp, changeID: changeID)
         return revision
     }
 
     private func remote(_ id: Record.ID, _ stored: Stored) -> RemoteChange<Record> {
         RemoteChange(recordID: id, record: stored.record, revision: stored.revision, timestamp: stored.timestamp,
-                     sequence: UInt64(stored.sequence))
+                     sequence: UInt64(stored.sequence), changeID: stored.changeID)
     }
 
     /// A new epoch, later than every earlier one of this process: the time in microseconds

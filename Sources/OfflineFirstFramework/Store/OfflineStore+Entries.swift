@@ -118,10 +118,11 @@ extension OfflineStore {
         return timestamp < heldTimestamp
     }
 
-    /// How a server version relates to `entry`'s pending change, judged by its timestamp. A
-    /// version counts as the store's own only with the exact timestamp of a write the store
-    /// knows the server may hold, not by the node ID alone: a store file restored onto a second
-    /// device writes with the same node ID.
+    /// How a server version relates to `entry`'s pending change: by the change ID that wrote it
+    /// (``RemoteChange/changeID``), or, from a server that does not send one, by its timestamp.
+    /// A version counts as the store's own only with the change ID or the exact timestamp of a
+    /// write the store knows the server may hold, not by the node ID alone: a store file
+    /// restored onto a second device writes with the same node ID.
     enum Authorship {
         /// The pending change itself, applied by the server.
         case pendingChange
@@ -133,7 +134,12 @@ extension OfflineStore {
     }
 
     func authorship(of change: RemoteChange<Record>, comparedWith entry: StoredEntry<Record>) -> Authorship {
-        guard let pending = entry.pending, let timestamp = change.timestamp else { return .other }
+        guard let pending = entry.pending else { return .other }
+        if let changeID = change.changeID {
+            if changeID == pending.changeID { return .pendingChange }
+            return pending.supersededChangeIDs.contains(changeID) ? .earlierWrite : .other
+        }
+        guard let timestamp = change.timestamp else { return .other }
         if timestamp == entry.timestamp { return .pendingChange }
         return pending.supersededInDoubt.contains(timestamp) ? .earlierWrite : .other
     }

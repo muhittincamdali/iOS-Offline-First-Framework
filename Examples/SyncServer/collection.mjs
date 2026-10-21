@@ -80,7 +80,7 @@ export function validateChange(change) {
 }
 
 export class Collection {
-  #records = new Map(); // key -> { recordID, record, revision, sequence, timestamp }
+  #records = new Map(); // key -> { recordID, record, revision, sequence, timestamp, changeID }
   #sequence = 0; // the number of writes; the newest write's position in the change feed
   #answers = new Map(); // change ID -> outcome, oldest first
   // Names this run of the collection in revisions and change tokens. Every start gets a new one,
@@ -166,9 +166,10 @@ export class Collection {
       record: change.record,
       revision,
       sequence: this.#sequence,
-      // Kept as it was pushed: the device that pushed it recognises its own write by it when
-      // the answer was lost. Devices limit how far ahead a timestamp counts themselves.
+      // Kept as it was pushed, and the change ID with it: the device that pushed it recognises
+      // its own write by them when the answer was lost.
       timestamp: change.timestamp,
+      changeID: change.id,
     });
     return { status: 'accepted', revision };
   }
@@ -176,6 +177,7 @@ export class Collection {
   #remote(entry) {
     const remote = { recordID: entry.recordID, revision: entry.revision, sequence: entry.sequence, timestamp: entry.timestamp };
     if (entry.record) remote.record = entry.record;
+    if (entry.changeID) remote.changeID = entry.changeID;
     return remote;
   }
 
@@ -204,6 +206,7 @@ export class Collection {
       // a string; it stays valid, and new writes get revisions with an epoch.
       const entry = typeof saved.revision === 'number' ? { ...saved, revision: String(saved.revision), sequence: saved.revision } : saved;
       check(typeof entry.revision === 'string' && Number.isSafeInteger(entry.sequence) && entry.sequence <= sequence, 'invalid saved record');
+      check(entry.changeID === undefined || (typeof entry.changeID === 'string' && UUID.test(entry.changeID)), 'invalid saved record');
       this.#records.set(keyOf(entry.recordID), entry);
     }
     // The answers are kept, so a push repeated after a restart is still applied only once.
