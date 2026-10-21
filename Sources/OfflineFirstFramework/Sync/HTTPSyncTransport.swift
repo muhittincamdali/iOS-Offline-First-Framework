@@ -92,15 +92,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(PushBody(changes: changes.map(WireChange.init)))
-        let answer = try JSONDecoder().decode(PushAnswer.self, from: try await send(request))
-        var outcomes: [UUID: PushOutcome<Record>] = [:]
-        for (key, outcome) in answer.outcomes {
-            // An outcome that cannot be read leaves only its own change without an answer; the
-            // store retries that change and settles the others.
-            guard let id = UUID(uuidString: key), let outcome = try? outcome.wire?.pushOutcome() else { continue }
-            outcomes[id] = outcome
-        }
-        return outcomes
+        return try Self.outcomes(from: try await send(request))
     }
 
     public func pull(since token: String?) async throws -> PullResponse<Record> {
@@ -113,16 +105,59 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             url = components.url ?? url
         }
         let request = try await makeRequest(url: url)
-        let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
+        return try Self.page(from: try await send(request))
+    }
+
+    // MARK: - Reading answers
+
+    /// The outcomes of a push answer, each read on its own: one that cannot be read, also one
+    /// nested deeper than `JSONDecoder` reads, leaves only its own change without an answer; the
+    /// store retries that change and settles the others.
+    static func outcomes(from data: Data) throws -> [UUID: PushOutcome<Record>] {
+        let answer = try WireDocument(data)
+        guard let outcomes = try answer.member("outcomes") else { throw WireDocument.missing("outcomes") }
+        var result: [UUID: PushOutcome<Record>] = [:]
+        for member in try answer.members(of: outcomes) {
+            guard let key = try? answer.decode(String.self, at: member.key), let id = UUID(uuidString: key),
+                  let outcome = try? answer.decode(WireOutcome.self, at: member.value).pushOutcome() else { continue }
+            result[id] = outcome
+        }
+        return result
+    }
+
+    /// A page, each change read on its own: one that cannot be read, also one nested deeper
+    /// than `JSONDecoder` reads, is set aside and the rest of the page is used.
+    static func page(from data: Data) throws -> PullResponse<Record> {
+        let page = try WireDocument(data)
+        guard let list = try page.member("changes") else { throw WireDocument.missing("changes") }
+        guard let hasMore = try page.member("hasMore") else { throw WireDocument.missing("hasMore") }
         var changes: [RemoteChange<Record>] = []
         var quarantined: [QuarantinedChange] = []
-        for change in page.changes {
-            switch change {
+        for element in try page.elements(of: list) {
+            switch change(in: page, at: element) {
             case .readable(let change): changes.append(change)
             case .unreadable(let entry): quarantined.append(entry)
             }
         }
-        return PullResponse(changes: changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch, quarantined: quarantined)
+        return PullResponse(changes: changes, token: try page.member("token").flatMap { try page.decode(String?.self, at: $0) },
+                            hasMore: try page.decode(Bool.self, at: hasMore),
+                            epoch: try page.member("epoch").flatMap { try page.decode(String?.self, at: $0) }, quarantined: quarantined)
+    }
+
+    /// The change at `range`. When the decoder refuses it as a whole (nested deeper than it
+    /// reads, or not valid JSON), its record ID and revision are read on their own.
+    private static func change(in page: WireDocument, at range: Range<Int>) -> LossyChange {
+        do {
+            return try page.decode(LossyChange.self, at: range)
+        } catch {
+            let fields = (try? page.members(of: range)) ?? []
+            func field<T: Decodable>(_ name: String, as type: T.Type) -> T? {
+                fields.first { (try? page.decode(String.self, at: $0.key)) == name }.flatMap { try? page.decode(T.self, at: $0.value) }
+            }
+            let recordID = field("recordID", as: Record.ID.self).map(OfflineStore<Record>.describe)
+            return .unreadable(QuarantinedChange(recordID: recordID ?? "null", revision: field("revision", as: String.self),
+                                                 reason: LossyChange.describe(error)))
+        }
     }
 
     // MARK: - HTTP
@@ -193,19 +228,6 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    private struct PushAnswer: Decodable {
-        let outcomes: [String: LossyOutcome]
-    }
-
-    /// One outcome of a push answer, or `nil` when it cannot be read.
-    private struct LossyOutcome: Decodable {
-        let wire: WireOutcome?
-
-        init(from decoder: any Decoder) throws {
-            wire = try? WireOutcome(from: decoder)
-        }
-    }
-
     private struct WireOutcome: Decodable {
         let status: String
         let revision: String?
@@ -226,13 +248,6 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
                 throw Failure.unknownOutcome(String(status.prefix(100)))
             }
         }
-    }
-
-    private struct PullPage: Decodable {
-        let changes: [LossyChange]
-        let token: String?
-        let hasMore: Bool
-        let epoch: String?
     }
 
     /// One change of a page, or why it cannot be read, so one bad record does not make the
@@ -260,7 +275,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             }
         }
 
-        private static func describe(_ error: any Error) -> String {
+        static func describe(_ error: any Error) -> String {
             guard let error = error as? DecodingError else { return String(describing: error) }
             let context: DecodingError.Context
             switch error {
