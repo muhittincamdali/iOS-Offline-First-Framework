@@ -156,6 +156,7 @@ extension OfflineStore {
         entry.sequence = nil
         entry.olderRevisions = Array(olderRevisions.suffix(Self.maximumOlderRevisions))
         entry.serverTimestamp = change.timestamp
+        entry.rememberOwnWrite(changeID: change.id, timestamp: change.timestamp)
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
         // The server applied this change on top of the version it was based on, so no earlier
@@ -201,10 +202,13 @@ extension OfflineStore {
         case .pendingChange:
             // The server holds this very change: an earlier push of it was applied.
             report.pushed += 1
+            entry.rememberOwnWrite(changeID: entry.pending?.changeID, timestamp: entry.timestamp)
             entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
         case .earlierWrite:
-            // The device's own earlier write, applied although its answer was lost: the
-            // pending change was made on top of it, so it goes out again on its revision.
+            // The device's own earlier write: applied although its answer was lost, or accepted
+            // before a stale page took the record back. The pending change was made on this
+            // device after it, so it goes out again on its revision.
+            entry.rememberOwnWrite(changeID: current.changeID, timestamp: current.timestamp)
             Self.base(&entry, on: current, in: state, configuration: configuration)
             if let pending = entry.pending {
                 entry.pending = conflictAttempt(rebased(pending), pushesInThisSync: pushesInThisSync, report: &report)

@@ -193,6 +193,7 @@ extension OfflineStore {
         switch authorship(of: change, comparedWith: entry) {
         case .pendingChange:
             // The pending change itself: the server applied it, although no answer said so.
+            entry.rememberOwnWrite(changeID: pending.changeID, timestamp: entry.timestamp)
             Self.store(Self.entry(from: newer(entry.deferredRemote, than: change, in: state), replacing: entry, in: &state,
                                   configuration: configuration), in: &state)
             return
@@ -200,7 +201,11 @@ extension OfflineStore {
             // The device's own earlier write: the pending change was made on top of it. A
             // change in doubt learns from its next push where it stands; one that is not goes
             // out on this revision.
-            guard !pending.isInDoubt else { return }
+            entry.rememberOwnWrite(changeID: change.changeID, timestamp: change.timestamp)
+            guard !pending.isInDoubt else {
+                state.entries[change.recordID] = entry
+                return
+            }
             Self.base(&entry, on: change, in: state, configuration: configuration)
             entry.pending = rebased(pending)
             state.entries[change.recordID] = entry

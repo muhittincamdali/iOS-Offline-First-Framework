@@ -51,18 +51,46 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// change of an earlier server history that is not in doubt, the version of the new history
     /// a pull brought, kept until the change is sent.
     var deferredRemote: RemoteChange<Record>? = nil
+    /// The change IDs of this store's writes of the record that the server holds or held: those
+    /// it accepted, and those a pull or a conflict answer showed it applied. Newest last, at most
+    /// ``maximumOwnWrites``. A server version that one of them wrote is the device's own write,
+    /// whatever the store shows for the record: when a stale page took the record back to an
+    /// older version and the user edited on top of that, the server's answer that names the
+    /// device's accepted write is not a conflict (see
+    /// ``OfflineStore/authorship(of:comparedWith:)``). Kept across server histories, since a
+    /// change ID names one write on every server.
+    var ownChangeIDs: [UUID] = []
+    /// The timestamps of the same writes, by which the store knows them on a server that does
+    /// not send change IDs. Newest last, at most ``maximumOwnWrites``.
+    var ownTimestamps: [HLCTimestamp] = []
+
+    /// Own writes an entry remembers, by change ID and by timestamp: 16, the oldest dropped first.
+    static var maximumOwnWrites: Int { 16 }
+
+    /// Remembers a write of this store that the server holds, by the change ID and timestamp it
+    /// was pushed with, or by those a server version names.
+    mutating func rememberOwnWrite(changeID: UUID?, timestamp: HLCTimestamp?) {
+        if let changeID, !ownChangeIDs.contains(changeID) {
+            ownChangeIDs = Array((ownChangeIDs + [changeID]).suffix(Self.maximumOwnWrites))
+        }
+        if let timestamp, !ownTimestamps.contains(timestamp) {
+            ownTimestamps = Array((ownTimestamps + [timestamp]).suffix(Self.maximumOwnWrites))
+        }
+    }
 }
 
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
         case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, olderRevisions,
-             pushedInHistory, serverTimestamp, deferredRemote
+             pushedInHistory, serverTimestamp, deferredRemote, ownChangeIDs, ownTimestamps
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
     /// Files written before `history` existed belong to the first history. Files written before
     /// `serverTimestamp` existed kept the server's timestamp as ``timestamp`` while no change
-    /// was pending; newer files always write the key, `null` when the server sent none.
+    /// was pending; newer files always write the key, `null` when the server sent none. Files
+    /// written before `ownChangeIDs` and `ownTimestamps` existed know no own writes; a damaged
+    /// file keeps the newest within the limit.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Record.ID.self, forKey: .id)
@@ -83,6 +111,9 @@ extension StoredEntry {
             serverTimestamp = pending == nil ? timestamp : nil
         }
         deferredRemote = try container.decodeIfPresent(RemoteChange<Record>.self, forKey: .deferredRemote)
+        ownChangeIDs = try Array((container.decodeIfPresent([UUID].self, forKey: .ownChangeIDs) ?? []).suffix(Self.maximumOwnWrites))
+        ownTimestamps = try Array((container.decodeIfPresent([HLCTimestamp].self, forKey: .ownTimestamps) ?? [])
+            .suffix(Self.maximumOwnWrites))
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -109,6 +140,12 @@ extension StoredEntry {
             try container.encodeNil(forKey: .serverTimestamp)
         }
         try container.encodeIfPresent(deferredRemote, forKey: .deferredRemote)
+        if !ownChangeIDs.isEmpty {
+            try container.encode(ownChangeIDs, forKey: .ownChangeIDs)
+        }
+        if !ownTimestamps.isEmpty {
+            try container.encode(ownTimestamps, forKey: .ownTimestamps)
+        }
     }
 }
 

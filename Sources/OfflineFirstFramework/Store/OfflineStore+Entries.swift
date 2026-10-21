@@ -37,14 +37,18 @@ extension OfflineStore {
     /// dropped first.
     static var maximumOlderRevisions: Int { 16 }
 
-    /// The server's version as a stored entry without a pending change.
+    /// The server's version as a stored entry without a pending change. The store's own writes
+    /// of the record (``StoredEntry/ownChangeIDs``) stay known.
     static func entry(from remote: RemoteChange<Record>, replacing existing: StoredEntry<Record>?, in state: inout State,
                       configuration: Configuration) -> StoredEntry<Record> {
         let limit = driftLimit(of: state, configuration: configuration)
         let timestamp = clamped(remote.timestamp, to: limit) ?? (try? tick(&state, configuration: configuration)) ?? state.clock.latest
-        return StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
-                           position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
-                           sequence: remote.sequence, serverTimestamp: orderable(remote.timestamp, below: limit))
+        var entry = StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
+                                position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
+                                sequence: remote.sequence, serverTimestamp: orderable(remote.timestamp, below: limit))
+        entry.ownChangeIDs = existing?.ownChangeIDs ?? []
+        entry.ownTimestamps = existing?.ownTimestamps ?? []
+        return entry
     }
 
     /// Makes `remote` the server version `entry` is based on, without touching the record or
@@ -182,6 +186,13 @@ extension OfflineStore {
     /// A version counts as the store's own only with the change ID or the exact timestamp of a
     /// write the store knows the server may hold, not by the node ID alone: a store file
     /// restored onto a second device writes with the same node ID.
+    ///
+    /// Those writes are the pending change, its earlier versions in doubt, and the writes of
+    /// the record the server accepted or showed it applied (``StoredEntry/ownChangeIDs``). The
+    /// last ones count whatever the store shows for the record: a stale page, or a restore, may
+    /// have taken the record back to an older version, and an edit the user made on top of it
+    /// was still made on this device after its own accepted write. So the device's own write
+    /// never reaches the resolver as a conflict.
     enum Authorship {
         /// The pending change itself, applied by the server.
         case pendingChange
@@ -196,11 +207,13 @@ extension OfflineStore {
         guard let pending = entry.pending else { return .other }
         if let changeID = change.changeID {
             if changeID == pending.changeID { return .pendingChange }
-            return pending.supersededChangeIDs.contains(changeID) ? .earlierWrite : .other
+            let isOwn = pending.supersededChangeIDs.contains(changeID) || entry.ownChangeIDs.contains(changeID)
+            return isOwn ? .earlierWrite : .other
         }
         guard let timestamp = change.timestamp else { return .other }
         if timestamp == entry.timestamp { return .pendingChange }
-        return pending.supersededInDoubt.contains(timestamp) ? .earlierWrite : .other
+        let isOwn = pending.supersededInDoubt.contains(timestamp) || entry.ownTimestamps.contains(timestamp)
+        return isOwn ? .earlierWrite : .other
     }
 
     /// Stores `entry`. A deletion with nothing left to push is kept as a tombstone while the
