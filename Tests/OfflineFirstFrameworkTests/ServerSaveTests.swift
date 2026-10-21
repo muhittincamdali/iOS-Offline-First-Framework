@@ -4,41 +4,6 @@ import os
 import Testing
 @testable import OfflineFirstFramework
 
-private let nodePath = ProcessInfo.processInfo.environment["OFFLINE_FIRST_NODE"]
-
-/// `Examples/SyncServer/server.mjs` with `--data`, in a process of its own on a free port, ended
-/// with SIGKILL as a crash would end it.
-private final class ServerProcess {
-    let url: URL
-    private let process = Process()
-
-    init(node: String, data: URL) throws {
-        let script = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appending(path: "Examples/SyncServer/server.mjs")
-        process.executableURL = URL(filePath: node)
-        process.arguments = [script.path(percentEncoded: false), "--port", "0", "--data", data.path(percentEncoded: false)]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        var text = ""
-        while true {
-            let chunk = output.fileHandleForReading.availableData
-            guard !chunk.isEmpty else { throw URLError(.cannotConnectToHost) }
-            text += String(decoding: chunk, as: UTF8.self)
-            if let port = text.firstMatch(of: /localhost:(\d+)/)?.1, let url = URL(string: "http://localhost:\(port)") {
-                self.url = url
-                return
-            }
-        }
-    }
-
-    func kill() {
-        Darwin.kill(process.processIdentifier, SIGKILL)
-        process.waitUntilExit()
-    }
-}
-
 /// A push whose save failed, followed by a restart of the reference server before any save
 /// succeeded. The server used to apply the push in memory and show it in pages although it
 /// answered 500: the device pulled its own write, took it for applied, and after the restart
@@ -46,10 +11,10 @@ private final class ServerProcess {
 ///
 /// Runs where `OFFLINE_FIRST_NODE` names a Node 24 binary, as the "Examples" workflow does:
 /// `OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests`.
-@Suite("Reference server: a failed save and a restart", .enabled(if: nodePath != nil, "Set OFFLINE_FIRST_NODE to the path of node."))
+@Suite("Reference server: a failed save and a restart", .enabled(if: referenceServerNode != nil, "Set OFFLINE_FIRST_NODE to the path of node."))
 struct ServerSaveTests {
     @Test func aWriteWhoseSaveFailedReachesEveryDeviceAfterARestart() async throws {
-        let node = try #require(nodePath)
+        let node = try #require(referenceServerNode)
         let directory = URL(filePath: NSTemporaryDirectory()).appending(path: "server-save-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -57,7 +22,7 @@ struct ServerSaveTests {
         // A directory where the temporary file of a save goes makes every save fail.
         let blocker = directory.appending(path: "data.json.tmp")
 
-        var server = try ServerProcess(node: node, data: data)
+        var server = try ReferenceServerProcess(node: node, data: data)
         // The server's port changes with every start; the collection stays.
         let address = OSAllocatedUnfairLock(initialState: server.url)
         let clock = TestClock()
@@ -79,7 +44,7 @@ struct ServerSaveTests {
 
         server.kill()
         try FileManager.default.removeItem(at: blocker)
-        server = try ServerProcess(node: node, data: data)
+        server = try ReferenceServerProcess(node: node, data: data)
         let url = server.url
         address.withLock { $0 = url }
         defer { server.kill() }
