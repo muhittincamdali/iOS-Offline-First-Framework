@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,7 +53,7 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 369 tests Swift Testing sur macOS et sur un simulateur
+- **Testé contre un vrai serveur** — 374 tests Swift Testing sur macOS et sur un simulateur
   d’iPhone, dont trois tests de propriétés qui soumettent chaque politique de conflit à des
   requêtes perdues, des redémarrages, des réinitialisations du jeton, des synchronisations
   simultanées, de petites limites de pages, des pages périmées, des opérations simultanées et des
@@ -432,6 +432,17 @@ jusqu’à ce qu’il en annonce de nouveau un, et les suppressions au-delà de 
 [Garanties et
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) donne la
 liste complète.
+
+**Limites connues.** Les réponses d’un autre déploiement derrière la même URL (un répartiteur de
+charge ou un proxy qui envoie une requête vers la préproduction ou vers une région aux données
+séparées, ou une réplique qui sert l’historique d’avant une perte de données) ne sont écartées que
+page par page. Quand la première synchronisation d’un nouveau store n’atteint que ce déploiement, ou
+qu’une réponse de push vient de lui, un enregistrement peut garder sans erreur la copie de ce
+déploiement, une modification peut être tranchée contre elle ou mise de côté, et une écriture que le
+serveur n’a jamais reçue peut compter comme acceptée. `resetChangeToken()` ramène les
+enregistrements que le jeton de ce déploiement a sautés ; sinon, mettez le fichier du store de côté
+et commencez un nouveau store. Les détails sont dans [Garanties et
+limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Démo
 

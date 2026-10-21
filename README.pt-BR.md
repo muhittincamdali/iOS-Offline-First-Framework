@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,7 +51,7 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 369 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 374 testes de Swift Testing no macOS e em um simulador de
   iPhone, entre eles três testes de propriedades que submetem cada política de conflito a
   solicitações perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de
   páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, também contra um
@@ -421,6 +421,17 @@ epoch anterior continua recusado até o servidor informar um posterior ao do sto
 epoch até ele voltar a informar um, e exclusões além de 10.000 são esquecidas. [Garantias e
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) traz a
 lista completa.
+
+**Limitações conhecidas.** Respostas de outra implantação atrás da mesma URL (um balanceador de
+carga ou proxy que envia uma requisição para staging ou para uma região com dados próprios, ou uma
+réplica que serve o histórico de antes de uma perda de dados) só são barradas como páginas isoladas.
+Quando a primeira sincronização de um store novo só chega a essa implantação, ou uma resposta de
+push vem dela, um registro pode ficar sem erro com a cópia dessa implantação, uma edição pode ser
+decidida contra ela ou ficar estacionada, e uma escrita que o servidor nunca recebeu pode contar
+como aceita. `resetChangeToken()` traz de volta os registros que o token dessa implantação pulou;
+caso contrário, mova o arquivo do store para o lado e comece um store novo. Os detalhes estão em
+[Garantias e
+limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Demonstração
 

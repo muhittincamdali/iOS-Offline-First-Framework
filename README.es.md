@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,7 +51,7 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 369 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 374 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas tres pruebas de propiedades que someten cada política de conflictos a
   solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
   límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, también contra
@@ -422,6 +422,17 @@ del almacén, una página sin epoch hasta que vuelva a informar uno, y los borra
 10.000 se olvidan. [Garantías y
 límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la
 lista completa.
+
+**Limitaciones conocidas.** Las respuestas de otro despliegue detrás de la misma URL (un balanceador
+de carga o proxy que envía una solicitud a staging o a una región con datos propios, o una réplica
+que sirve el historial de antes de una pérdida de datos) solo se rechazan como páginas sueltas. Si
+la primera sincronización de un almacén nuevo solo llega a ese despliegue, o una respuesta de push
+viene de él, un registro puede quedarse sin ningún error con la copia de ese despliegue, una edición
+puede decidirse en su contra o quedar aparcada, y una escritura que el servidor nunca recibió puede
+contar como aceptada. `resetChangeToken()` recupera los registros que el token de ese despliegue se
+saltó; si no, aparta el archivo del almacén y empieza un almacén nuevo. Los detalles están en
+[Garantías y
+límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Demo
 

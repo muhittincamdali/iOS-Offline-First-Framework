@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,7 +51,7 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 369 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 374 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter drei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
   Seitengrenzen, veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, auch gegen
@@ -428,6 +428,17 @@ spätere als die des Stores meldet, eine Seite ohne Epoch, bis er wieder eine me
 Löschungen jenseits von 10.000 werden vergessen. [Garantien und
 Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
 die vollständige Liste.
+
+**Bekannte Einschränkungen.** Antworten eines anderen Deployments hinter derselben URL (ein Load
+Balancer oder Proxy, der eine Anfrage an Staging oder an eine Region mit eigenen Daten schickt, oder
+ein Replikat, das den Stand von vor einem Datenverlust ausliefert) werden nur als einzelne Seiten
+abgewehrt. Erreicht die erste Synchronisierung eines neuen Stores nur dieses Deployment, oder kommt
+eine Push-Antwort von dort, kann ein Datensatz ohne Fehler dessen Kopie behalten, eine Änderung
+gegen sie entschieden oder zurückgestellt werden und ein Schreibvorgang, den der Server nie bekam,
+als angenommen gelten. `resetChangeToken()` holt die Datensätze zurück, die das Token dieses
+Deployments übersprungen hat; sonst die Store-Datei beiseitelegen und einen neuen Store beginnen.
+Details stehen in [Garantien und
+Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Demo
 

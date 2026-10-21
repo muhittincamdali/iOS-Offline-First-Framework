@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-light.svg" alt="Offline-First Framework: Локальное хранилище для Swift-приложений: работает без сети и синхронизируется с вашим сервером."></picture></p>
@@ -50,7 +50,7 @@ HTTP-протоколом с эталонным сервером, вашим с�
   вызов синхронизирует из фоновой задачи обновления.
 - **Данные в покое защищены** — шифрование файлов AES-GCM с ключом в Keychain, классы защиты данных,
   миграции схемы записей и политика для повреждённых файлов.
-- **Проверено на настоящем сервере** — 369 тестов Swift Testing на macOS и в симуляторе iPhone,
+- **Проверено на настоящем сервере** — 374 теста Swift Testing на macOS и в симуляторе iPhone,
   среди них три теста свойств, прогоняющих каждую политику конфликтов через потерянные запросы,
   перезапуски, сбросы токена, одновременные синхронизации, малые лимиты страниц, устаревшие
   страницы, одновременные операции и сбои, в том числе против сервера без последовательностей,
@@ -416,6 +416,16 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 и паркуется после последней попытки; более ранний `epoch` отклоняется, пока сервер не сообщит
 более поздний, чем у хранилища, а страница без `epoch` — пока он снова не сообщит его; удаления
 сверх 10 000 забываются. Полный список — в статье [Гарантии и
+ограничения](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
+
+**Известные ограничения.** Ответы другого развёртывания за тем же URL (балансировщик нагрузки или
+прокси, отправивший запрос в staging или в регион с отдельными данными, либо реплика, которая отдаёт
+историю до потери данных) отсекаются только как отдельные страницы. Если первая синхронизация нового
+хранилища попадает только в это развёртывание или от него приходит один ответ на push, запись может
+без ошибки сохранить его копию, правка может быть решена против неё или отложена, а запись, которую
+сервер так и не получил, может считаться принятой. `resetChangeToken()` возвращает записи, которые
+пропустил токен этого развёртывания; иначе отложите файл хранилища в сторону и начните новое
+хранилище. Подробности: [Гарантии и
 ограничения](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Демо

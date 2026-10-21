@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg" alt="Offline-First Framework: 面向 Swift 应用的本地存储：离线照常工作，联网后与你的服务器同步。"></picture></p>
@@ -33,7 +33,7 @@
 - **任何后端** — `HTTPSyncTransport` 使用一套有文档的 JSON 协议，[`Examples/SyncServer`](Examples/SyncServer) 中的参考服务器用大约 280 行 JavaScript 实现了它；任何其他 API 都可以接在 `SyncTransport` 之后，例如使用 ETag 的 REST API。
 - **为 SwiftUI 而生** — `SyncedCollection` 是存储的 `@Observable` 模型；设备联网时以及本地编辑之后不久会自动同步，也可以通过一次调用在后台刷新任务中同步。
 - **静态数据受保护** — 使用保存在 Keychain 中的密钥进行 AES-GCM 文件加密、数据保护级别、记录架构迁移，以及针对损坏文件的处理策略。
-- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 369 个 Swift Testing 测试，其中包括三个让每种冲突策略经受请求丢失、重启、令牌重置、重叠同步、较小页数上限、过期页面、同时进行的操作和崩溃考验、也针对不发送 `sequence` 的服务器的属性测试，在多次同步中持续回应同一台设备的副本、带回设备自己更早写入或遇上已被接受的推送的过期页面、在一次同步的每次写入时崩溃以及设备时钟向前跳变的场景测试，以及发送无用数据页面、嵌套极深的记录、大于应答上限的页面和改动多于所请求数量的页面（也包括通过套接字无休止地传输）的测试；为服务器编写了 28 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步存储，也包括跨越一次服务器重启的 68 条 250 KiB 记录、合计超过应答上限的 70 个 250 KiB 冲突应答、一次保存失败的写入在重启之后的情况、服务器在回应 504 的代理之后应用的一次推送，以及在令牌重置后提供重启之前页面的副本。
+- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 374 个 Swift Testing 测试，其中包括三个让每种冲突策略经受请求丢失、重启、令牌重置、重叠同步、较小页数上限、过期页面、同时进行的操作和崩溃考验、也针对不发送 `sequence` 的服务器的属性测试，在多次同步中持续回应同一台设备的副本、带回设备自己更早写入或遇上已被接受的推送的过期页面、在一次同步的每次写入时崩溃以及设备时钟向前跳变的场景测试，以及发送无用数据页面、嵌套极深的记录、大于应答上限的页面和改动多于所请求数量的页面（也包括通过套接字无休止地传输）的测试；为服务器编写了 28 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步存储，也包括跨越一次服务器重启的 68 条 250 KiB 记录、合计超过应答上限的 70 个 250 KiB 冲突应答、一次保存失败的写入在重启之后的情况、服务器在回应 504 的代理之后应用的一次推送，以及在令牌重置后提供重启之前页面的副本。
 
 ### 内容一览
 
@@ -292,6 +292,8 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 - 走快或被往回调的时钟、对每次推送都回应冲突的服务器、从不应答的服务器以及无法写入的文件，其影响都是有限的：参考服务器保存的推送时间戳最多比自己的时钟领先五分钟，设备时钟短暂出错不会延续到之后的写入，服务器版本从不按时间戳排序（走快的时钟不会隐藏任何之后的版本，也不会让任何改动被搁置），重试会退避并被搁置，一次同步会在 `syncTimeout` 之后结束，文件无法写入期间同步会等待。
 
 服务器绝不能把同一个 revision 分配给一条记录的两个版本，应当在每一页中发送只会前进到更晚值且永不回头的 `epoch`（更长，或长度相同时按字节更大）、在重启后继续计数的 `sequence`（存储使用的唯一顺序）、推送时的时间戳（远超其时钟的时间被拉回到上限）以及写入每个版本的 `changeID`，必须在重启后仍记得改动 ID，只在写入保存之后才在页面中显示它，并让每一页以及对每个推送改动的应答都不超过客户端的应答上限（每页最多 `limit` 个改动，同时按字节截断，每页至少一个改动）。限制：服务器在恢复备份时丢失的写入不会被重新上传；不发送 `sequence` 的服务器没有顺序保证（过期页面可能让记录回退，直到它再次改动，但不会丢失任何写入）；在 `discardChange(for:)` 之后立即再次保存的记录会与服务器的副本作为冲突相遇；每个文件只能有一个存储实例（对 `FileStore`、`InMemoryStorage` 和提供 `claimIdentity` 的自定义后端强制执行）；每次改动都会写入整个文件；记录最多嵌套 64 层；每页最多 1,000 个改动，单个大于应答上限四倍的改动会让拉取停止；推送应答本身大于应答上限的改动保持未定，并在最后一次尝试后被搁置；更早的 epoch 在服务器报告晚于存储的 epoch 之前一直被拒绝，不带 epoch 的页面在服务器再次报告 epoch 之前也一直被拒绝；超过 10,000 条的删除会被遗忘。完整列表见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
+
+**已知限制。** 来自同一 URL 后面另一个部署的应答（把请求发到预发布环境或数据独立的区域的负载均衡器或代理，或者提供数据丢失之前历史的副本）只会作为单独的页面被挡在外面。当新存储的第一次同步只到达那个部署，或者有一个推送应答来自它时，记录可能在没有任何错误的情况下停留在那个部署的副本上，编辑可能被判定为输给它或被搁置，服务器从未收到的写入也可能被当作已接受。`resetChangeToken()` 能找回那个部署的令牌跳过的记录；其他情况下，请把存储文件移到一边，重新开始一个新存储。详情见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
 
 ## 演示
 

@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@4d9df4dc8e348cf5ca7a61c8d85e9e33ecc98ae0 status=reviewed -->
+<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,7 +50,7 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 369 Swift
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 374 Swift
   Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
   sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları, bayat sayfalar, aynı anda
   çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan üç özellik
@@ -414,6 +414,17 @@ durdurur, gönderim yanıtı tek başına yanıt sınırından büyük olan bir 
 son denemesinden sonra park edilir, daha önceki bir epoch, sunucu deponunkinden daha geç bir epoch
 bildirene kadar, epoch'suz bir sayfa da sunucu yeniden bir epoch bildirene kadar reddedilir ve
 10.000'i aşan silmeler unutulur. Tam liste [Güvenceler ve
+sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+makalesindedir.
+
+**Bilinen sınırlamalar.** Aynı URL'nin arkasındaki başka bir dağıtımdan gelen cevaplar (bir isteği
+staging'e ya da verisi ayrı bir bölgeye gönderen bir yük dengeleyici veya proxy, ya da bir veri
+kaybından önceki geçmişi sunan bir kopya) yalnızca tek sayfa olarak dışarıda tutulur. Yeni bir
+deponun ilk eşitlemesi yalnızca o dağıtıma ulaşırsa ya da bir push cevabı ondan gelirse, bir kayıt
+hatasız biçimde o dağıtımın kopyasında kalabilir, bir düzenleme ona karşı karara bağlanabilir ya da
+bekletilebilir ve sunucunun hiç almadığı bir yazma kabul edilmiş sayılabilir. `resetChangeToken()` o
+dağıtımın token'ının atladığı kayıtları geri getirir; aksi hâlde depo dosyasını kenara taşıyıp yeni
+bir depoyla başlayın. Ayrıntılar [Güvenceler ve
 sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 makalesindedir.
 
