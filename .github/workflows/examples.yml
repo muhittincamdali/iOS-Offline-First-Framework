@@ -67,6 +67,12 @@ jobs:
         working-directory: Examples/SyncServer
         run: npm test
 
+      - name: Devices across a failed save and a server restart
+        run: |
+          set -o pipefail
+          OFFLINE_FIRST_NODE="$(command -v node)" swift test --filter ServerSaveTests 2>&1 | tee "$RUNNER_TEMP/server-save.log"
+          grep -q "aWriteWhoseSaveFailedReachesEveryDeviceAfterARestart() passed" "$RUNNER_TEMP/server-save.log"
+
       - name: End-to-end tests against the server
         run: |
           set -o pipefail

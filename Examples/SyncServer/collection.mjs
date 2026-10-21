@@ -112,6 +112,10 @@ export function validateChange(change) {
 export class Collection {
   #records = new Map(); // key -> { recordID, record, revision, sequence, timestamp, changeID }
   #sequence = 0; // the number of writes; the newest write's position in the change feed
+  // The newest write that pages show. A server that saves its data shows a write only once it
+  // is saved: a write a device pulled and a restart then lost would stay on that device, which
+  // took it for applied, and on no other.
+  #published = 0;
   #answers = new Map(); // change ID -> outcome, oldest first
   // Names this run of the collection in revisions and change tokens. Every start gets a new one,
   // also a start from saved data: the file may be an older backup, so the writes after it were
@@ -147,8 +151,11 @@ export class Collection {
     return this.#epoch;
   }
 
-  /** Applies a push body and returns `{ outcomes }`. */
-  push(body) {
+  /**
+   * Applies a push body and returns `{ outcomes }`. Pages show its writes right away, or, with
+   * `publish: false`, once `publish` is called for them, as a server does after saving them.
+   */
+  push(body, { publish = true } = {}) {
     check(isPlainObject(body) && Array.isArray(body.changes), 'the body must be {"changes": [...]}');
     check(body.changes.length <= LIMITS.changesPerPush, `at most ${LIMITS.changesPerPush} changes per push`);
     const changes = body.changes.map(validateChange);
@@ -158,21 +165,30 @@ export class Collection {
       this.#remember(change.id, answer);
       outcomes[change.id.toUpperCase()] = answer;
     }
+    if (publish) this.publish();
     return { outcomes };
+  }
+
+  /** Lets pages show the writes up to `sequence` (all of them by default), and the ones before. */
+  publish(sequence = this.#sequence) {
+    this.#published = Math.max(this.#published, Math.min(sequence, this.#sequence));
   }
 
   /**
    * Returns changes after `token` (`<epoch>.<sequence>`), oldest first, and the epoch: at most
    * `limit` of them, and no more than `pageBytes` of JSON, but always at least one. A token of
-   * another epoch, or one ahead of this collection, starts from the beginning, so the client
-   * gets every record again instead of waiting for writes that never come.
+   * another epoch, or one ahead of the published writes, starts from the beginning, so the
+   * client gets every record again instead of waiting for writes that never come. A record whose
+   * newest write is not published yet is left out until it is.
    */
   changes(token, limit = LIMITS.pageSize) {
     const match = TOKEN.exec(token ?? '');
     const position = match && match[1] === this.#epoch ? Number(match[2]) : 0;
-    const since = position <= this.#sequence ? position : 0;
+    const since = position <= this.#published ? position : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
-    const changed = [...this.#records.values()].filter((entry) => entry.sequence > since).sort((a, b) => a.sequence - b.sequence);
+    const changed = [...this.#records.values()]
+      .filter((entry) => entry.sequence > since && entry.sequence <= this.#published)
+      .sort((a, b) => a.sequence - b.sequence);
     const page = [];
     let bytes = 0;
     for (const entry of changed) {
@@ -252,6 +268,7 @@ export class Collection {
     const sequence = state.sequence ?? state.revision;
     check(Number.isSafeInteger(sequence) && sequence >= 0 && Array.isArray(state.records), 'invalid saved state');
     this.#sequence = sequence;
+    this.#published = sequence;
     // The new epoch is also later than the saved one, should the clock have gone back since.
     if (typeof state.epoch === 'string' && /^[0-9a-f]{16}$/.test(state.epoch)) {
       this.#epoch = nextEpoch(BigInt(`0x${state.epoch}`));

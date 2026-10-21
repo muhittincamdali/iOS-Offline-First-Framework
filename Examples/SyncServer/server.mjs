@@ -8,7 +8,9 @@
 //
 // A page holds at most `limit` changes (100 by default, 1,000 at most) and 8 MiB of them.
 //
-// It keeps the data in memory and, with --data, in a JSON file written after every push.
+// It keeps the data in memory and, with --data, in a JSON file written after every push. A push
+// is answered, and its writes appear in pages, once the file was written; a failed write answers
+// the push with status 500, and the next push that is saved keeps its changes too.
 // It has no authentication: put it behind your own auth before you expose it.
 import { createServer } from 'node:http';
 import { readFile, rename, writeFile } from 'node:fs/promises';
@@ -53,7 +55,10 @@ function send(response, status, body) {
 /**
  * Creates the HTTP server. `collections` maps collection names to `Collection`s and grows as
  * clients use new names; `save` is called with all of them after every push, and the push is
- * answered once it returns.
+ * answered once it returns. Pages show a push's writes only after a save that followed it
+ * succeeded: a device that pulled a write the server then lost in a restart would keep it for
+ * good, as the write of another device or as its own push, applied, while every other device
+ * goes without it.
  */
 export function createSyncServer({ collections = new Map(), save = async () => {}, validate } = {}) {
   // Saves run one after another, so two pushes never write the data at the same time. A save
@@ -81,8 +86,11 @@ export function createSyncServer({ collections = new Map(), save = async () => {
       const [, name, action] = match;
       if (action === 'push') {
         if (request.method !== 'POST') throw new HTTPError(405, 'use POST');
-        const answer = collection(name).push(await readBody(request));
+        const target = collection(name);
+        const answer = target.push(await readBody(request), { publish: false });
+        const written = target.sequence;
         await saveAll();
+        target.publish(written);
         send(response, 200, answer);
       } else {
         if (request.method !== 'GET') throw new HTTPError(405, 'use GET');

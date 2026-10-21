@@ -99,6 +99,28 @@ test('pages changes after a token', () => {
   assert.equal(notes.changes(`${notes.epoch}.1`, 1e9).changes.length, 2);
 });
 
+test('shows a push held back from pages once it is published', () => {
+  const notes = new Collection();
+  notes.push({ changes: [change()] });
+  const first = notes.changes(null);
+  const edit = change({ record: { id: 'a', text: 'B' }, baseRevision: `${notes.epoch}.1` });
+  const added = change({ recordID: 'b', record: { id: 'b' } });
+  notes.push({ changes: [edit, added] }, { publish: false });
+  // The record whose newest write is held back is left out, and the token stays.
+  assert.deepEqual(notes.changes(null).changes, []);
+  assert.deepEqual(notes.changes(first.token), { changes: [], token: first.token, hasMore: false, epoch: notes.epoch });
+  // A repeated push gets the same answer while it is held back.
+  assert.equal(notes.push({ changes: [added] }, { publish: false }).outcomes[added.id.toUpperCase()].revision, `${notes.epoch}.3`);
+  notes.publish(2);
+  assert.deepEqual(notes.changes(first.token).changes.map((c) => c.record.text), ['B']);
+  notes.publish();
+  assert.deepEqual(notes.changes(null).changes.map((c) => c.recordID), ['a', 'b']);
+  // A restored snapshot shows everything it holds.
+  const held = new Collection();
+  held.push({ changes: [change()] }, { publish: false });
+  assert.equal(new Collection({ state: held.snapshot() }).changes(null).changes.length, 1);
+});
+
 /** Pushes `count` records of `kibibytes` KiB of text, four per push as a 1 MiB body allows. */
 function pushLarge(notes, count, kibibytes) {
   const text = 'x'.repeat(kibibytes * 1024);

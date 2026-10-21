@@ -58,6 +58,11 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
   current record.
 - The answers to the last 10,000 change IDs are remembered, and saved with `--data`, so a push
   that is repeated after a lost answer or a restart is not applied twice.
+- With `--data`, the file is written after every push, one write after the other. A push is
+  answered, and its writes appear in pages, only once the file holds them: a write that a
+  device pulled and a restart then lost would stay on that device alone. A failed write
+  answers the push with status 500 (the device pushes again), and the next push that is saved
+  keeps the changes of the failed one too.
 - A change token is `<epoch>.<n>`, and every page names the epoch. A token of another epoch or
   past the newest write starts the pull from the beginning, so after a restart each client
   pulls every record once instead of waiting for writes that never come.

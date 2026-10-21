@@ -167,3 +167,51 @@ test('a save that failed does not stop later saves of the data file', async () =
     await server.kill();
   }
 });
+
+/** The record IDs of every page of the collection `notes` at `url`, from the beginning. */
+async function pulledRecordIDs(url) {
+  const ids = [];
+  let token = null;
+  for (;;) {
+    const page = await (await fetch(`${url}/sync/notes/changes${token ? `?since=${token}` : ''}`)).json();
+    ids.push(...page.changes.map((c) => c.recordID));
+    token = page.token;
+    if (!page.hasMore) return ids;
+  }
+}
+
+test('a push whose save failed is not pulled before a later save keeps it', async () => {
+  const data = join(await mkdtemp(join(tmpdir(), 'sync-server-')), 'data.json');
+  let server = await startServerProcess(data);
+  try {
+    assert.equal(await pushRecord(server.url, 'a'), 200);
+    assert.equal(await failingSaves(data, () => pushRecord(server.url, 'b')), 500);
+    // A device that pulls now must not see b: it would take its own push for applied, or keep
+    // another device's write, which the restart below loses.
+    assert.deepEqual(await pulledRecordIDs(server.url), ['a']);
+    await server.kill();
+    server = await startServerProcess(data);
+    assert.deepEqual(await pulledRecordIDs(server.url), ['a']);
+    // The device pushes b again, and every device gets it.
+    assert.equal(await pushRecord(server.url, 'b'), 200);
+    assert.deepEqual(await pulledRecordIDs(server.url), ['a', 'b']);
+  } finally {
+    await server.kill();
+  }
+});
+
+test('a push whose save failed is pulled once a later save kept it, also after a restart', async () => {
+  const data = join(await mkdtemp(join(tmpdir(), 'sync-server-')), 'data.json');
+  let server = await startServerProcess(data);
+  try {
+    assert.equal(await pushRecord(server.url, 'a'), 200);
+    assert.equal(await failingSaves(data, () => pushRecord(server.url, 'b')), 500);
+    assert.equal(await pushRecord(server.url, 'c'), 200);
+    assert.deepEqual(await pulledRecordIDs(server.url), ['a', 'b', 'c']);
+    await server.kill();
+    server = await startServerProcess(data);
+    assert.deepEqual(await pulledRecordIDs(server.url), ['a', 'b', 'c']);
+  } finally {
+    await server.kill();
+  }
+});
