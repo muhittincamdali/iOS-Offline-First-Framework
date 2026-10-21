@@ -86,12 +86,17 @@ extension OfflineStore {
         return PullStep(pages: [(token, third)], standing: .current)
     }
 
-    /// One page after `token`, with the length of its token checked.
+    /// One page after `token`, with its length and the length of its token checked.
     private func page(after token: String?, using transport: any SyncTransport<Record>,
                       until deadline: ContinuousClock.Instant) async throws -> PullResponse<Record> {
         let response = try await Self.run(until: deadline) { try await transport.pull(since: token) }
         if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
             throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
+        }
+        let count = response.changes.count + response.quarantined.count
+        guard count <= Self.maximumChangesPerPage else {
+            throw OfflineFirstError.invalidServerResponse(
+                "The page holds \(count) changes; a page may hold \(Self.maximumChangesPerPage) at most.")
         }
         return response
     }

@@ -102,7 +102,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         self.session = session
         self.maximumResponseSize = max(1, maximumResponseSize)
         self.maximumRequestSize = max(1, maximumRequestSize)
-        self.pageSize = min(max(1, pageSize), 1_000)
+        self.pageSize = min(max(1, pageSize), OfflineStore<Record>.maximumChangesPerPage)
         self.headers = headers
     }
 

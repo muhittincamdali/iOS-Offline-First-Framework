@@ -22,6 +22,16 @@ extension OfflineStore {
     /// limit the depth its decoder reads as well.
     public static var maximumRecordDepth: Int { 64 }
 
+    /// The most changes a page may hold, ``PullResponse/changes`` and
+    /// ``PullResponse/quarantined`` together: 1,000. A pull refuses a longer page with
+    /// ``OfflineFirstError/invalidServerResponse(_:)`` before it stores any of it.
+    ///
+    /// The store applies a page in one step that no deadline or cancellation interrupts, and
+    /// writes its file once at the end. A 16 MiB page of small changes holds hundreds of
+    /// thousands of them: that step took seconds and more than a gigabyte, on iOS the app was
+    /// ended before the token moved, and the next sync met the same page.
+    public static var maximumChangesPerPage: Int { 1_000 }
+
     /// Revisions an entry remembers as older than its own accepted write
     /// (``StoredEntry/olderRevisions``): one per accepted write without an echo, the oldest
     /// dropped first.

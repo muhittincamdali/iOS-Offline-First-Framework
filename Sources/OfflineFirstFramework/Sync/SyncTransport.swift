@@ -239,7 +239,9 @@ public protocol SyncTransport<Record>: Sendable {
     /// outcome counts as a failed attempt and is retried later.
     func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>]
 
-    /// Returns server changes after `token`, which is `nil` on the first sync.
+    /// Returns server changes after `token`, which is `nil` on the first sync: at most
+    /// ``OfflineStore/maximumChangesPerPage`` (1,000), ``PullResponse/changes`` and
+    /// ``PullResponse/quarantined`` together. The store refuses a longer page.
     func pull(since token: String?) async throws -> PullResponse<Record>
 }
 

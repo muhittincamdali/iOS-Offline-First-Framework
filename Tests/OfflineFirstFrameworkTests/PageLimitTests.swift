@@ -81,6 +81,32 @@ struct PageLimitTests {
         #expect(growth <= 1_048_576, "grew by \(growth) bytes")
         #expect(elapsed < .milliseconds(500), "took \(elapsed)")
     }
+
+    /// A custom transport is held to the same bound: the store applies a page in one step that
+    /// nothing interrupts, so it refuses a page of more than 1,000 changes before it stores any.
+    @Test(arguments: [1_001, 236_101])
+    func theStoreRefusesAPageOfMoreThanAThousandChangesFromAnyTransport(count: Int) async throws {
+        let changes = (0..<count).map { RemoteChange<Note>(recordID: "\($0)", record: Note(id: "\($0)", text: ""), revision: "1", timestamp: nil) }
+        let page = PullResponse(changes: changes, token: "t1", hasMore: false)
+        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: { _ in page }))
+        let start = ContinuousClock.now
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        #expect(ContinuousClock.now - start < .seconds(1))
+        #expect(await store.records().isEmpty)
+        #expect(await store.state.token == nil)
+    }
+
+    @Test func aPageOfAThousandChangesAndSetAsideOnesIsStored() async throws {
+        let changes = (0..<900).map { RemoteChange<Note>(recordID: "\($0)", record: Note(id: "\($0)", text: ""), revision: "1", timestamp: nil) }
+        let unreadable = (0..<100).map { QuarantinedChange(recordID: "bad\($0)", revision: "1", reason: "test") }
+        let page = PullResponse(changes: changes, token: "t1", hasMore: false, quarantined: unreadable, quarantinedCount: 5_000)
+        let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: { _ in page }))
+        let report = try await store.sync()
+        #expect(report.pulled == 900)
+        #expect(report.quarantined == 5_000)
+        #expect(await store.state.token == "t1")
+        #expect(await InMemorySyncServer<Note>(pageSize: 5_000).pageSize == 1_000)
+    }
 }
 
 /// The `limit` of every pull request.

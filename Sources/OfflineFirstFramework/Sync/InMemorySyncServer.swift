@@ -77,7 +77,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     /// Creates an empty server.
     ///
     /// - Parameters:
-    ///   - pageSize: The most changes per pull, at least 1.
+    ///   - pageSize: The most changes per pull, from 1 to
+    ///     ``OfflineStore/maximumChangesPerPage`` (1,000).
     ///   - latency: How long each request takes.
     ///   - validate: Returns a reason to reject a pushed record, or `nil` to accept it.
     ///   - now: The server's current time. Replace it in tests.
@@ -87,7 +88,7 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         validate: @escaping @Sendable (Record) -> String? = { _ in nil },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.pageSize = max(1, pageSize)
+        self.pageSize = min(max(1, pageSize), OfflineStore<Record>.maximumChangesPerPage)
         self.latency = max(.zero, latency)
         self.validate = validate
         self.now = now
