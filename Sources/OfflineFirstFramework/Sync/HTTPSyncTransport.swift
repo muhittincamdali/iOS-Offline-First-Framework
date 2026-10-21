@@ -20,7 +20,8 @@ import Foundation
 ///
 /// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)``, so the store
 /// retries the changes with its ``RetryPolicy``. Responses are read up to
-/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded. A pull asks
+/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded. A push is
+/// split into requests of at most ``maximumRequestSize`` bytes. A pull asks
 /// for ``pageSize`` changes and, while the page is larger than that, for half as many; a single
 /// change that is larger on its own is set aside in ``OfflineStore/quarantinedChanges()`` and
 /// the pull moves past it.
@@ -62,6 +63,11 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// The longest response, in bytes, that is read. Default: 16 MiB.
     public let maximumResponseSize: Int
 
+    /// The longest push request body, in bytes. A push of more changes is sent in several
+    /// requests, one after the other; a change that is larger on its own is sent alone. Default:
+    /// 1 MiB, the limit of the reference server.
+    public let maximumRequestSize: Int
+
     /// The most changes a pull asks for (the `limit` of the request), from 1 to 1,000. Default:
     /// 100, the reference server's page size.
     public let pageSize: Int
@@ -80,6 +86,7 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     ///     `https://api.example.com/sync/notes`.
     ///   - session: The URL session. Default: `URLSession.shared`.
     ///   - maximumResponseSize: The longest response that is read, in bytes.
+    ///   - maximumRequestSize: The longest push request body, in bytes.
     ///   - pageSize: The most changes a pull asks for.
     ///   - headers: Extra headers for each request, such as an `Authorization` header. Called
     ///     before every request, so it can refresh a token.
@@ -87,22 +94,86 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         baseURL: URL,
         session: URLSession = .shared,
         maximumResponseSize: Int = 16 * 1024 * 1024,
+        maximumRequestSize: Int = 1024 * 1024,
         pageSize: Int = 100,
         headers: @escaping @Sendable () async throws -> [String: String] = { [:] }
     ) {
         self.baseURL = baseURL
         self.session = session
         self.maximumResponseSize = max(1, maximumResponseSize)
+        self.maximumRequestSize = max(1, maximumRequestSize)
         self.pageSize = min(max(1, pageSize), 1_000)
         self.headers = headers
     }
 
+    /// Pushes `changes` in requests of at most ``maximumRequestSize`` bytes, in order. A request
+    /// the server refuses as too large (status 413) is sent again as two halves; a single change
+    /// it refuses so is answered ``PushOutcome/rejected(reason:current:)``, since it can never
+    /// succeed, and is parked. When a request fails after earlier ones were answered, their
+    /// outcomes are returned, and the changes without an answer are retried later.
     public func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>] {
+        let encoder = JSONEncoder()
+        let encoded = try changes.map { EncodedChange(id: $0.id, json: try encoder.encode(WireChange($0))) }
+        var requests = Self.requests(for: encoded, upTo: maximumRequestSize)
+        var outcomes: [UUID: PushOutcome<Record>] = [:]
+        while !requests.isEmpty {
+            let batch = requests.removeFirst()
+            do {
+                outcomes.merge(try await push(batch)) { _, answer in answer }
+            } catch Failure.unexpectedStatus(code: 413, body: _) where batch.count > 1 {
+                let half = batch.count / 2
+                requests.insert(contentsOf: [Array(batch[..<half]), Array(batch[half...])], at: 0)
+            } catch Failure.unexpectedStatus(code: 413, body: let body) {
+                let reason = "The sync server refused the change as too large (status 413)" + (body.isEmpty ? "." : ": \(body)")
+                outcomes[batch[0].id] = .rejected(reason: reason, current: nil)
+            } catch where !outcomes.isEmpty && !(error is CancellationError) {
+                return outcomes
+            }
+        }
+        return outcomes
+    }
+
+    /// One pushed change as the JSON it is sent as.
+    private struct EncodedChange {
+        let id: UUID
+        let json: Data
+    }
+
+    /// `{"changes":[]}`.
+    private static var emptyPushSize: Int { 14 }
+
+    /// Splits `changes`, in order, into request bodies of at most `limit` bytes; a change that is
+    /// larger on its own goes alone.
+    private static func requests(for changes: [EncodedChange], upTo limit: Int) -> [[EncodedChange]] {
+        var requests: [[EncodedChange]] = []
+        var current: [EncodedChange] = []
+        var size = emptyPushSize
+        for change in changes {
+            if !current.isEmpty, size + 1 + change.json.count > limit {
+                requests.append(current)
+                current = []
+                size = emptyPushSize
+            }
+            size += change.json.count + (current.isEmpty ? 0 : 1)
+            current.append(change)
+        }
+        if !current.isEmpty { requests.append(current) }
+        return requests
+    }
+
+    /// Sends one request of `batch` and reads the outcomes of its changes.
+    private func push(_ batch: [EncodedChange]) async throws -> [UUID: PushOutcome<Record>] {
         var request = try await makeRequest(url: baseURL.appending(path: "push"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(PushBody(changes: changes.map(WireChange.init)))
-        return try Self.outcomes(from: try await send(request), for: Set(changes.map(\.id)))
+        var body = Data(#"{"changes":["#.utf8)
+        for (index, change) in batch.enumerated() {
+            if index > 0 { body.append(UInt8(ascii: ",")) }
+            body.append(change.json)
+        }
+        body.append(contentsOf: Array("]}".utf8))
+        request.httpBody = body
+        return try Self.outcomes(from: try await send(request), for: Set(batch.map(\.id)))
     }
 
     /// Pulls the page after `token`. A page must fit in ``maximumResponseSize``; while it does
@@ -190,10 +261,6 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     }
 
     // MARK: - Wire format
-
-    private struct PushBody: Encodable {
-        let changes: [WireChange]
-    }
 
     private struct WireChange: Encodable {
         let id: UUID
