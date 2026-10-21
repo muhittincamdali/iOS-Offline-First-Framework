@@ -37,7 +37,9 @@ struct CancellationTests {
         let report = try await second.value
         #expect(report.pushed == 1)
         #expect(try await first.value == report)
-        #expect(await server.pullRequests == 1)
+        // One sync: its pull, and the pull from the beginning that checks the server's first
+        // epoch, since the store holds a record.
+        #expect(await server.pullRequests == 2)
         #expect(await server.record("a") == Note(id: "a", text: "A"))
         #expect(await store.pendingChanges().isEmpty)
     }

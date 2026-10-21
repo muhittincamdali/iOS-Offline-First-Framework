@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -186,17 +187,38 @@ struct ServerHistoryTests {
         #expect(await store.state.serverEpoch == "e1")
     }
 
+    /// A server that starts to report epochs: the first one is believed once the pull from the
+    /// beginning reports it too, and the pull goes on after the token.
     @Test func theFirstEpochAServerReportsKeepsTheToken() async throws {
+        let reportsEpoch = OSAllocatedUnfairLock(initialState: false)
+        let transport = ScriptedTransport(pull: { token in
+            let epoch = reportsEpoch.withLock { $0 } ? "e1" : nil
+            return PullResponse(changes: [], token: token == nil ? "t1" : "t2", hasMore: false, epoch: epoch)
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        reportsEpoch.withLock { $0 = true }
+        try await store.sync()
+        // The pull with the token, and the pull from the beginning that checks the first epoch.
+        #expect(await transport.pulls == 3)
+        #expect(await store.state.token == "t2")
+        #expect(await store.state.serverEpoch == "e1")
+    }
+
+    /// The same server answers the pull with the token with its first epoch, and the pull from
+    /// the beginning without one, as another deployment behind the URL would for one of them: the
+    /// sync fails without a change, and the store goes on without an epoch.
+    @Test func aFirstEpochThatOnlyOneRequestReportsIsNotTaken() async throws {
         let transport = ScriptedTransport(pull: { token in
             token == nil ? PullResponse(changes: [], token: "t1", hasMore: false)
                 : PullResponse(changes: [], token: "t2", hasMore: false, epoch: "e1")
         })
         let store = try makeStore(transport)
         try await store.sync()
-        try await store.sync()
-        #expect(await transport.pulls == 2)
-        #expect(await store.state.token == "t2")
-        #expect(await store.state.serverEpoch == "e1")
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        #expect(await transport.pulls == 4)
+        #expect(await store.state.token == "t1")
+        #expect(await store.state.serverEpoch == nil)
     }
 
     /// After a restore from a backup the server's copy is older than the one the store holds;

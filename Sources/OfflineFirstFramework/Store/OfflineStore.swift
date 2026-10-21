@@ -24,6 +24,10 @@ public actor OfflineStore<Record: SyncableRecord> {
         var serverIdentity: String?
         /// The last ``PullResponse/epoch`` the server reported.
         var serverEpoch: String?
+        /// Whether two requests reported ``serverEpoch``. A new store takes its first epoch from
+        /// one page; until another request reports it, a page without an epoch is not refused
+        /// for it.
+        var epochIsConfirmed = false
         /// Grows by one whenever the server's history changes: a new epoch or another server.
         var history: UInt64
         /// Server changes set aside, oldest first.
@@ -305,7 +309,8 @@ public actor OfflineStore<Record: SyncableRecord> {
         let file = StoreFile(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion, nodeID: nodeID,
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
-                             serverEpoch: state.serverEpoch, history: state.history,
+                             serverEpoch: state.serverEpoch, epochIsConfirmed: state.epochIsConfirmed ? true : nil,
+                             history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
                              retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)

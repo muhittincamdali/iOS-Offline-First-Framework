@@ -12,10 +12,16 @@ import Foundation
 /// or syncs report it: a server whose data really went back, restored from a backup, reports a
 /// new epoch, later than every one before.
 ///
-/// A page without an epoch, once the store holds one, belongs to no history the store knows: a
-/// server that reports epochs reports one on every page. It is refused like an earlier epoch,
-/// so one page from another deployment cannot bring revisions, sequences and a token of its own
-/// into the store's history.
+/// The first epoch the store hears of is checked the same way once the store holds a token or
+/// records. Only a new store takes it from one page, since nothing of its own can be
+/// overwritten, and holds it as reported once (``State/epochIsConfirmed``) until another request
+/// reports it too. A page without an epoch, once two requests reported the store's, belongs to
+/// no history the store knows: a server that reports epochs reports one on every page. It is
+/// refused like an earlier epoch, so one page from another deployment cannot bring revisions,
+/// sequences and a token of its own into the store's history. Against an epoch reported once, a
+/// page without an epoch is not refused: that epoch may come from another deployment, and
+/// refusing the server's pages for it would lock the store out of a server without epochs for
+/// good. When both requests of a sync report no epoch, a new history without one starts.
 ///
 /// Epochs go one way. An epoch the store left for a later one is retired: the store keeps the
 /// last ``maximumRetiredEpochs`` of them in its file, ``OfflineStore/resetChangeToken()`` keeps
@@ -31,17 +37,27 @@ extension OfflineStore {
     enum EpochStanding: Equatable {
         /// The page names the store's own epoch, or no epoch while the store holds none.
         case current
-        /// The page names no epoch although the store holds one. A server that reports epochs
-        /// reports one on every page (see <doc:ServerProtocol>), so the page comes from
-        /// somewhere else behind the same URL: another deployment, a server of an older
-        /// version, a proxy or cache that answers for it. Its revisions, sequences and token
-        /// belong to no history the store knows, so it is never taken.
+        /// The page names no epoch although the store holds one that two requests reported. A
+        /// server that reports epochs reports one on every page (see <doc:ServerProtocol>), so
+        /// the page comes from somewhere else behind the same URL: another deployment, a server
+        /// of an older version, a proxy or cache that answers for it. Its revisions, sequences
+        /// and token belong to no history the store knows, so it is never taken.
         case missing
-        /// The first epoch the store hears of: a new store, a server that just started to report
-        /// epochs, or another server.
+        /// The first epoch of a new store, one without a token or records: nothing of the
+        /// store's can be overwritten, so the page is taken, and the epoch counts as reported
+        /// once until another request reports it.
+        case firstOfNewStore
+        /// The first epoch the store hears of while it holds a token or records: a server that
+        /// just started to report epochs, or another server. Taken once a second request reports
+        /// it too. It does not start a history, so the pull goes on after the store's token.
         case first
         /// A later epoch than the store's: the server's history changed.
         case later
+        /// The page names no epoch while only one request reported the store's: a new store
+        /// took its epoch from its first page, which may have come from another deployment
+        /// behind the same URL. It is not refused; once a second request reports no epoch
+        /// either, it starts a new history without one.
+        case missingUnconfirmed
         /// An earlier epoch than the store's that the store never held: a stale replica or cache
         /// of a history between two the store saw, or a server whose epochs do not grow. It is
         /// never taken.
@@ -53,7 +69,7 @@ extension OfflineStore {
         /// Whether a page of this epoch, once a second request confirmed it, starts a new server
         /// history.
         var startsHistory: Bool {
-            self == .later
+            self == .later || self == .missingUnconfirmed
         }
 
         /// Whether a page of this epoch is never stored.
@@ -61,20 +77,23 @@ extension OfflineStore {
             self == .earlier || self == .retired || self == .missing
         }
 
-        /// Whether a page of this epoch has to be checked by a second request of the sync.
+        /// Whether a page of this epoch has to be checked by a second request of the sync: every
+        /// epoch but the store's own and a new store's first.
         var namesAnotherEpoch: Bool {
-            startsHistory || isRefused
+            self != .current && self != .firstOfNewStore
         }
     }
 
     static func standing(of epoch: String?, in state: State) throws -> EpochStanding {
-        guard let epoch else { return state.serverEpoch == nil ? .current : .missing }
-        guard epoch.utf8.count <= maximumRevisionLength else {
+        if let epoch, epoch.utf8.count > maximumRevisionLength {
             throw OfflineFirstError.invalidServerResponse("The epoch has more than \(maximumRevisionLength) bytes.")
         }
         if epoch == state.serverEpoch { return .current }
-        if state.retiredEpochs.contains(epoch) { return .retired }
-        guard let known = state.serverEpoch else { return .first }
+        if let epoch, state.retiredEpochs.contains(epoch) { return .retired }
+        guard let known = state.serverEpoch else {
+            return state.token == nil && state.entries.isEmpty ? .firstOfNewStore : .first
+        }
+        guard let epoch else { return state.epochIsConfirmed ? .missing : .missingUnconfirmed }
         return isLater(epoch, than: known) ? .later : .earlier
     }
 
@@ -110,14 +129,16 @@ extension OfflineStore {
     /// the server's current versions replace the ones without a pending change whatever their
     /// timestamps say, and a pending change learns where it stands from its push's answer.
     ///
-    /// `isLaterEpoch` is true for a later epoch of the same server and false for another server
-    /// (``SyncTransport/serverIdentity``). A later epoch retires the store's previous one. And a
-    /// version that a push answer brought and no pull has brought since
-    /// (``StoredEntry/pushedInHistory``) moves into the later history with what the store knows
-    /// about its order. The sync pushes before it pulls, so the server may have answered after its
-    /// restart: a page of the new epoch from before that answer (a shared cache, a lagging
-    /// replica) would otherwise roll back the store's accepted write, or the version a conflict
-    /// answer brought, and the next edit would be resolved against the device's own write.
+    /// `isLaterEpoch` is true for a later epoch of the same server, and false for another server
+    /// (``SyncTransport/serverIdentity``) and for pages without an epoch that replace one a
+    /// single request reported (``EpochStanding/missingUnconfirmed``). A later epoch retires the
+    /// store's previous one. And a version that a push answer brought and no pull has brought
+    /// since (``StoredEntry/pushedInHistory``) moves into the later history with what the store
+    /// knows about its order. The sync pushes before it pulls, so the server may have answered
+    /// after its restart: a page of the new epoch from before that answer (a shared cache, a
+    /// lagging replica) would otherwise roll back the store's accepted write, or the version a
+    /// conflict answer brought, and the next edit would be resolved against the device's own
+    /// write.
     static func beginHistory(epoch: String?, isLaterEpoch: Bool, in state: inout State) {
         let previous = state.history
         if isLaterEpoch, let left = state.serverEpoch, left != epoch {
@@ -127,6 +148,7 @@ extension OfflineStore {
         }
         state.history &+= 1
         state.serverEpoch = epoch
+        state.epochIsConfirmed = epoch != nil
         state.token = nil
         state.quarantine.removeAll()
         for (id, entry) in state.entries {

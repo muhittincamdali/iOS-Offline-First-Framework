@@ -148,6 +148,9 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var serverIdentity: String? = nil
     /// The last ``PullResponse/epoch`` the server reported.
     var serverEpoch: String? = nil
+    /// Whether two requests reported ``serverEpoch``; `nil` when not, as in files from before it
+    /// existed: the next page with that epoch confirms it.
+    var epochIsConfirmed: Bool? = nil
     /// Counts the server histories the store has seen; `nil` in files from before it existed.
     var history: UInt64? = nil
     /// Server changes set aside; `nil` when there are none.

@@ -106,7 +106,9 @@ struct AutomaticSyncTests {
         let server = InMemorySyncServer<Note>()
         let store = try OfflineStore<Note>(name: "notes", storage: storage, transport: server, configuration: makeConfiguration(clock: clock))
         await store.startAutomaticSync(monitor: SimulatedConnectivity(isOnline: true), interval: .seconds(300), debounce: .zero)
-        #expect(await eventually { await server.pullRequests == 1 })
+        // The pull, and the pull from the beginning that checks the server's first epoch, since
+        // the store holds a record.
+        #expect(await eventually { await server.pullRequests == 2 })
         // The next run is scheduled after the sync; computing its wait used to trap. No wait of
         // the retry policy is that long, so the change counts as due and goes out.
         try await Task.sleep(for: .milliseconds(100))

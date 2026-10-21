@@ -3,11 +3,12 @@ import os
 import Testing
 @testable import OfflineFirstFramework
 
-/// A page without an epoch once the store holds one: another deployment behind the same URL, or
-/// a proxy that answers for the server. It was taken from a single request, with its revision,
-/// sequence and token: the record went back to that copy, and the forged sequence made every
-/// later conflict answer of the real server look older, so each edit of the record was parked,
-/// also after `retryFailedChanges()` and `resetChangeToken()`.
+/// A page without an epoch once the store holds one that two requests reported: another
+/// deployment behind the same URL, or a proxy that answers for the server. It was taken from a
+/// single request, with its revision, sequence and token: the record went back to that copy, and
+/// the forged sequence made every later conflict answer of the real server look older, so each
+/// edit of the record was parked, also after `retryFailedChanges()` and `resetChangeToken()`.
+/// (Against an epoch only a new store's first page reported, see `FirstEpochTests`.)
 @Suite("Offline store: a page without an epoch")
 struct MissingEpochTests {
     private static let forgedPage = PullResponse(
@@ -31,10 +32,13 @@ struct MissingEpochTests {
         let store = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: transport,
                                            configuration: makeConfiguration(clock: clock))
         await server.write(Note(id: "n", text: "real 1"))
+        // The second sync reports the epoch a second time.
+        try await store.sync()
         try await store.sync()
         let token = await store.state.token
         let epoch = await store.state.serverEpoch
         #expect(epoch != nil)
+        #expect(await store.state.epochIsConfirmed)
 
         // Both requests of the check are answered without an epoch: refused, nothing changes.
         forged.withLock { $0 = true }
@@ -85,6 +89,7 @@ struct MissingEpochTests {
         let store = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: transport(server, forged: forged),
                                            configuration: makeConfiguration(clock: clock))
         await server.write(Note(id: "n", text: "real 1"))
+        try await store.sync()
         try await store.sync()
         forged.withLock { $0 = true }
         _ = try? await store.sync()

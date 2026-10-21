@@ -31,7 +31,8 @@ extension OfflineStore {
                 // A page is checked before it is stored, so a broken one changes nothing.
                 try Self.checkProgress(of: page.response, after: page.token, requested: requested)
                 try store(page.response, startingHistory: index == 0 && step.standing.startsHistory,
-                          isLaterEpoch: step.standing == .later, report: &report)
+                          isLaterEpoch: step.standing == .later, isFirstPageOfNewStore: step.standing == .firstOfNewStore,
+                          report: &report)
             }
             guard step.pages.last?.response.hasMore == true else { return }
         }
@@ -40,11 +41,13 @@ extension OfflineStore {
 
     /// The pages of the next step after the store's token.
     ///
-    /// A page that names a later epoch than the store's (``EpochStanding/later``) is believed
-    /// only when a second request of the other kind reports the same epoch: a pull from the
+    /// A page that names a later epoch than the store's (``EpochStanding/later``), the first
+    /// epoch a store with a token or records hears of (``EpochStanding/first``), or no epoch while
+    /// only a new store's first page reported the store's (``EpochStanding/missingUnconfirmed``),
+    /// is believed only when a second request of the other kind reports the same: a pull from the
     /// beginning after a pull with the token, or a pull with the first page's token after a pull
     /// from the beginning. An earlier epoch (``EpochStanding/earlier`` or
-    /// ``EpochStanding/retired``), and no epoch while the store holds one
+    /// ``EpochStanding/retired``), and no epoch while the store holds one two requests reported
     /// (``EpochStanding/missing``), are refused even then, in every sync. A stale cache or
     /// replica, or another deployment behind the same URL, rarely answers both, and a shared
     /// cache answers the pull from the beginning first, since every device asks for the same
@@ -73,11 +76,13 @@ extension OfflineStore {
         let second = try await page(after: secondToken, using: transport, until: deadline)
         if second.epoch == epoch {
             if standing.isRefused { throw Self.refusal(of: epoch, standing, in: state) }
-            // After a token of the old history the first page is dropped; the pull starts over
-            // from the beginning of the new one.
             if token == nil, secondToken != nil {
                 return PullStep(pages: [(token, first), (secondToken, second)], standing: standing)
             }
+            // A first epoch names the history the store's token belongs to, so the pull goes on
+            // after it. After a token of the old history the first page is dropped; the pull
+            // starts over from the beginning of the new one.
+            if standing == .first { return PullStep(pages: [(token, first)], standing: standing) }
             return PullStep(pages: [(nil, second)], standing: standing)
         }
         guard try Self.standing(of: second.epoch, in: state) == .current else {
@@ -112,14 +117,15 @@ extension OfflineStore {
     }
 
     /// Stores a checked page: its epoch, its changes and its token.
-    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool,
+    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool, isFirstPageOfNewStore: Bool,
                        report: inout SyncReport) throws {
         try update { state in
             if startingHistory {
                 Self.beginHistory(epoch: response.epoch, isLaterEpoch: isLaterEpoch, in: &state)
             } else if let epoch = response.epoch {
-                // The store's epoch, or the first one the server reports (a new store, an update
-                // of the server).
+                // The store's epoch, which this request reports once more, or the first one the
+                // server reports: from two requests, or from the first page of a new store.
+                state.epochIsConfirmed = epoch == state.serverEpoch || !isFirstPageOfNewStore
                 state.serverEpoch = epoch
             }
             for change in response.quarantined {
