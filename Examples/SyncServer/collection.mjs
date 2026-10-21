@@ -12,6 +12,11 @@ export const LIMITS = Object.freeze({
   revisionLength: 64,
   // How far ahead of the server's clock a pushed timestamp may be, in milliseconds.
   clockDrift: 300_000,
+  // How deep a record may nest objects and arrays, the record itself counting as one, and how
+  // many bytes of JSON it may take. Clients read each change of a page on their own, but a
+  // record nested deeper than their decoder reads is still set aside on every device.
+  recordDepth: 64,
+  recordBytes: 256 * 1024,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,6 +50,25 @@ function check(condition, message) {
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Whether `record` nests objects and arrays deeper than `limit`, counted without recursion. */
+function nestsDeeperThan(record, limit) {
+  const stack = [[record, 1]];
+  while (stack.length > 0) {
+    const [value, depth] = stack.pop();
+    if (typeof value !== 'object' || value === null) continue;
+    if (depth > limit) return true;
+    for (const child of Object.values(value)) stack.push([child, depth + 1]);
+  }
+  return false;
+}
+
+/** Why `record` breaks the size limits, or null. */
+function sizeProblem(record) {
+  if (nestsDeeperThan(record, LIMITS.recordDepth)) return `The record nests deeper than ${LIMITS.recordDepth} levels.`;
+  if (Buffer.byteLength(JSON.stringify(record)) > LIMITS.recordBytes) return `The record is larger than ${LIMITS.recordBytes} bytes.`;
+  return null;
 }
 
 function validateRecordID(recordID) {
@@ -159,7 +183,7 @@ export class Collection {
     if (!current && this.#records.size >= this.maxRecords) {
       return { status: 'rejected', reason: `The collection holds the maximum of ${this.maxRecords} records.` };
     }
-    const reason = change.record ? this.validate(change.record) : null;
+    const reason = change.record ? (sizeProblem(change.record) ?? this.validate(change.record)) : null;
     if (reason) {
       return { status: 'rejected', reason, ...(current ? { current: this.#remote(current) } : {}) };
     }

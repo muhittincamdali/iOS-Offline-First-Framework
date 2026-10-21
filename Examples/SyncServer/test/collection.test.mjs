@@ -56,6 +56,22 @@ test('rejects records the validator refuses', () => {
   assert.equal(notes.sequence, 0);
 });
 
+test('rejects a record that nests too deeply or is too large, and applies the others', () => {
+  const notes = new Collection();
+  let deep = {};
+  for (let level = 1; level < LIMITS.recordDepth; level += 1) deep = { child: deep };
+  const atLimit = change({ recordID: 'limit', record: deep });
+  const tooDeep = change({ recordID: 'deep', record: { nested: deep } });
+  const tooLarge = change({ recordID: 'large', record: { text: 'x'.repeat(LIMITS.recordBytes) } });
+  const fine = change({ recordID: 'fine', record: { id: 'fine' } });
+  const { outcomes } = notes.push({ changes: [atLimit, tooDeep, tooLarge, fine] });
+  assert.equal(outcomes[atLimit.id.toUpperCase()].status, 'accepted');
+  assert.deepEqual(outcomes[tooDeep.id.toUpperCase()], { status: 'rejected', reason: `The record nests deeper than ${LIMITS.recordDepth} levels.` });
+  assert.deepEqual(outcomes[tooLarge.id.toUpperCase()], { status: 'rejected', reason: `The record is larger than ${LIMITS.recordBytes} bytes.` });
+  assert.equal(outcomes[fine.id.toUpperCase()].status, 'accepted');
+  assert.deepEqual(notes.changes(null).changes.map((entry) => entry.recordID), ['limit', 'fine']);
+});
+
 test('refuses new records beyond the limit but keeps accepting edits', () => {
   const notes = new Collection({ maxRecords: 1 });
   notes.push({ changes: [change()] });
