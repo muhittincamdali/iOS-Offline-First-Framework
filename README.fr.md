@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@17ca3fe66e195ea475a0b15e41fc1d8962c24ea6 status=reviewed -->
+<!-- i18n-source: README.md@f0650e0435dcbdd107b34be82133d1fd3898bd38 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -53,14 +53,16 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 311 tests Swift Testing sur macOS et sur un simulateur
+- **Testé contre un vrai serveur** — 324 tests Swift Testing sur macOS et sur un simulateur
   d’iPhone, dont deux tests de propriétés qui soumettent chaque politique de conflit à des
   requêtes perdues, des redémarrages, des réinitialisations du jeton, des synchronisations
   simultanées, de petites limites de pages, des pages périmées, des opérations simultanées et des
-  plantages, et des tests qui envoient des pages de données inutilisables, des enregistrements
-  très profondément imbriqués, des pages plus grandes que la limite de réponse et des pages avec
-  plus de modifications que demandé, aussi diffusées sans fin sur un socket ; 28 tests Node pour
-  le serveur ; et une suite de tests de bout en bout dans la CI qui synchronise des stores via le
+  plantages, des tests de scénarios avec une réplique qui répond à un appareil pendant de
+  nombreuses synchronisations et avec un plantage à chaque écriture d’une synchronisation, et des
+  tests qui envoient des pages de données inutilisables, des enregistrements très profondément
+  imbriqués, des pages plus grandes que la limite de réponse et des pages avec plus de
+  modifications que demandé, aussi diffusées sans fin sur un socket ; 28 tests Node pour le
+  serveur ; et une suite de tests de bout en bout dans la CI qui synchronise des stores via le
   serveur en HTTP, aussi avec 68 enregistrements de 250 Kio à travers un redémarrage du serveur,
   avec 70 réponses de conflit de 250 Kio qui ensemble dépassent la limite de réponse, avec une
   écriture dont la sauvegarde a échoué avant un redémarrage, avec un envoi que le serveur a
@@ -355,16 +357,18 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
   consulté que lorsqu’un enregistrement a changé sur l’appareil et sur un autre appareil, et une
   version plus ancienne du serveur est ignorée, y compris juste après l’acceptation d’une écriture
   de l’appareil lui-même, même après un redémarrage du serveur que l’appareil n’a pas encore vu et
-  après `resetChangeToken()`.
+  après `resetChangeToken()`. Une version que l’appareil a écrite lui-même n’est jamais un
+  conflit, même quand une page périmée a fait revenir l’enregistrement en arrière et que
+  l’utilisateur l’a modifié par-dessus.
 - Un autre epoch du serveur ne compte que lorsque deux requêtes d’une même synchronisation le
   signalent, la récupération avec le jeton et la récupération depuis le début : un cache périmé ou
   un autre déploiement derrière la même URL ne peut donc pas faire revenir le store en arrière.
   Une synchronisation qui ne récupère qu’une page suit quand même un redémarrage du serveur, et
   quand les deux requêtes ne concordent pas, la synchronisation échoue au lieu de signaler un
-  succès. Les epochs vont dans un seul sens : un epoch que le store a quitté pour un epoch
-  ultérieur n’est jamais repris, même après `resetChangeToken()`, si bien qu’une réplique ou un
-  cache périmé qui répond aux deux requêtes ne peut pas non plus faire revenir le store en
-  arrière.
+  succès. Les epochs vont dans un seul sens : un epoch antérieur à celui du store, qu’il l’ait
+  quitté ou ne l’ait jamais eu, n’est jamais pris, même après `resetChangeToken()`, si bien qu’une
+  réplique ou un cache périmé qui répond aux deux requêtes, pendant autant de synchronisations de
+  suite que ce soit, ne peut pas non plus faire revenir le store en arrière.
 - Les enregistrements supprimés le restent. Un serveur qui a perdu ses données, ou un autre
   serveur, fait tout récupérer à nouveau au store, qui garde ses modifications en attente ; elles
   rencontrent le nouvel historique par la réponse à leur envoi, pas par une page. Un
@@ -405,11 +409,9 @@ les backends personnalisés qui fournissent une `claimIdentity`), le fichier ent
 chaque modification, les enregistrements s’imbriquent sur 64 niveaux au plus, une page contient au
 plus 1 000 modifications, une modification seule plus grande que quatre fois la limite de réponse
 arrête la récupération, une modification dont la réponse d’envoi seule dépasse la limite de
-réponse reste incertaine et est mise en attente après sa dernière tentative, un epoch que le store
-a quitté reste refusé jusqu’à ce que le serveur en annonce un nouveau, une réplique qui répond
-huit synchronisations de suite avec un epoch que le store n’a jamais eu montre ses enregistrements
-périmés jusqu’à ce que le serveur réponde de nouveau, et les suppressions au-delà de 10 000 sont
-oubliées. [Garanties et
+réponse reste incertaine et est mise en attente après sa dernière tentative, un epoch antérieur
+reste refusé jusqu’à ce que le serveur en annonce un plus récent que celui du store, et les
+suppressions au-delà de 10 000 sont oubliées. [Garanties et
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) donne la
 liste complète.
 

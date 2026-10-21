@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@17ca3fe66e195ea475a0b15e41fc1d8962c24ea6 status=reviewed -->
+<!-- i18n-source: README.md@f0650e0435dcbdd107b34be82133d1fd3898bd38 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,18 +51,20 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 311 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 324 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas dos pruebas de propiedades que someten cada política de conflictos a
   solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
-  límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, y pruebas que
-  envían páginas de datos inservibles, registros anidados a gran profundidad, páginas mayores que
-  el límite de respuesta y páginas con más cambios de los pedidos, también transmitidas sin fin
-  por un socket; 28 pruebas de Node para el servidor; y un conjunto de pruebas de extremo a
-  extremo en CI que sincroniza almacenes a través del servidor por HTTP, también con 68 registros
-  de 250 KiB a través de un reinicio del servidor, con 70 respuestas de conflicto de 250 KiB que
-  juntas superan el límite de respuesta, con una escritura cuyo guardado falló antes de un
-  reinicio, con un envío que el servidor aplicó detrás de un proxy que responde 504 y con una
-  réplica que sirve páginas de antes de un reinicio tras restablecer el token.
+  límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, pruebas de
+  escenarios con una réplica que responde a un dispositivo durante muchas sincronizaciones y con
+  una caída en cada escritura de una sincronización, y pruebas que envían páginas de datos
+  inservibles, registros anidados a gran profundidad, páginas mayores que el límite de respuesta y
+  páginas con más cambios de los pedidos, también transmitidas sin fin por un socket; 28 pruebas
+  de Node para el servidor; y un conjunto de pruebas de extremo a extremo en CI que sincroniza
+  almacenes a través del servidor por HTTP, también con 68 registros de 250 KiB a través de un
+  reinicio del servidor, con 70 respuestas de conflicto de 250 KiB que juntas superan el límite de
+  respuesta, con una escritura cuyo guardado falló antes de un reinicio, con un envío que el
+  servidor aplicó detrás de un proxy que responde 504 y con una réplica que sirve páginas de antes
+  de un reinicio tras restablecer el token.
 
 ### Qué incluye
 
@@ -349,15 +351,17 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   pregunta cuando un registro cambió en el dispositivo y en otro dispositivo, y una versión más
   antigua del servidor se omite, también justo después de que se aceptara la escritura del propio
   dispositivo, incluso tras un reinicio del servidor que el dispositivo aún no ha visto y tras
-  `resetChangeToken()`.
+  `resetChangeToken()`. Una versión que escribió el propio dispositivo nunca es un conflicto,
+  tampoco cuando una página obsoleta hizo retroceder el registro y el usuario editó sobre ella.
 - Otro epoch del servidor solo cuenta cuando lo informan dos solicitudes de la misma
   sincronización, la descarga con el token y la descarga desde el principio, así que una caché
   obsoleta u otro despliegue detrás de la misma URL no puede hacer retroceder el almacén. Una
   sincronización que descarga una sola página sigue igualmente un reinicio del servidor, y cuando
   las dos solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los
-  epochs van en un solo sentido: un epoch que el almacén dejó por uno posterior nunca se vuelve a
-  tomar, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que responde
-  ambas solicitudes tampoco puede hacer retroceder el almacén.
+  epochs van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca
+  tuvo, nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
+  responde ambas solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer
+  retroceder el almacén.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
   que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes, que se encuentran
   con la nueva historia a través de la respuesta a su envío, no de una página. Un registro que la
@@ -395,11 +399,9 @@ almacén por archivo (garantizado con `FileStore`, `InMemoryStorage` y los backe
 informan un `claimIdentity`), el archivo entero se escribe en cada cambio, los registros se anidan
 como mucho 64 niveles, una página contiene como mucho 1.000 cambios, un único cambio mayor que
 cuatro veces el límite de respuesta detiene la descarga, un cambio cuya respuesta de envío por sí
-sola supera el límite de respuesta queda en duda y se aparca tras su último intento, un epoch que
-el almacén dejó sigue rechazado hasta que el servidor informe uno nuevo, una réplica que responde
-ocho sincronizaciones seguidas con un epoch que el almacén nunca tuvo muestra sus registros
-obsoletos hasta que el servidor vuelve a responder y los borrados más allá de 10.000 se olvidan.
-[Garantías y
+sola supera el límite de respuesta queda en duda y se aparca tras su último intento, un epoch
+anterior sigue rechazado hasta que el servidor informe uno posterior al del almacén y los borrados
+más allá de 10.000 se olvidan. [Garantías y
 límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la
 lista completa.
 
