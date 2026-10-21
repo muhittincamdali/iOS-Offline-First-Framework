@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@f0650e0435dcbdd107b34be82133d1fd3898bd38 status=reviewed -->
+<!-- i18n-source: README.md@dda00c8524eaba424ab0bb3aa2216dc80dbca2ef status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,12 +51,13 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 324 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 331 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter zwei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
-  Seitengrenzen, veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, Szenariotests
-  mit einem Replikat, das einem Gerät viele Synchronisierungen lang antwortet, und mit einem
-  Absturz bei jedem Schreibvorgang einer Synchronisierung, und Tests, die Seiten voller
+  Seitengrenzen, veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, auch gegen
+  einen Server ohne Sequenzen, Szenariotests mit einem Replikat, das einem Gerät viele
+  Synchronisierungen lang antwortet, mit einem Absturz bei jedem Schreibvorgang einer
+  Synchronisierung und mit Geräteuhren, die nach vorn springen, und Tests, die Seiten voller
   unbrauchbarer Daten, sehr tief verschachtelte Datensätze, Seiten über dem Antwortlimit und
   Seiten mit mehr Änderungen als angefordert senden, auch endlos über einen Socket gestreamt; 28
   Node-Tests für den Server; und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch
@@ -351,11 +352,14 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   ungewiss.
 - Eine veraltete Kopie ersetzt nie einen Schreibvorgang, den der Server angenommen hat: Der
   Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf einem anderen Gerät
-  geändert hat, und eine ältere Serverversion wird übersprungen, auch direkt nachdem der Server
-  den eigenen Schreibvorgang des Geräts angenommen hat, selbst über einen Serverneustart hinweg,
-  den das Gerät noch nicht gesehen hat, und nach `resetChangeToken()`. Eine Version, die das Gerät
-  selbst geschrieben hat, ist nie ein Konflikt, auch wenn eine veraltete Seite den Datensatz
-  zurückgesetzt und der Nutzer darauf weiterbearbeitet hat.
+  geändert hat, und eine ältere Serverversion wird anhand der `sequence` des Servers übersprungen,
+  auch direkt nachdem der Server den eigenen Schreibvorgang des Geräts angenommen hat, selbst über
+  einen Serverneustart hinweg, den das Gerät noch nicht gesehen hat, und nach
+  `resetChangeToken()`. Eine Version, die das Gerät selbst geschrieben hat, ist nie ein Konflikt,
+  auch wenn eine veraltete Seite den Datensatz zurückgesetzt und der Nutzer darauf
+  weiterbearbeitet hat oder eine Seite einen älteren eigenen Schreibvorgang vor einer Version
+  auflistet, deren Antwort verloren ging. Ohne Sequenzen überlässt ein Abruf eine ausstehende
+  Änderung ihrer Übertragung, deren Konfliktantwort die aktuelle Version des Servers nennt.
 - Eine andere Server-Epoch zählt nur, wenn zwei Anfragen derselben Synchronisierung sie melden,
   der Abruf mit dem Token und der Abruf von Anfang an. Ein veralteter Cache oder ein anderes
   Deployment hinter derselben URL kann den Store also nicht zurücksetzen. Eine Synchronisierung,
@@ -386,30 +390,33 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
   wirken nur begrenzt: Die Referenzserver speichern einen übertragenen Zeitstempel höchstens fünf
   Minuten nach ihrer eigenen Uhr, ein kurzer Moment einer falschen Geräteuhr geht nicht auf
-  spätere Schreibvorgänge über, Wiederholungen warten und werden geparkt, eine Synchronisierung
-  endet nach `syncTimeout`, und Synchronisierungen warten, solange die Datei nicht geschrieben
-  werden kann.
+  spätere Schreibvorgänge über, Serverversionen werden nie nach Zeitstempeln geordnet (eine
+  vorgehende Uhr verdeckt keine spätere Version und parkt keine Änderung), Wiederholungen warten
+  und werden geparkt, eine Synchronisierung endet nach `syncTimeout`, und Synchronisierungen
+  warten, solange die Datei nicht geschrieben werden kann.
 
 Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
 die nur zu späteren wechselt (länger oder Byte für Byte größer) und nie zurückkehrt, eine
-`sequence`, die über Neustarts weiterzählt, die übertragenen Zeitstempel (eine Zeit, die seiner
-Uhr weit vorausliegt, auf eine Grenze zurückgesetzt) und die `changeID`, die jede Version
-geschrieben hat, senden, muss sich Änderungs-IDs über Neustarts hinweg merken, einen
-Schreibvorgang erst in Seiten zeigen, wenn er gespeichert ist, und jede Seite sowie die Antwort
-auf jede übertragene Änderung innerhalb des Antwortlimits des Clients halten (eine Seite enthält
-höchstens `limit` Änderungen, auch nach Bytes begrenzt, mindestens eine Änderung pro Seite).
-Grenzen: Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht
-erneut hochgeladen, ein Datensatz, der direkt nach `discardChange(for:)` erneut gespeichert wird,
-trifft die Kopie des Servers als Konflikt, eine Store-Instanz pro Datei (durchgesetzt für
-`FileStore`, `InMemoryStorage` und eigene Backends, die eine `claimIdentity` melden), die ganze
-Datei wird bei jeder Änderung geschrieben, Datensätze sind höchstens 64 Ebenen tief verschachtelt,
-eine Seite enthält höchstens 1.000 Änderungen, eine einzelne Änderung, die größer als das
-Vierfache des Antwortlimits ist, hält den Abruf an, eine Änderung, deren Übertragungsantwort
-allein größer als das Antwortlimit ist, bleibt ungewiss und wird nach ihrem letzten Versuch
-geparkt, eine frühere Epoch bleibt abgewiesen, bis der Server eine spätere als die des Stores
-meldet, und Löschungen jenseits von 10.000 werden vergessen. [Garantien und
-Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
-die vollständige Liste.
+`sequence`, die über Neustarts weiterzählt (die einzige Reihenfolge, die der Store nutzt), die
+übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt, auf eine Grenze
+zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss sich
+Änderungs-IDs über Neustarts hinweg merken, einen Schreibvorgang erst in Seiten zeigen, wenn er
+gespeichert ist, und jede Seite sowie die Antwort auf jede übertragene Änderung innerhalb des
+Antwortlimits des Clients halten (eine Seite enthält höchstens `limit` Änderungen, auch nach Bytes
+begrenzt, mindestens eine Änderung pro Seite). Grenzen: Schreibvorgänge, die ein Server bei einer
+Wiederherstellung verloren hat, werden nicht erneut hochgeladen, ein Server ohne `sequence` erhält
+keine Garantie für die Reihenfolge (eine veraltete Seite kann einen Datensatz zurücksetzen, bis er
+sich wieder ändert, ohne dass ein Schreibvorgang verloren geht), ein Datensatz, der direkt nach
+`discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als Konflikt, eine
+Store-Instanz pro Datei (durchgesetzt für `FileStore`, `InMemoryStorage` und eigene Backends, die
+eine `claimIdentity` melden), die ganze Datei wird bei jeder Änderung geschrieben, Datensätze sind
+höchstens 64 Ebenen tief verschachtelt, eine Seite enthält höchstens 1.000 Änderungen, eine
+einzelne Änderung, die größer als das Vierfache des Antwortlimits ist, hält den Abruf an, eine
+Änderung, deren Übertragungsantwort allein größer als das Antwortlimit ist, bleibt ungewiss und
+wird nach ihrem letzten Versuch geparkt, eine frühere Epoch bleibt abgewiesen, bis der Server eine
+spätere als die des Stores meldet, und Löschungen jenseits von 10.000 werden vergessen. [Garantien
+und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+enthält die vollständige Liste.
 
 ## Demo
 

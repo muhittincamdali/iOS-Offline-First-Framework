@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@f0650e0435dcbdd107b34be82133d1fd3898bd38 status=reviewed -->
+<!-- i18n-source: README.md@dda00c8524eaba424ab0bb3aa2216dc80dbca2ef status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,19 +51,21 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 324 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 331 testes de Swift Testing no macOS e em um simulador de
   iPhone, entre eles dois testes de propriedades que submetem cada política de conflito a
   solicitações perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de
-  páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, testes de cenários com
-  uma réplica que responde a um dispositivo durante muitas sincronizações e com uma falha em cada
-  gravação de uma sincronização, e testes que enviam páginas de dados inúteis, registros aninhados
-  muito fundo, páginas maiores que o limite de resposta e páginas com mais alterações do que o
-  pedido, também transmitidas sem fim por um socket; 28 testes de Node para o servidor; e uma
-  suíte de testes de ponta a ponta na CI que sincroniza stores por meio do servidor via HTTP,
-  também com 68 registros de 250 KiB através de um reinício do servidor, com 70 respostas de
-  conflito de 250 KiB que juntas passam do limite de resposta, com uma gravação cujo salvamento
-  falhou antes de um reinício, com um envio que o servidor aplicou atrás de um proxy que responde
-  504 e com uma réplica que serve páginas de antes de um reinício depois de redefinir o token.
+  páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, também contra um
+  servidor sem sequências, testes de cenários com uma réplica que responde a um dispositivo
+  durante muitas sincronizações, com uma falha em cada gravação de uma sincronização e com
+  relógios de dispositivo que saltam para a frente, e testes que enviam páginas de dados inúteis,
+  registros aninhados muito fundo, páginas maiores que o limite de resposta e páginas com mais
+  alterações do que o pedido, também transmitidas sem fim por um socket; 28 testes de Node para o
+  servidor; e uma suíte de testes de ponta a ponta na CI que sincroniza stores por meio do
+  servidor via HTTP, também com 68 registros de 250 KiB através de um reinício do servidor, com 70
+  respostas de conflito de 250 KiB que juntas passam do limite de resposta, com uma gravação cujo
+  salvamento falhou antes de um reinício, com um envio que o servidor aplicou atrás de um proxy
+  que responde 504 e com uma réplica que serve páginas de antes de um reinício depois de redefinir
+  o token.
 
 ### O que está incluído
 
@@ -348,10 +350,13 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   fica em dúvida até o próximo envio.
 - Uma cópia desatualizada nunca substitui uma gravação que o servidor aceitou: o resolvedor só é
   consultado quando um registro mudou no dispositivo e em outro dispositivo, e uma versão mais
-  antiga do servidor é ignorada, também logo depois de o servidor aceitar a gravação do próprio
-  dispositivo, mesmo depois de um reinício do servidor que o dispositivo ainda não viu e depois de
-  `resetChangeToken()`. Uma versão que o próprio dispositivo gravou nunca é um conflito, nem
-  quando uma página desatualizada fez o registro voltar atrás e o usuário editou em cima dela.
+  antiga do servidor é ignorada pelo `sequence` do servidor, também logo depois de o servidor
+  aceitar a gravação do próprio dispositivo, mesmo depois de um reinício do servidor que o
+  dispositivo ainda não viu e depois de `resetChangeToken()`. Uma versão que o próprio dispositivo
+  gravou nunca é um conflito, nem quando uma página desatualizada fez o registro voltar atrás e o
+  usuário editou em cima dela, ou uma página lista uma gravação mais antiga do próprio dispositivo
+  antes de uma versão cuja resposta se perdeu. Sem sequências, uma leitura deixa uma alteração
+  pendente para o seu envio, cuja resposta de conflito nomeia a versão atual do servidor.
 - Outro epoch do servidor só conta quando duas solicitações da mesma sincronização o informam, a
   leitura com o token e a leitura desde o início, então um cache desatualizado ou outra
   implantação atrás da mesma URL não consegue fazer o store voltar atrás. Uma sincronização que lê
@@ -381,26 +386,30 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   um servidor que nunca responde e um arquivo que não pode ser gravado têm efeito limitado: os
   servidores de referência guardam um carimbo de data/hora recebido no máximo cinco minutos além
   do próprio relógio, um instante de relógio errado no dispositivo não passa para as gravações
-  seguintes, as novas tentativas esperam e são estacionadas, uma sincronização termina após
-  `syncTimeout` e as sincronizações esperam enquanto o arquivo não puder ser gravado.
+  seguintes, as versões do servidor nunca são ordenadas por carimbos de data/hora (um relógio
+  adiantado não esconde nenhuma versão posterior nem estaciona nenhuma alteração), as novas
+  tentativas esperam e são estacionadas, uma sincronização termina após `syncTimeout` e as
+  sincronizações esperam enquanto o arquivo não puder ser gravado.
 
 O servidor nunca deve dar a mesma revisão a duas versões de um registro, deveria enviar um `epoch`
 que só avança para outros posteriores (mais longos, ou maiores byte a byte) e nunca volta, um
-`sequence` que continua contando entre reinícios, os carimbos de data/hora recebidos (com uma hora
-muito à frente do seu relógio trazida a um limite) e o `changeID` que gravou cada versão, e
-precisa lembrar os IDs de alteração entre reinícios, mostrar uma gravação nas páginas só depois de
-armazená-la e manter cada página e a resposta a cada alteração enviada dentro do limite de
-resposta do cliente (uma página tem no máximo `limit` alterações, cortada também por bytes, pelo
-menos uma alteração por página). Limites: gravações que um servidor perdeu em uma restauração não
-são enviadas de novo, um registro salvo de novo logo depois de `discardChange(for:)` encontra a
-cópia do servidor como um conflito, uma única instância do store por arquivo (garantido com
-`FileStore`, `InMemoryStorage` e backends próprios que informam um `claimIdentity`), o arquivo
-inteiro é gravado a cada alteração, registros se aninham em no máximo 64 níveis, uma página tem no
-máximo 1.000 alterações, uma única alteração maior que quatro vezes o limite de resposta
-interrompe a leitura, uma alteração cuja resposta de envio sozinha passa do limite de resposta
-fica em dúvida e é estacionada depois da última tentativa, um epoch anterior continua recusado até
-o servidor informar um posterior ao do store, e exclusões além de 10.000 são esquecidas.
-[Garantias e
+`sequence` que continua contando entre reinícios (a única ordem que o store usa), os carimbos de
+data/hora recebidos (com uma hora muito à frente do seu relógio trazida a um limite) e o
+`changeID` que gravou cada versão, e precisa lembrar os IDs de alteração entre reinícios, mostrar
+uma gravação nas páginas só depois de armazená-la e manter cada página e a resposta a cada
+alteração enviada dentro do limite de resposta do cliente (uma página tem no máximo `limit`
+alterações, cortada também por bytes, pelo menos uma alteração por página). Limites: gravações que
+um servidor perdeu em uma restauração não são enviadas de novo, um servidor sem `sequence` não tem
+garantia de ordem (uma página desatualizada pode fazer um registro voltar atrás até ele mudar de
+novo, embora nenhuma gravação se perca), um registro salvo de novo logo depois de
+`discardChange(for:)` encontra a cópia do servidor como um conflito, uma única instância do store
+por arquivo (garantido com `FileStore`, `InMemoryStorage` e backends próprios que informam um
+`claimIdentity`), o arquivo inteiro é gravado a cada alteração, registros se aninham em no máximo
+64 níveis, uma página tem no máximo 1.000 alterações, uma única alteração maior que quatro vezes o
+limite de resposta interrompe a leitura, uma alteração cuja resposta de envio sozinha passa do
+limite de resposta fica em dúvida e é estacionada depois da última tentativa, um epoch anterior
+continua recusado até o servidor informar um posterior ao do store, e exclusões além de 10.000 são
+esquecidas. [Garantias e
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) traz a
 lista completa.
 

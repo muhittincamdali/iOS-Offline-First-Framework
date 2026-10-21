@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@f0650e0435dcbdd107b34be82133d1fd3898bd38 status=reviewed -->
+<!-- i18n-source: README.md@dda00c8524eaba424ab0bb3aa2216dc80dbca2ef status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,19 +50,20 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 324 Swift
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 331 Swift
   Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
   sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları, bayat sayfalar, aynı anda
-  çalışan işlemler ve çökmelerle sınayan iki özellik testi, bir cihaza art arda birçok eşitlemede
-  yanıt veren bir replikayı ve bir eşitlemenin her yazımındaki bir çökmeyi deneyen senaryo
-  testleri ile anlamsız verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar, yanıt
-  sınırından büyük sayfalar ve istenenden fazla değişiklik içeren sayfalar gönderen, bunları bir
-  soket üzerinden sonsuz akışla da gönderen testler), sunucu için 28 Node testi ve CI'da depoları
-  sunucu üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca
-  da taşıyan, toplamı yanıt sınırını aşan 250 KiB'lık 70 çakışma yanıtını işleyen, sunucunun diske
-  kaydedemediği bir yazmayı bir yeniden başlatmadan sonra da sınayan, sunucunun 504 yanıtı veren
-  bir proxy arkasında uyguladığı bir gönderimi ve bir token sıfırlamasından sonra yeniden başlatma
-  öncesinin sayfalarını sunan bir replikayı da deneyen uçtan uca bir test paketi.
+  çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan iki özellik
+  testi, bir cihaza art arda birçok eşitlemede yanıt veren bir replikayı, bir eşitlemenin her
+  yazımındaki bir çökmeyi ve ileri sıçrayan cihaz saatlerini deneyen senaryo testleri ile anlamsız
+  verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar, yanıt sınırından büyük sayfalar ve
+  istenenden fazla değişiklik içeren sayfalar gönderen, bunları bir soket üzerinden sonsuz akışla
+  da gönderen testler), sunucu için 28 Node testi ve CI'da depoları sunucu üzerinden HTTP ile
+  eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca da taşıyan, toplamı yanıt
+  sınırını aşan 250 KiB'lık 70 çakışma yanıtını işleyen, sunucunun diske kaydedemediği bir yazmayı
+  bir yeniden başlatmadan sonra da sınayan, sunucunun 504 yanıtı veren bir proxy arkasında
+  uyguladığı bir gönderimi ve bir token sıfırlamasından sonra yeniden başlatma öncesinin
+  sayfalarını sunan bir replikayı da deneyen uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -348,10 +349,13 @@ tutar:
   bir sonraki gönderimine kadar belirsiz (in doubt) kalır.
 - Bayat bir kopya, sunucunun kabul ettiği bir yazmanın yerini asla almaz: çözücüye yalnızca kayıt
   hem bu cihazda hem başka bir cihazda değiştiyse sorulur ve sunucunun daha eski bir sürümü,
-  cihazın kendi yazması kabul edildikten hemen sonra da, cihazın henüz görmediği bir sunucu
-  yeniden başlatmasının ardından ve `resetChangeToken()` sonrasında bile atlanır. Cihazın kendi
-  yazdığı bir sürüm, bayat bir sayfa kaydı geri sarmış ve kullanıcı onun üzerinde düzenleme yapmış
-  olsa bile asla çakışma sayılmaz.
+  sunucunun `sequence` değerine göre, cihazın kendi yazması kabul edildikten hemen sonra da,
+  cihazın henüz görmediği bir sunucu yeniden başlatmasının ardından ve `resetChangeToken()`
+  sonrasında bile atlanır. Cihazın kendi yazdığı bir sürüm, bayat bir sayfa kaydı geri sarmış ve
+  kullanıcı onun üzerinde düzenleme yapmış olsa ya da bir sayfa, yanıtı kaybolmuş bir sürümden
+  önce cihazın daha eski bir yazmasını listelese bile asla çakışma sayılmaz. `sequence` olmadan
+  bir çekme, bekleyen bir değişikliği gönderimine bırakır; gönderimin çakışma yanıtı sunucunun
+  güncel sürümünü bildirir.
 - Başka bir sunucu epoch'u ancak tek bir eşitlemedeki iki istek, yani token ile çekme ve baştan
   çekme, onu birlikte bildirdiğinde sayılır; böylece bayat bir önbellek ya da aynı URL'nin
   arkasındaki başka bir dağıtım depoyu geri saramaz. Tek sayfa çeken bir eşitleme de sunucunun
@@ -378,25 +382,29 @@ tutar:
 - İleri giden ya da geri alınmış bir saat, her gönderime çakışmayla yanıt veren bir sunucu, hiç
   yanıt vermeyen bir sunucu ve yazılamayan bir dosya sınırlı etki yapar: referans sunucular
   gönderilen bir zaman damgasını kendi saatlerinin en fazla beş dakika ötesinde tutar, cihaz
-  saatinin bir anlık yanlışlığı sonraki yazmalara taşınmaz, yeniden denemeler bekletilir ve park
-  edilir, bir eşitleme `syncTimeout` sonunda biter ve dosya yazılamadığı sürece eşitlemeler bekler.
+  saatinin bir anlık yanlışlığı sonraki yazmalara taşınmaz, sunucu sürümleri asla zaman
+  damgalarına göre sıralanmaz (ileri giden bir saat daha sonraki hiçbir sürümü gizlemez ve hiçbir
+  değişikliği park ettirmez), yeniden denemeler bekletilir ve park edilir, bir eşitleme
+  `syncTimeout` sonunda biter ve dosya yazılamadığı sürece eşitlemeler bekler.
 
 Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; yalnızca daha geç olanlara
 ilerleyen ve asla geri dönmeyen bir `epoch` (daha uzun ya da bayt bayt daha büyük), yeniden
-başlatmalarda saymayı sürdüren bir `sequence`, gönderilen zaman damgalarını (saatinin çok
-ilerisindeki bir zaman bir sınıra çekilmiş olarak) ve her sürümü yazan `changeID`'yi göndermeli,
-değişiklik kimliklerini yeniden başlatmalar boyunca hatırlamalı, bir yazmayı ancak kaydedildikten
-sonra sayfalarda göstermeli ve her sayfayı ve gönderilen her değişikliğin yanıtını istemcinin
-yanıt sınırı içinde tutmalıdır (bir sayfada en fazla `limit` değişiklik, bayt olarak da kesilmiş,
-sayfa başına en az bir değişiklik). Sınırlar: sunucunun bir geri yüklemede kaybettiği yazmalar
-yeniden yüklenmez, `discardChange(for:)` çağrısının hemen ardından yeniden kaydedilen bir kayıt
-sunucunun kopyasıyla çakışma olarak karşılaşır, dosya başına tek bir depo örneği kullanılır
-(`FileStore`, `InMemoryStorage` ve bir `claimIdentity` bildiren özel backend'lerde zorunlu
-tutulur), her değişiklikte dosyanın tamamı yazılır, kayıtlar en fazla 64 seviye iç içe geçebilir,
-bir sayfa en fazla 1.000 değişiklik içerir, yanıt sınırının dört katından büyük tek bir değişiklik
-çekmeyi durdurur, gönderim yanıtı tek başına yanıt sınırından büyük olan bir değişiklik belirsiz
-kalır ve son denemesinden sonra park edilir, daha önceki bir epoch, sunucu deponunkinden daha geç
-bir epoch bildirene kadar reddedilir ve 10.000'i aşan silmeler unutulur. Tam liste [Güvenceler ve
+başlatmalarda saymayı sürdüren bir `sequence` (deponun kullandığı tek sıra), gönderilen zaman
+damgalarını (saatinin çok ilerisindeki bir zaman bir sınıra çekilmiş olarak) ve her sürümü yazan
+`changeID`'yi göndermeli, değişiklik kimliklerini yeniden başlatmalar boyunca hatırlamalı, bir
+yazmayı ancak kaydedildikten sonra sayfalarda göstermeli ve her sayfayı ve gönderilen her
+değişikliğin yanıtını istemcinin yanıt sınırı içinde tutmalıdır (bir sayfada en fazla `limit`
+değişiklik, bayt olarak da kesilmiş, sayfa başına en az bir değişiklik). Sınırlar: sunucunun bir
+geri yüklemede kaybettiği yazmalar yeniden yüklenmez, `sequence` göndermeyen bir sunucu sıra
+güvencesi almaz (hiçbir yazma kaybolmasa da bayat bir sayfa bir kaydı yeniden değişene kadar geri
+sarabilir), `discardChange(for:)` çağrısının hemen ardından yeniden kaydedilen bir kayıt sunucunun
+kopyasıyla çakışma olarak karşılaşır, dosya başına tek bir depo örneği kullanılır (`FileStore`,
+`InMemoryStorage` ve bir `claimIdentity` bildiren özel backend'lerde zorunlu tutulur), her
+değişiklikte dosyanın tamamı yazılır, kayıtlar en fazla 64 seviye iç içe geçebilir, bir sayfa en
+fazla 1.000 değişiklik içerir, yanıt sınırının dört katından büyük tek bir değişiklik çekmeyi
+durdurur, gönderim yanıtı tek başına yanıt sınırından büyük olan bir değişiklik belirsiz kalır ve
+son denemesinden sonra park edilir, daha önceki bir epoch, sunucu deponunkinden daha geç bir epoch
+bildirene kadar reddedilir ve 10.000'i aşan silmeler unutulur. Tam liste [Güvenceler ve
 sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 makalesindedir.
 
