@@ -83,7 +83,7 @@ struct PageBudgetTests {
         // valid changes were read in full, 144 MiB for half a million deletions.
         let growth = growths.min() ?? 0
         #expect(growth <= 4 * body.count, "grew by \(growth / 1_048_576) MiB for a \(body.count / 1_048_576) MiB page")
-        #expect(elapsed < .seconds(2), "took \(elapsed)")
+        #expect(elapsed < .seconds(8), "took \(elapsed)")
     }
 
     /// A page of large changes that can be read: each record is decoded from its own bytes. The

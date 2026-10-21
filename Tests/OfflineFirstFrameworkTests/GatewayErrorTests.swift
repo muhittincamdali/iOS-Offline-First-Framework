@@ -12,7 +12,7 @@ import Testing
 struct GatewayErrorTests {
     private func store(_ proxy: RogueProxy) throws -> OfflineStore<Note> {
         let transport = HTTPSyncTransport<Note>(baseURL: proxy.url.appending(path: "sync/notes"),
-                                                session: URLSession(configuration: .ephemeral))
+                                                session: URLSession.patient())
         return try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
                                       configuration: makeConfiguration(clock: TestClock()))
     }

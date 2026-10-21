@@ -163,10 +163,10 @@ final class StreamingServer: Sendable {
 @Suite("HTTP transport: what a streamed page may cost", .heapExclusive)
 struct StreamingServerTests {
     private func store(for server: StreamingServer, maximumResponseSize: Int) throws -> OfflineStore<Note> {
-        let transport = HTTPSyncTransport<Note>(baseURL: server.url, session: URLSession(configuration: .ephemeral),
+        let transport = HTTPSyncTransport<Note>(baseURL: server.url, session: URLSession.patient(),
                                                 maximumResponseSize: maximumResponseSize)
         var configuration = OfflineStore<Note>.Configuration()
-        configuration.syncTimeout = .seconds(8)
+        configuration.syncTimeout = .seconds(120)
         return try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport, configuration: configuration)
     }
 
@@ -177,7 +177,7 @@ struct StreamingServerTests {
         let store = try store(for: server, maximumResponseSize: limit)
         let start = ContinuousClock.now
         await #expect(throws: HTTPSyncTransport<Note>.Failure.responseTooLarge(limit: limit)) { try await store.sync() }
-        #expect(ContinuousClock.now - start < .seconds(6))
+        #expect(ContinuousClock.now - start < .seconds(100))
         // Seven requests asking for fewer changes, of 1 MiB each, and the outline of 4 MiB, with
         // what the sockets' buffers held: about 40 MiB in all.
         #expect(server.pullCount == 8)

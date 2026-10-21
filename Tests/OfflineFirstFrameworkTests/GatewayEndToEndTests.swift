@@ -30,7 +30,7 @@ struct GatewayEndToEndTests {
         let collection = "gateway-\(UUID().uuidString.prefix(8))"
         func device(_ name: String, through base: URL, resolver: ConflictResolver<Note>) throws -> OfflineStore<Note> {
             let transport = HTTPSyncTransport<Note>(baseURL: base.appending(path: "sync/\(collection)"),
-                                                    session: URLSession(configuration: .ephemeral))
+                                                    session: URLSession.patient())
             return try OfflineStore<Note>(name: name, storage: InMemoryStorage(), transport: transport,
                                           configuration: makeConfiguration(clock: clock, resolver: resolver))
         }

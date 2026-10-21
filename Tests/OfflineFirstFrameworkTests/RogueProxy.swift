@@ -79,7 +79,7 @@ final class RogueProxy: Sendable {
         let listener = try NWListener(using: .tcp, on: .any)
         let queue = DispatchQueue(label: "rogue-proxy")
         let state = State(initialState: (mode: mode, stale: nil, holding: false, counts: Counts()))
-        let session = URLSession(configuration: .ephemeral)
+        let session = URLSession.patient()
         listener.newConnectionHandler = { connection in
             connection.start(queue: queue)
             readRequest(on: connection, buffer: Data()) { head, body in

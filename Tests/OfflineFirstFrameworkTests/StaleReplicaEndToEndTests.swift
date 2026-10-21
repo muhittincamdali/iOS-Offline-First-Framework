@@ -52,7 +52,7 @@ struct StaleReplicaEndToEndTests {
             return policy.resolver.resolve(conflict)
         }
         let transport = Device(http: HTTPSyncTransport<Note>(baseURL: proxy.url.appending(path: "sync/\(collection)"),
-                                                             session: URLSession(configuration: .ephemeral)), offline: offline)
+                                                             session: URLSession.patient()), offline: offline)
         let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
                                            configuration: makeConfiguration(clock: clock, resolver: resolver))
 

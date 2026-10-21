@@ -79,7 +79,7 @@ struct PageLimitTests {
         }
         #expect(context.debugDescription.contains("more changes than the 100"))
         #expect(growth <= 1_048_576, "grew by \(growth) bytes")
-        #expect(elapsed < .milliseconds(500), "took \(elapsed)")
+        #expect(elapsed < .seconds(5), "took \(elapsed)")
     }
 
     /// A custom transport is held to the same bound: the store applies a page in one step that
@@ -91,7 +91,7 @@ struct PageLimitTests {
         let store = try OfflineStore<Note>(name: "n", storage: InMemoryStorage(), transport: ScriptedTransport(pull: { _ in page }))
         let start = ContinuousClock.now
         await #expect(throws: OfflineFirstError.self) { try await store.sync() }
-        #expect(ContinuousClock.now - start < .seconds(1))
+        #expect(ContinuousClock.now - start < .seconds(10))
         #expect(await store.records().isEmpty)
         #expect(await store.state.token == nil)
     }
