@@ -1,40 +1,38 @@
 import Darwin
+import Dispatch
 import Foundation
 import os
 import Testing
 @testable import OfflineFirstFramework
 
-/// The process's physical footprint, the figure the system's memory limits (jetsam on iOS) use.
-func physicalFootprint() -> Int {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
-    let result = withUnsafeMutablePointer(to: &info) {
-        $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
-            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
-        }
-    }
-    return result == KERN_SUCCESS ? Int(info.phys_footprint) : 0
+/// Bytes the process holds in malloc'd memory, summed over all zones. Unlike the physical
+/// footprint, it does not hide an allocation that reuses pages freed before.
+func heapBytesInUse() -> Int {
+    var statistics = malloc_statistics_t()
+    malloc_zone_statistics(nil, &statistics)
+    return Int(statistics.size_in_use)
 }
 
-/// How far the footprint rose above its level before `body` while `body` ran, sampled every
-/// 200 µs on another thread. Memory freed earlier is first given back to the system, so `body`
-/// cannot reuse it unseen.
-func peakFootprintGrowth(of body: () -> Void) -> Int {
-    malloc_zone_pressure_relief(nil, 0)
-    let baseline = physicalFootprint()
+/// How far the heap grew above its size before `body` while `body` ran, sampled every 200 µs on
+/// another thread that starts sampling before `body` does, and once more after it.
+func peakHeapGrowth(of body: () -> Void) -> Int {
+    let baseline = heapBytesInUse()
     let peak = OSAllocatedUnfairLock(initialState: baseline)
     let running = OSAllocatedUnfairLock(initialState: true)
+    let sampling = DispatchSemaphore(value: 0)
     let sampler = Thread {
+        sampling.signal()
         while running.withLock({ $0 }) {
-            let now = physicalFootprint()
+            let now = heapBytesInUse()
             peak.withLock { $0 = max($0, now) }
             usleep(200)
         }
     }
     sampler.start()
+    sampling.wait()
     body()
     running.withLock { $0 = false }
-    let end = physicalFootprint()
+    let end = heapBytesInUse()
     return peak.withLock { max($0, end) } - baseline
 }
 
@@ -64,7 +62,7 @@ struct PageBudgetTests {
         var failure: (any Error)?
         let start = ContinuousClock.now
         for _ in 0..<3 {
-            growths.append(peakFootprintGrowth {
+            growths.append(peakHeapGrowth {
                 do {
                     _ = try HTTPSyncTransport<Note>.page(from: body)
                 } catch {
@@ -79,22 +77,26 @@ struct PageBudgetTests {
         }
         #expect(context.debugDescription.contains("cannot be read"))
         // The least growth of three runs, so another test's allocation at the same moment does
-        // not count; the bound of the design is four times the page.
+        // not count; the bound of the design is four times the page. Before the budget, these
+        // pages grew the heap by 90 MiB to 1.4 GiB and took 1 to 17 s in a debug build.
         let growth = growths.min() ?? 0
         #expect(growth <= 4 * body.count, "grew by \(growth / 1_048_576) MiB for a \(body.count / 1_048_576) MiB page")
         #expect(elapsed < .seconds(2), "took \(elapsed)")
     }
 
-    /// A page of large changes that can be read: each record is decoded from its own bytes.
+    /// A page of large changes that can be read: each record is decoded from its own bytes. The
+    /// decoded page is kept until the last sample, so its records count.
     @Test func aFullPageOfLargeChangesStaysWithinFourTimesItsSize() throws {
         let text = String(repeating: "x", count: 250 * 1024)
         let changes = (0..<64).map { #"{"recordID":"n\#($0)","record":{"id":"n\#($0)","text":"\#(text)"},"revision":"\#($0)"}"# }
         let body = Data((#"{"changes":["# + changes.joined(separator: ",") + #"],"token":"t1","hasMore":false}"#).utf8)
-        var count = 0
+        var page: PullResponse<Note>?
         let growth = (0..<3).map { _ in
-            peakFootprintGrowth { count = (try? HTTPSyncTransport<Note>.page(from: body).changes.count) ?? -1 }
+            page = nil
+            return peakHeapGrowth { page = try? HTTPSyncTransport<Note>.page(from: body) }
         }.min() ?? 0
-        #expect(count == 64)
+        #expect(page?.changes.count == 64)
+        #expect(growth >= body.count / 2, "the records of the page were not seen: grew by \(growth) bytes")
         #expect(growth <= 4 * body.count, "grew by \(growth / 1_048_576) MiB for a \(body.count / 1_048_576) MiB page")
     }
 
