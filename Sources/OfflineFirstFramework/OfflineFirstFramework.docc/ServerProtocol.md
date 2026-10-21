@@ -76,7 +76,8 @@ The answer has one outcome per change ID. A change without an outcome is retried
         "wallTime": 1760000005000,
         "counter": 0,
         "nodeID": "F0E1..."
-      }
+      },
+      "changeID": "0C2B1A9E-4D3C-4B2A-9F8E-7D6C5B4A3F2E"
     }
   ],
   "token": "00064a1f3c2b9e18.43",
@@ -85,7 +86,8 @@ The answer has one outcome per change ID. A change without an outcome is retried
 }
 ```
 
-A change without `record` is a deletion. `timestamp`, `sequence` and `epoch` are optional.
+A change without `record` is a deletion. `timestamp`, `sequence`, `changeID` and `epoch` are
+optional. Conflict and rejection answers name the server's version in the same form.
 Return changes oldest first, at most one per record, and a `token` the server understands as
 "after these". While `hasMore` is `true` the store asks again right away, up to
 ``OfflineStore/Configuration/maximumPullPages`` pages per sync; the token of such a page must
@@ -97,26 +99,34 @@ sent percent-encoded, `+` as `%2B`.
 | `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                   |
 | `sequence`  | Grows with every write the server stores, also across a restart that keeps the data; orders versions within one epoch. Lets the store skip stale pages.  |
 | `epoch`     | Names the server's history. Change it to a later one whenever the data may have been lost or replaced: longer, or as long and greater byte by byte.      |
-| `timestamp` | The timestamp the change was pushed with, unchanged, also when it is far ahead: the store knows its own writes by it and limits how far ahead it counts. |
+| `timestamp` | The timestamp the change was pushed with; a wall time more than a few minutes ahead of the server's clock moved back to that limit.                   |
+| `changeID`  | The `id` of the pushed change that wrote this version. The store knows its own writes by it; without it, by the exact timestamp it pushed.            |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than
 an empty page, and report a new epoch: the store then pulls everything again, skips records
 whose revision it already has, and keeps its pending changes. The reference server creates a
 later epoch on every start, 16 hexadecimal digits of the time in microseconds, and puts it in
-front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). A page that names an earlier
-epoch than the store's is refused, as a stale replica or cache sends; a later one counts once
-the pull from the beginning that the store makes next reports it too.
+front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). The store believes another epoch
+than its own only when two requests of one sync report it: the pull with its token and the
+pull from the beginning, or, without a token, the pull from the beginning and the pull after
+that page's token. A later epoch then starts a new history; an earlier one, as a stale replica
+or cache sends, is refused until eight syncs in a row confirmed it, or taken at once after
+``OfflineStore/resetChangeToken()``. When the two requests disagree, the sync fails without a
+change to the store. So serve the pull from the beginning (`GET <base>/changes` without
+`since`) from a cache only for a short time: every device asks for the same URL.
 
-A change the app cannot decode, for example a field of another type, is set aside in
-``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. A
-push outcome that cannot be read leaves only its own change unanswered.
+A change the app cannot decode, for example a field of another type or one nested deeper than
+`JSONDecoder` reads (512 levels), is set aside in ``OfflineStore/quarantinedChanges()``; the
+rest of the page is used and the token moves on. A push outcome that cannot be read leaves only
+its own change unanswered.
 
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its
 ``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes.
 The reference server in `Examples/SyncServer` additionally caps request bodies at 1 MiB and
-pushes at 500 changes, accepts only timestamps that a JavaScript number holds exactly, keeps
-pushed timestamps as they were sent, and saves the answers to the last 10,000 change IDs with
-its data.
+pushes at 500 changes, rejects records nested deeper than 64 levels or larger than 256 KiB,
+accepts only timestamps that a JavaScript number holds exactly, moves a pushed wall time more
+than five minutes ahead of its clock back to that limit, sends back the change ID with every
+version, and saves the answers to the last 10,000 change IDs with its data.

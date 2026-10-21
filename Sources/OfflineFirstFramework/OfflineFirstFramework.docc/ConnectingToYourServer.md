@@ -73,11 +73,13 @@ The rules that keep sync correct:
 - **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
   `true`; a token that stays the same makes the sync fail with
   ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
-- **Timestamps.** Send ``RemoteChange/timestamp`` back as it was pushed if you store it; without
-  it, ``ConflictResolver/lastWriteWins`` lets the server's version win, and the store cannot
-  recognise its own writes, so a change made after a lost answer meets the resolver. Store a
-  timestamp far ahead of the server's clock at a limit, as the reference servers do with five
-  minutes.
+- **Timestamps and change IDs.** Send ``RemoteChange/timestamp`` back as it was pushed if you
+  store it, with a wall time far ahead of the server's clock moved back to a limit, as the
+  reference servers do with five minutes; without it, ``ConflictResolver/lastWriteWins`` lets
+  the server's version win. Send ``RemoteChange/changeID``, the ``OutgoingChange/id`` that
+  wrote the version, so the store recognises its own write after a lost answer; without it the
+  store compares the timestamps it pushed, and a change made after a lost answer meets the
+  resolver when the server changed the timestamp.
 - **Cancellation.** Stop both calls when their task is cancelled. The store cancels a request
   when every caller gave up and when the sync runs past
   ``OfflineStore/Configuration/syncTimeout``.

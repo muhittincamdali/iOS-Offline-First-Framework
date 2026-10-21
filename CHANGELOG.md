@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Fixes for the data-integrity findings of two audits of 2.0.0 and of their second and third
-rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third and
+fourth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -25,9 +25,10 @@ now state what the store promises and what it needs from the server.
 - The deletion of a record the store never held was not kept, so an older page could create
   the record. Two deletions now go to the resolver, so the newer one stays.
 - A timestamp years ahead won every last-write-wins conflict on every device. Timestamps more
-  than `maximumClockDrift` ahead now count as at that limit when the store weighs them; the
-  reference servers keep them as they were pushed, so a device whose clock runs ahead still
-  recognises its own write whose answer was lost.
+  than `maximumClockDrift` ahead now count as at that limit when the store weighs them, and the
+  reference servers move a pushed timestamp more than five minutes ahead of their clock back to
+  that limit. They send back the change ID that wrote each version, by which a device whose
+  clock runs ahead still recognises its own write whose answer was lost.
 - `discardChange(for:)` during a pull lost its token reset, and the server's copy never came
   back.
 - A change whose push answer was lost could be resolved again by a pull and pushed over a newer
@@ -72,11 +73,11 @@ now state what the store promises and what it needs from the server.
   clock, and server versions are ordered only by timestamps within the limit.
 - After a server restart, a page from a stale replica or cache could roll records back. Epochs
   now have an order (a longer one is later; of two as long, the greater byte by byte): a page
-  of an earlier epoch than the store's is refused without being stored, and a later epoch
-  counts once the pull from the beginning reports it too, so one page from another deployment
-  behind the same URL does not move the store. An earlier epoch met in eight syncs in a row is
-  taken, and `resetChangeToken()` takes the next epoch at once, so a wrong answer cannot lock
-  the store out of the real server. What a push answer tells about a record (an accepted
+  of another epoch than the store's counts only when two requests of one sync report that
+  epoch, so one page from another deployment behind the same URL or a stale replica does not
+  move the store. An earlier epoch that both requests report in eight syncs in a row is taken,
+  and after `resetChangeToken()` it is taken in the next sync that confirms it, so a wrong
+  answer cannot lock the store out of the real server. What a push answer tells about a record (an accepted
   write, or the version a conflict answer brought) moves into a later epoch until a pull
   brings that version: the push may have been answered after a restart the store had not
   seen, and a page of the new epoch from before it no longer rolls the write back or makes the
@@ -89,6 +90,26 @@ now state what the store promises and what it needs from the server.
   change in doubt went out again on every sync, and automatic sync sent it every second. After a
   failed write, syncs now wait with the retry policy's backoff, and automatic sync waits after
   failed syncs.
+- With `maximumPullPages` set to 1, a server restart stopped the pull for good: the page that
+  reported the new epoch used the sync's only page, so the pull from the beginning that confirms
+  the epoch never came, and every sync reported success with `hasMoreChanges`. A shared cache
+  that answered the pull from the beginning with an older page made each sync spend all its
+  pages without progress, and a cached page of an even earlier epoch was taken after eight
+  syncs, rolling every record back. Both requests that confirm an epoch now belong to one step
+  of the pull; when they disagree, the sync fails without a change to the store.
+- After `resetChangeToken()` a stale page of a later epoch rolled the device's accepted write
+  back with every policy, and one page of an earlier epoch from a lagging replica was taken at
+  once, bringing back deleted records. Epochs keep their order after a reset, and a later one
+  keeps what push answers told.
+- A device whose clock ran ahead won last write wins over edits other devices made up to as much
+  later as its clock was ahead (ten minutes, a day), since the servers kept pushed timestamps as
+  sent; one moment of a clock a year ahead stamped every later write a year ahead. The servers bound timestamps by
+  their clock again, and the store's clock goes on from the drift limit once the device clock is
+  back.
+- One change nested deeper than 512 levels, in its record or in a field the app ignores, made
+  `JSONDecoder` refuse the whole page, so the token never moved and no later change arrived; one
+  such conflict answer made the whole push answer unreadable. `HTTPSyncTransport` now reads each
+  change and each outcome on its own and sets such a change aside.
 
 ### Added
 
@@ -96,7 +117,9 @@ now state what the store promises and what it needs from the server.
   `SyncTransport.serverIdentity` (default `nil`) and `QuarantinedChange`.
 - `OfflineStore.resetChangeToken()`, `quarantinedChanges()`, `SyncReport.quarantined`,
   `Configuration.syncTimeout` (5 minutes) and `Configuration.maximumTombstones` (10,000).
-- `InMemorySyncServer.restart()`.
+- `InMemorySyncServer.restart()` and `InMemorySyncServer.maximumClockDrift`.
+- `RemoteChange.changeID`: the ID of the pushed change that wrote a version, by which the store
+  recognises its own writes; without it, the store compares the timestamps it pushed.
 
 ### Changed
 
@@ -114,6 +137,14 @@ now state what the store promises and what it needs from the server.
   by byte, and keep counting sequences across a restart that keeps the data. Both reference
   servers make each epoch from the time in microseconds (16 hexadecimal digits), and at least
   one more than the last epoch they handed out in the process or, with `--data`, saved.
+- Servers should send back the change ID that wrote each version and may bound pushed
+  timestamps by their clock; a server without change IDs has to keep timestamps as they were
+  pushed. The reference servers do the first and bound timestamps to five minutes ahead.
+- A single page of an earlier epoch than the store's no longer fails the sync when the pull from
+  the beginning names the store's epoch; two requests that name different epochs fail it with
+  `OfflineFirstError.invalidServerResponse`.
+- The Node reference server rejects a record nested deeper than 64 levels or larger than 256 KiB
+  of JSON, with a reason, and applies the other changes of the push.
 
 ## [2.0.0] - 2026-10-15
 

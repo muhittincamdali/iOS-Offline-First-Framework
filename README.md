@@ -46,10 +46,10 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 237 Swift Testing tests on macOS and an iPhone simulator,
-  among them a property test that runs every conflict policy through lost requests, restarts and
-  stale pages, 20 Node tests for the server, and an end-to-end suite in CI that syncs two stores
-  through the server over HTTP.
+- **Tested against a real server** — 250 Swift Testing tests on macOS and an iPhone simulator,
+  among them a property test that runs every conflict policy through lost requests, restarts,
+  token resets, overlapping syncs, small page limits and stale pages, 21 Node tests for the
+  server, and an end-to-end suite in CI that syncs two stores through the server over HTTP.
 
 ### What's included
 
@@ -330,21 +330,28 @@ app and server restarts and stale pages, as long as the server follows the
 - A stale copy never replaces a write the server accepted: the resolver is asked only when a
   record changed on the device and on another device, and an older server version is skipped,
   also right after the device's own write was accepted, even across a server restart the device
-  has not seen yet.
+  has not seen yet, and after `resetChangeToken()`.
+- Another server epoch counts only when two requests of one sync report it, the pull with the
+  token and the pull from the beginning, so a stale cache or another deployment behind the same
+  URL cannot roll the store back. A sync that fetches a single page still follows a server
+  restart, and when the two requests disagree the sync fails instead of reporting success.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
-  pull everything again and keep its pending changes. A record the app cannot decode is set
-  aside in `quarantinedChanges()` instead of stopping the pull.
+  pull everything again and keep its pending changes. A record the app cannot decode, also one
+  nested deeper than `JSONDecoder` reads, is set aside in `quarantinedChanges()` instead of
+  stopping the pull.
 - A clock that runs ahead or was set back, a server that answers every push with a conflict, a
-  server that never answers and a file that cannot be written have a bounded effect: a
-  timestamp counts at most five minutes past the device's newest time, retries back off and are
-  parked, a sync ends after `syncTimeout`, and syncs wait while the file cannot be written.
+  server that never answers and a file that cannot be written have a bounded effect: the
+  reference servers keep a pushed timestamp at most five minutes past their own clock, a moment
+  of a wrong device clock does not stamp later writes, retries back off and are parked, a sync
+  ends after `syncTimeout`, and syncs wait while the file cannot be written.
 
 The server must never give the same revision to two versions of a record, should send an
 `epoch` that only moves to later ones (longer, or greater byte by byte), a `sequence` that keeps
-counting across restarts and the pushed timestamps unchanged, and must remember change IDs
-across restarts. Limits: writes a server lost in a restore are not uploaded again, one store
-instance per file, the whole file is written on every change, and deletions beyond 10,000 are
-forgotten.
+counting across restarts, the pushed timestamps (a wall time far ahead of its clock moved back to
+a limit) and the `changeID` that wrote each version, and must remember change IDs across
+restarts. Limits: writes a server lost in a restore are not uploaded again, a record saved again
+right after `discardChange(for:)` meets the server's copy as a conflict, one store instance per
+file, the whole file is written on every change, and deletions beyond 10,000 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

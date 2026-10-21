@@ -40,7 +40,12 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 ## Behaviour
 
 - Every accepted write gets the revision `<epoch>.<n>`, where `n` counts the collection's
-  writes; deletions keep their revision, so other devices learn about them.
+  writes; deletions keep their revision, so other devices learn about them. Each version is
+  sent with the `changeID` of the push that wrote it, by which a device recognises its own
+  write after a lost answer.
+- A pushed timestamp whose wall time is more than five minutes ahead of the server's clock is
+  stored at that limit, so a device whose clock runs ahead wins over later edits on other
+  devices for five minutes at most.
 - The epoch is new every time the server starts, also with `--data`: the file may be an older
   backup, and the writes after it would otherwise get revisions that devices already hold for
   other versions. So a revision is never handed out twice, and a push based on a revision from
@@ -57,7 +62,9 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
   past the newest write starts the pull from the beginning, so after a restart each client
   pulls every record once instead of waiting for writes that never come.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
-  collections, 100,000 records per collection (deleted ones included), record IDs of at most 256 characters, timestamps that a JavaScript number holds
-  exactly. Requests outside them get status 400, 413 or 507.
+  collections, 100,000 records per collection (deleted ones included), record IDs of at most
+  256 characters, timestamps that a JavaScript number holds exactly. Requests outside them get
+  status 400, 413 or 507. A record nested deeper than 64 levels or larger than 256 KiB of JSON
+  is rejected with a reason; the other changes of the push are applied.
 
 The server has no authentication or rate limiting. Put it behind your own before you expose it.
