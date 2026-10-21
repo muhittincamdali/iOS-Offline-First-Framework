@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="Estado de CI"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Última versión: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Última versión: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Plataformas compatibles: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Versión del lenguaje: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Licencia: MIT"></picture></a>
@@ -51,9 +51,22 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 142 pruebas de Swift Testing en macOS y en un simulador de
-  iPhone, 16 pruebas de Node para el servidor y un conjunto de pruebas de extremo a extremo en CI que
-  sincroniza dos almacenes a través del servidor por HTTP.
+- **Probado contra un servidor real** — 375 pruebas de Swift Testing en macOS y 372 en un simulador
+  de iPhone, entre ellas tres pruebas de propiedades que someten cada política de conflictos a
+  solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas, límites
+  de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, también contra un
+  servidor sin secuencias, pruebas de escenarios con una réplica que responde a un dispositivo
+  durante muchas sincronizaciones, con una página obsoleta que trae de vuelta una escritura propia
+  más antigua o se encuentra con un envío aceptado, con una caída en cada escritura de una
+  sincronización y con relojes de dispositivo que saltan hacia adelante, y pruebas que envían
+  páginas de datos inservibles, registros anidados a gran profundidad, páginas mayores que el límite
+  de respuesta y páginas con más cambios de los pedidos, también transmitidas sin fin por un socket;
+  28 pruebas de Node para el servidor; y un conjunto de pruebas de extremo a extremo en CI que
+  sincroniza almacenes a través del servidor por HTTP, también con 68 registros de 250 KiB a través
+  de un reinicio del servidor, con 70 respuestas de conflicto de 250 KiB que juntas superan el
+  límite de respuesta, con una escritura cuyo guardado falló antes de un reinicio, con un envío que
+  el servidor aplicó detrás de un proxy que responde 504 y con una réplica que sirve páginas de
+  antes de un reinicio tras restablecer el token.
 
 ### Qué incluye
 
@@ -79,7 +92,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Pégala en el campo de búsqueda de la parte superior derecha de la ventana. Deja **Dependency Rule**
-en **Up to Next Major Version** desde `2.0.0` y haz clic en **Add Package**. En la ventana siguiente,
+en **Up to Next Major Version** desde `2.1.0` y haz clic en **Add Package**. En la ventana siguiente,
 elige el target de tu app junto a **OfflineFirstFramework** y vuelve a hacer clic en **Add Package**.
 
 **2. Importa el módulo**
@@ -159,7 +172,7 @@ O añádelo a las `dependencies` de tu `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -325,6 +338,104 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Garantías y límites
+
+El almacén cumple estas promesas con cualquier política de conflictos, ante solicitudes perdidas,
+respuestas perdidas, reinicios de la app y del servidor y páginas obsoletas, siempre que el
+servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md):
+
+- Un guardado o un borrado está en el archivo antes de que la llamada vuelva, y un cambio en cola
+  se envía hasta que el servidor lo responde. Un reintento conserva el ID del cambio, así que el
+  servidor lo aplica una sola vez. Solo una respuesta que se leyó decide un cambio: tras un estado
+  de error, una conexión perdida o una respuesta demasiado larga para leerla, el cambio queda en
+  duda hasta su próximo envío.
+- Una copia obsoleta nunca reemplaza una escritura que el servidor aceptó: al resolutor solo se le
+  pregunta cuando un registro cambió en el dispositivo y en otro dispositivo, y una versión más
+  antigua del servidor se omite por el `sequence` del servidor, también justo después de que se
+  aceptara la escritura del propio dispositivo, incluso tras un reinicio del servidor que el
+  dispositivo aún no ha visto y tras `resetChangeToken()`. Una versión que escribió el propio
+  dispositivo nunca es un conflicto, tampoco cuando una página obsoleta hizo retroceder el registro
+  y el usuario editó sobre ella, o una página lista una escritura propia más antigua antes de una
+  versión cuya respuesta se perdió. Sin secuencias, una descarga deja un cambio pendiente a su
+  envío, también cuando la página trae una escritura más antigua del propio dispositivo, y decide la
+  respuesta del envío, aceptada o no: una versión que una descarga retuvo entretanto nunca ocupa su
+  lugar, porque la respuesta de un envío no indica ninguna epoch. Cuando esa versión puede ser más
+  nueva, un conflicto hace que el cambio salga una vez más para obtener una respuesta nueva, y
+  cualquier otra respuesta se mantiene mientras la siguiente sincronización descarga desde el
+  principio.
+- Otro epoch del servidor, y el primero del que se entera un almacén, también en la primera página
+  de un almacén nuevo, solo cuenta cuando lo informan dos solicitudes de la misma sincronización,
+  la descarga con el token y la descarga desde el principio, así que una sola página de una caché
+  obsoleta o de otro despliegue detrás de la misma URL no puede hacer retroceder el almacén, traer
+  a un almacén nuevo registros que el servidor nunca tuvo ni dejar fuera a un almacén. Una página
+  sin epoch, una vez que dos solicitudes informaron uno, tampoco se toma nunca. Una sincronización
+  que descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos
+  solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs
+  van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo,
+  nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
+  responde ambas solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer
+  retroceder el almacén.
+- Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
+  que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes, que se encuentran
+  con la nueva historia a través de la respuesta a su envío, no de una página. Un registro que la
+  app no puede decodificar, o uno anidado a más de 64 niveles, se aparta en `quarantinedChanges()`
+  en lugar de detener la descarga.
+- Las respuestas de un servidor tienen un coste acotado. Un registro anidado a más de 64 niveles
+  nunca entra en el almacén, así que escribir el archivo no puede desbordar la pila; una página de
+  datos inservibles, o con más cambios de los que pidió la descarga (1.000 como mucho), se rechaza
+  en milisegundos en lugar de ocupar gigabytes, y su descarga se cancela; una página mayor que el
+  límite de respuesta hace que la descarga pida menos cambios, y un único cambio que por sí solo
+  supera el límite, hasta cuatro veces este, se aparta; un envío se divide en solicitudes que el
+  límite de cuerpo del servidor acepta y se vuelve a enviar en mitades, con 16 solicitudes más
+  como mucho, mientras el servidor responda 413 o una respuesta 2xx supere el límite de respuesta,
+  y un cambio cuya respuesta por sí sola lo supera queda en duda; de un estado de error solo se
+  leen los primeros 4 KiB, así que una pasarela con problemas cuesta un intento fallido; se lee
+  una marca de orden de bytes UTF-8.
+- Un reloj adelantado o retrasado a mano, un servidor que responde cada envío con un conflicto, un
+  servidor que nunca responde y un archivo que no se puede escribir tienen un efecto acotado: los
+  servidores de referencia guardan una marca de tiempo recibida como mucho cinco minutos por
+  delante de su propio reloj, un instante de un reloj del dispositivo equivocado no pasa a las
+  escrituras posteriores, las versiones del servidor nunca se ordenan por marcas de tiempo (un
+  reloj adelantado no oculta ninguna versión posterior ni aparca ningún cambio), los reintentos
+  esperan y se aparcan, una sincronización termina tras `syncTimeout` y las sincronizaciones
+  esperan mientras no se pueda escribir el archivo.
+
+El servidor nunca debe dar la misma revisión a dos versiones de un registro, debería enviar en
+cada página un `epoch` que solo avance a otros posteriores (más largos, o mayores byte a byte) y
+nunca vuelva, un `sequence` que siga contando tras los reinicios (el único orden que usa el
+almacén), las marcas de tiempo recibidas (con una hora muy por delante de su reloj llevada a un
+límite) y el `changeID` que escribió cada versión, y debe recordar los IDs de cambio a través de
+los reinicios, mostrar una escritura en las páginas solo cuando esté guardada y mantener cada
+página y la respuesta a cada cambio enviado dentro del límite de respuesta del cliente (una página
+contiene como mucho `limit` cambios, cortada también por bytes, al menos un cambio por página).
+Límites: las escrituras que un servidor perdió en una restauración no se vuelven a subir, un
+servidor sin `sequence` no tiene garantía de orden (una página obsoleta puede hacer retroceder un
+registro hasta que vuelva a cambiar, aunque no se pierde ninguna escritura), un registro guardado
+de nuevo justo después de `discardChange(for:)` encuentra la copia del servidor como un conflicto,
+una sola instancia del almacén por archivo (garantizado con `FileStore`, `InMemoryStorage` y los
+backends propios que informan un `claimIdentity`), el archivo entero se escribe en cada cambio,
+los registros se anidan como mucho 64 niveles, una página contiene como mucho 1.000 cambios, un
+único cambio mayor que cuatro veces el límite de respuesta detiene la descarga, un cambio cuya
+respuesta de envío por sí sola supera el límite de respuesta queda en duda y se aparca tras su
+último intento, un epoch anterior sigue rechazado hasta que el servidor informe uno posterior al
+del almacén, una página sin epoch hasta que vuelva a informar uno, y los borrados más allá de
+10.000 se olvidan. [Garantías y
+límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la
+lista completa.
+
+**Limitaciones conocidas.** Las respuestas de otro despliegue detrás de la misma URL (un balanceador
+de carga o proxy que envía una solicitud a staging o a una región con datos propios, o una réplica
+que sirve el historial de antes de una pérdida de datos) solo se rechazan como páginas sueltas. Si
+la primera sincronización de un almacén nuevo solo llega a ese despliegue, o una respuesta de push
+viene de él, un registro puede quedarse sin ningún error con la copia de ese despliegue, una edición
+puede decidirse en su contra o quedar aparcada, y una escritura que el servidor nunca recibió puede
+contar como aceptada. Una réplica del historial de antes de una pérdida de datos que responde a las
+descargas de un almacén mientras su envío llega al servidor puede reemplazar la escritura aceptada
+del propio dispositivo. `resetChangeToken()` recupera los registros que el token de ese despliegue
+se saltó; si no, aparta el archivo del almacén y empieza un almacén nuevo. Los detalles están en
+[Garantías y
+límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
+
 ## Demo
 
 | Sincronizado                                                                 | Sin conexión, dos cambios en espera                                           |
@@ -396,9 +507,9 @@ El servidor de referencia necesita Node 24 o posterior.
   ID que cambia con cada edición local.
 - Una sincronización envía los cambios pendientes por lotes (primero los más antiguos, con la
   revisión en la que se basaron), aplica cada resultado y después descarga páginas de cambios del
-  servidor posteriores al token de cambios guardado. Los conflictos de cualquiera de los dos lados
-  van al `ConflictResolver`. Las ediciones hechas mientras un envío está en camino se conservan y se
-  envían a continuación.
+  servidor posteriores al token de cambios guardado. Un registro que cambió en el dispositivo y en
+  el servidor va al `ConflictResolver`; una versión más antigua del servidor se omite. Las ediciones
+  hechas mientras un envío está en camino se conservan y se envían a continuación.
 - `Sync/` contiene el protocolo de transport, los transports HTTP y en memoria, la política de
   reintentos, el circuit breaker y la conectividad; `Storage/` los almacenes de archivos y del
   Keychain, el cifrado y las migraciones; `Clock/` y `CRDT/` los tipos de valor para ordenar y
@@ -421,6 +532,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Hoja de ruta

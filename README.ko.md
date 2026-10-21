@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg" alt="Offline-First Framework: 오프라인에서도 계속 동작하고 서버와 동기화되는 Swift 앱용 로컬 저장소."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI 상태"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="최신 버전: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="최신 버전: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="지원 플랫폼: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="언어 버전: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="라이선스: MIT"></picture></a>
@@ -33,7 +33,7 @@
 - **모든 백엔드** — `HTTPSyncTransport`는 문서화된 JSON 프로토콜을 사용하며, [`Examples/SyncServer`](Examples/SyncServer)의 참조 서버가 약 280줄의 JavaScript로 이를 구현합니다. 그 밖의 API도 `SyncTransport` 뒤에 둘 수 있습니다. 예를 들어 ETag를 쓰는 REST API가 그렇습니다.
 - **SwiftUI를 위해 설계** — `SyncedCollection`은 스토어의 `@Observable` 모델입니다. 자동 동기화는 기기가 온라인이 될 때와 로컬 편집 직후에 실행되고, 호출 한 번으로 백그라운드 새로 고침 작업에서도 동기화할 수 있습니다.
 - **저장된 데이터 보호** — Keychain에 보관한 키를 쓰는 AES-GCM 파일 암호화, 데이터 보호 클래스, 레코드 스키마 마이그레이션, 손상된 파일을 위한 정책을 제공합니다.
-- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 142개, 서버용 Node 테스트 16개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
+- **실제 서버로 테스트** — macOS에서 Swift Testing 테스트 375개, iPhone 시뮬레이터에서 372개(모든 충돌 정책을 요청 유실, 재시작, 토큰 재설정, 겹친 동기화, 작은 페이지 한도, 오래된 페이지, 동시에 실행되는 작업, 크래시로, `sequence`를 보내지 않는 서버에 대해서도 시험하는 속성 테스트 세 개, 여러 번의 동기화 동안 한 기기에 계속 응답하는 복제본, 기기 자신의 더 오래된 쓰기를 되가져오거나 받아들여진 푸시와 만나는 오래된 페이지, 동기화의 모든 쓰기에서 일어나는 크래시, 앞으로 건너뛰는 기기 시계를 시험하는 시나리오 테스트, 쓸 수 없는 데이터로 채운 페이지, 아주 깊게 중첩된 레코드, 응답 한도보다 큰 페이지, 요청보다 많은 변경을 담은 페이지를 소켓으로 끝없이 흘려보내는 것까지 보내는 테스트 포함), 서버용 Node 테스트 28개, 그리고 CI에서 스토어를 HTTP로 서버를 거쳐 동기화하고 250 KiB 레코드 68개를 서버 재시작을 거쳐서도 다루고 합쳐서 응답 한도를 넘는 250 KiB 충돌 응답 70개도 다루며 저장에 실패한 쓰기를 재시작 후에도 확인하며, 504로 응답하는 프록시 뒤에서 서버가 적용한 푸시와 토큰 재설정 후 재시작 전의 페이지를 내주는 복제본도 다루는 엔드투엔드 테스트 모음을 실행합니다.
 
 ### 포함된 항목
 
@@ -58,7 +58,7 @@ Xcode에서 **File › Add Package Dependencies…**를 선택하고 저장소 U
 https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
-창 오른쪽 위의 검색란에 붙여 넣으세요. **Dependency Rule**은 `2.0.0` 부터의 **Up to Next Major Version**으로 그대로 두고 **Add Package**를 클릭합니다. 다음 창에서 **OfflineFirstFramework** 옆에서 앱 타깃을 고르고 **Add Package**를 다시 클릭하세요.
+창 오른쪽 위의 검색란에 붙여 넣으세요. **Dependency Rule**은 `2.1.0` 부터의 **Up to Next Major Version**으로 그대로 두고 **Add Package**를 클릭합니다. 다음 창에서 **OfflineFirstFramework** 옆에서 앱 타깃을 고르고 **Add Package**를 다시 클릭하세요.
 
 **2. 모듈 가져오기**
 
@@ -133,7 +133,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -280,6 +280,21 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## 보장과 한계
+
+서버가 [프로토콜](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)을 따르는 한, 스토어는 어떤 충돌 정책에서든 요청 유실, 응답 유실, 앱과 서버의 재시작, 오래된 페이지에도 다음 약속을 지킵니다.
+
+- 저장이나 삭제는 호출이 반환되기 전에 파일에 기록되고, 큐에 있는 변경은 서버가 응답할 때까지 푸시됩니다. 재시도는 변경 ID를 그대로 쓰므로 서버는 변경을 한 번만 적용합니다. 변경을 확정하는 것은 읽은 응답뿐입니다. 오류 상태, 끊긴 연결, 읽기에 너무 긴 응답 뒤에는 변경이 다음 푸시까지 불확실(in doubt) 상태로 남습니다.
+- 오래된 사본이 서버가 받아들인 쓰기를 대체하는 일은 없습니다. 리졸버는 레코드가 이 기기와 다른 기기 양쪽에서 바뀐 경우에만 호출되고, 서버의 더 오래된 버전은 서버의 `sequence`에 따라, 기기 자신의 쓰기가 받아들여진 직후에도, 기기가 아직 알지 못한 서버 재시작을 거친 뒤에도, `resetChangeToken()` 뒤에도 건너뜁니다. 기기 자신이 쓴 버전은 오래된 페이지가 레코드를 되돌리고 사용자가 그 위에서 편집한 경우에도, 페이지가 응답이 유실된 버전보다 앞에 기기 자신의 더 오래된 쓰기를 나열한 경우에도 결코 충돌이 되지 않습니다. `sequence`가 없으면 페이지가 기기 자신의 더 오래된 쓰기를 가져온 경우에도 가져오기는 대기 중인 변경을 그 푸시에 맡기고, 결정은 받아들여졌든 아니든 푸시에 대한 응답이 내립니다. 푸시에 대한 응답은 epoch를 알려 주지 않으므로, 그사이 가져오기가 보류해 둔 버전이 응답을 대신하는 일은 없습니다. 그 버전이 더 새로울 수 있으면 충돌일 때는 새 응답을 받기 위해 변경을 한 번 더 보내고, 그 밖의 응답은 그대로 유효하며 다음 동기화가 처음부터 다시 가져옵니다.
+- 서버의 다른 epoch도, 스토어가 처음 듣는 epoch도, 새 스토어의 첫 페이지라 해도, 한 번의 동기화에서 두 요청, 즉 토큰을 붙인 가져오기와 처음부터의 가져오기가 모두 알려 줄 때만 인정됩니다. 그래서 오래된 캐시나 같은 URL 뒤의 다른 배포에서 온 한 페이지만으로는 스토어를 되돌리거나, 서버가 가진 적 없는 레코드를 새 스토어에 들여오거나, 스토어를 차단할 수 없습니다. 두 요청이 epoch를 알린 뒤에는 epoch가 없는 페이지도 결코 받아들여지지 않습니다. 한 페이지만 가져오는 동기화도 서버 재시작을 따라가며, 두 요청이 어긋나면 동기화는 성공을 알리지 않고 실패합니다. epoch는 한 방향으로만 갑니다. 스토어의 epoch보다 이전인 epoch는 스토어가 떠난 것이든 가진 적이 없는 것이든 `resetChangeToken()` 뒤에도 받아들여지지 않으므로, 몇 번 연속으로 동기화에 응답하든 두 요청에 모두 응답하는 오래된 복제본이나 캐시는 스토어를 되돌릴 수 없습니다.
+- 삭제된 레코드는 삭제된 상태로 남습니다. 데이터를 잃은 서버나 다른 서버를 만나면 스토어는 대기 중 변경을 유지한 채 모든 것을 처음부터 다시 가져오며, 대기 중 변경은 페이지가 아니라 자기 푸시에 대한 응답을 통해 새 기록과 만납니다. 앱이 디코딩할 수 없는 레코드나 64단계보다 깊게 중첩된 레코드는 가져오기를 멈추지 않고 `quarantinedChanges()`로 따로 둡니다.
+- 서버 응답의 비용은 제한됩니다. 64단계보다 깊게 중첩된 레코드는 스토어에 들어오지 않으므로 파일을 쓰다가 스택이 넘칠 수 없습니다. 쓸 수 없는 데이터로 채운 페이지나 가져오기가 요청한 것보다 많은 변경(최대 1,000개)을 담은 페이지는 기가바이트를 쓰는 대신 몇 밀리초 안에 거부되고 다운로드도 취소됩니다. 응답 한도보다 큰 페이지는 더 적은 변경을 요청하게 하고, 혼자서 한도를 넘는 변경은 한도의 네 배까지 따로 둡니다. 푸시는 서버의 본문 한도에 맞는 요청으로 나뉘고 서버가 413으로 응답하거나 2xx 응답이 응답 한도보다 긴 동안에는 추가 요청 16개 이내로 절반씩 다시 보내지며, 응답 하나만으로 한도보다 긴 변경은 불확실 상태로 남고, 오류 상태의 응답은 처음 4 KiB만 읽으므로 문제가 생긴 게이트웨이는 실패한 시도 한 번으로 끝나며, UTF-8 바이트 순서 표시도 읽습니다.
+- 앞서 가거나 뒤로 돌려진 시계, 모든 푸시에 충돌로 응답하는 서버, 전혀 응답하지 않는 서버, 쓸 수 없는 파일의 영향은 제한됩니다. 참조 서버는 푸시받은 타임스탬프를 자기 시계보다 최대 5분 앞까지만 저장하고, 기기 시계가 잠깐 틀려도 그 시각이 이후 쓰기로 이어지지 않으며, 서버 버전은 결코 타임스탬프로 정렬되지 않고(앞서 간 시계가 이후 버전을 가리거나 변경을 보류시키지 않음), 재시도는 간격을 두다가 보류되고, 동기화는 `syncTimeout`이 지나면 끝나며, 파일을 쓸 수 없는 동안에는 동기화가 기다립니다.
+
+서버는 같은 revision을 레코드의 두 버전에 절대 주면 안 되고, 모든 페이지에 더 나중 것으로만 바뀌고 다시 돌아오지 않는 `epoch`(더 길거나, 길이가 같으면 바이트 단위로 더 큰 것), 재시작 후에도 계속 세는 `sequence`(스토어가 쓰는 유일한 순서), 푸시받은 타임스탬프(자기 시계보다 훨씬 앞선 시각은 한도로 당긴 것)와 각 버전을 쓴 `changeID`를 보내야 하며, 변경 ID를 재시작 후에도 기억하고, 쓰기는 저장한 뒤에만 페이지에 보여 주고, 각 페이지와 푸시한 각 변경에 대한 응답을 클라이언트의 응답 한도 안에 맞춰야 합니다(페이지에는 최대 `limit`개 변경, 바이트로도 자르고, 페이지마다 최소 1개 변경). 한계: 서버가 백업 복원으로 잃은 쓰기는 다시 업로드되지 않고, `sequence`를 보내지 않는 서버는 순서 보장을 받지 못하며(쓰기는 잃지 않지만 오래된 페이지가 레코드를 다시 바뀔 때까지 되돌릴 수 있음), `discardChange(for:)` 직후 다시 저장한 레코드는 서버의 사본과 충돌로 만나며, 파일 하나에 스토어 인스턴스는 하나이고(`FileStore`, `InMemoryStorage`, `claimIdentity`를 알려 주는 사용자 정의 백엔드에서 강제됨), 변경할 때마다 파일 전체를 쓰며, 레코드는 최대 64단계까지 중첩되고, 페이지에는 변경이 최대 1,000개까지 담기고, 응답 한도의 네 배보다 큰 단일 변경은 가져오기를 멈추며, 푸시 응답 하나만으로 응답 한도보다 큰 변경은 불확실 상태로 남다가 마지막 시도 뒤에 보류되고, 이전 epoch는 서버가 스토어의 epoch보다 나중인 epoch를 알릴 때까지, epoch가 없는 페이지는 서버가 다시 epoch를 알릴 때까지 거부되고, 10,000건을 넘는 삭제는 잊힙니다. 전체 목록은 [보장과 한계](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)에 있습니다.
+
+**알려진 한계.** 같은 URL 뒤의 다른 배포에서 온 응답(요청을 스테이징이나 데이터가 따로 있는 리전으로 보내는 로드 밸런서나 프록시, 또는 데이터 손실 이전의 기록을 내주는 복제본)은 한 페이지 단위로만 걸러집니다. 새 스토어의 첫 동기화가 그 배포에만 닿거나 푸시 응답 하나가 그곳에서 오면, 레코드가 오류 없이 그 배포의 사본으로 남거나, 편집이 그 사본에 맞서 결정되거나 보류되거나, 서버가 받은 적 없는 쓰기가 수락된 것으로 간주될 수 있습니다. 데이터 손실 이전의 기록을 내주는 복제본이, 푸시가 서버에 닿는 동안 스토어의 가져오기에 응답하면 기기 자신의 수락된 쓰기가 대체될 수 있습니다. `resetChangeToken()`은 그 배포의 토큰이 건너뛴 레코드를 되찾아 옵니다. 그 밖의 경우에는 스토어 파일을 다른 곳으로 옮기고 새 스토어로 시작하세요. 자세한 내용은 [보장과 한계](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)에 있습니다.
+
 ## 데모
 
 | 동기화됨                                                             | 오프라인, 변경 2건 대기 중                                            |
@@ -338,7 +353,7 @@ xcodebuild docbuild -scheme OfflineFirstFramework -destination 'generic/platform
 ## 아키텍처
 
 - `OfflineStore`는 컬렉션 하나를 소유하는 actor 입니다. 상태(레코드, 대기 중 변경, 변경 토큰, 시계)는 JSON 파일 하나로 기록됩니다. 모든 변경은 복사본에서 실행되고 기록에 성공한 뒤에야 복사본이 현재 상태가 되므로, 충돌이나 디스크 가득 참으로 변경이 반쯤만 적용된 채 남는 일이 없습니다. 각 레코드는 서버 revision, 마지막 타임스탬프, 그리고 동기화되기 전까지는 로컬 편집마다 바뀌는 ID가 붙은 대기 중 변경 하나를 가집니다.
-- 동기화는 대기 중 변경을 (오래된 것부터, 기반이 된 revision과 함께) 일괄로 푸시하고, 각 결과를 적용한 다음, 저장된 변경 토큰 이후의 서버 변경을 페이지 단위로 가져옵니다. 어느 쪽에서 오든 충돌은 `ConflictResolver`로 넘어갑니다. 푸시가 진행되는 동안 이루어진 편집은 보존되어 다음에 푸시됩니다.
+- 동기화는 대기 중 변경을 (오래된 것부터, 기반이 된 revision과 함께) 일괄로 푸시하고, 각 결과를 적용한 다음, 저장된 변경 토큰 이후의 서버 변경을 페이지 단위로 가져옵니다. 기기와 서버 양쪽에서 바뀐 레코드는 `ConflictResolver`로 넘어가고, 서버의 더 오래된 버전은 건너뜁니다. 푸시가 진행되는 동안 이루어진 편집은 보존되어 다음에 푸시됩니다.
 - `Sync/` 에는 transport 프로토콜, HTTP와 인메모리 transport, 재시도 정책, 서킷 브레이커(circuit breaker), 연결 상태가 있고, `Storage/` 에는 파일과 Keychain 스토어, 암호화, 마이그레이션이, `Clock/`과 `CRDT/` 에는 순서 지정과 병합을 위한 값 타입이, `SwiftUI/` 에는 관찰 가능한 모델이 있습니다. 참조 타입은 `OfflineStore`, `InMemorySyncServer`, `SyncedCollection` 뿐입니다.
 - 스토어는 오작동하는 서버와 손상된 파일로부터 스스로를 보호합니다. 큐, 페이지, 응답, revision, 변경 토큰 크기의 상한, 반드시 앞으로 나아가야 하는 변경 토큰, 레코드와 동기화당 최대 세 번의 푸시, ID가 일치하지 않아 무시되는 레코드, 허용된 시계 편차를 넘는 타임스탬프, 디렉터리를 벗어날 수 없는 파일 이름이 그 예입니다. 테스트가 이 각각을 다룹니다.
 - 변경할 때마다 파일 전체를 다시 쓰므로, 스토어당 수만 개 레코드까지의 컬렉션에 적합합니다.
@@ -352,6 +367,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## 로드맵

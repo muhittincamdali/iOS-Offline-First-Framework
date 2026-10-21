@@ -19,7 +19,7 @@ extension OfflineStore {
         /// Backoff and attempt limit for failed pushes. Default: ``RetryPolicy/default``.
         public var retryPolicy: RetryPolicy
 
-        /// Pauses syncing after repeated failures. Default: 5 failures, 60 seconds.
+        /// Pauses pulls after repeated failures. Default: 5 failures, 60 seconds.
         public var circuitBreaker: CircuitBreaker
 
         /// The schema version of `Record`. Raise it, and add a ``RecordMigration``, when you
@@ -36,15 +36,37 @@ extension OfflineStore {
         /// ``OfflineFirstError/outboxFull(limit:)``. Default: 10,000.
         public var maximumPendingChanges: Int
 
-        /// Pull pages fetched in one sync; the rest waits for the next sync. Default: 100.
+        /// Pull pages fetched in one sync; the rest waits for the next sync. A page whose epoch
+        /// another request checks counts once with that request, which may bring the next page
+        /// too. Default: 100.
         public var maximumPullPages: Int
 
-        /// How far ahead of the device clock a server timestamp may be before the store stops
-        /// moving its clock to it. Default: 5 minutes.
+        /// Deleted records the store remembers, so that an older version of one that arrives
+        /// late (a page out of order, a lagging replica) from a server that sends
+        /// ``RemoteChange/sequence`` does not bring it back. Beyond the limit the oldest are
+        /// forgotten; such a late version could then return the record.
+        /// Each takes a few hundred bytes in the file. Default: 10,000.
+        public var maximumTombstones: Int
+
+        /// How far a server timestamp may be ahead of the device clock, or of the local write
+        /// it is weighed against when that is later (after the device clock was set back). The
+        /// store does not move its clock to a timestamp further ahead of the device clock, and a
+        /// clock that is further ahead (the device clock showed a time far ahead and was set
+        /// back) goes on from the limit with the next local write; last write wins weighs a
+        /// server timestamp beyond the limit against local writes as if it were at the limit.
+        /// Server versions are never ordered by timestamps, also not by those within the limit
+        /// (see ``RemoteChange/sequence``). Default: 5 minutes.
         public var maximumClockDrift: Duration
 
         /// What happens when the store file cannot be read. Default: ``CorruptionPolicy/fail``.
         public var corruptionPolicy: CorruptionPolicy
+
+        /// The longest a sync may run, from one second to one day. When a sync runs longer, its
+        /// request is cancelled and ``OfflineStore/sync()`` throws `URLError(.timedOut)`; what
+        /// was stored so far stays, and the changes of a cancelled push count a failed attempt.
+        /// A server that never answers, or answers a byte at a time, cannot keep every caller
+        /// of ``OfflineStore/sync()`` and automatic sync waiting. Default: 5 minutes.
+        public var syncTimeout: Duration
 
         /// The current time. Replace it in tests.
         public var now: @Sendable () -> Date
@@ -63,8 +85,10 @@ extension OfflineStore {
             pushBatchSize: Int = 100,
             maximumPendingChanges: Int = 10_000,
             maximumPullPages: Int = 100,
+            maximumTombstones: Int = 10_000,
             maximumClockDrift: Duration = .seconds(300),
             corruptionPolicy: CorruptionPolicy = .fail,
+            syncTimeout: Duration = .seconds(300),
             now: @escaping @Sendable () -> Date = { Date() },
             random: @escaping @Sendable () -> Double = { Double.random(in: 0..<1) }
         ) {
@@ -77,8 +101,10 @@ extension OfflineStore {
             self.pushBatchSize = pushBatchSize
             self.maximumPendingChanges = maximumPendingChanges
             self.maximumPullPages = maximumPullPages
+            self.maximumTombstones = maximumTombstones
             self.maximumClockDrift = maximumClockDrift
             self.corruptionPolicy = corruptionPolicy
+            self.syncTimeout = syncTimeout
             self.now = now
             self.random = random
         }
@@ -90,7 +116,9 @@ extension OfflineStore {
             copy.pushBatchSize = min(max(1, pushBatchSize), 1_000)
             copy.maximumPendingChanges = max(1, maximumPendingChanges)
             copy.maximumPullPages = max(1, maximumPullPages)
+            copy.maximumTombstones = max(0, maximumTombstones)
             copy.maximumClockDrift = max(.zero, maximumClockDrift)
+            copy.syncTimeout = min(max(.seconds(1), syncTimeout), .seconds(86_400))
             return copy
         }
     }

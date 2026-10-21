@@ -4,5 +4,9 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    groups:
+      all:
+        patterns:
+          - "*"
     commit-message:
       prefix: "ci"

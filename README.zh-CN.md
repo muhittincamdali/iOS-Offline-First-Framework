@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg" alt="Offline-First Framework: 面向 Swift 应用的本地存储：离线照常工作，联网后与你的服务器同步。"></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI 状态"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="最新版本: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="最新版本: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="支持的平台: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="语言版本: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="许可证: MIT"></picture></a>
@@ -33,7 +33,7 @@
 - **任何后端** — `HTTPSyncTransport` 使用一套有文档的 JSON 协议，[`Examples/SyncServer`](Examples/SyncServer) 中的参考服务器用大约 280 行 JavaScript 实现了它；任何其他 API 都可以接在 `SyncTransport` 之后，例如使用 ETag 的 REST API。
 - **为 SwiftUI 而生** — `SyncedCollection` 是存储的 `@Observable` 模型；设备联网时以及本地编辑之后不久会自动同步，也可以通过一次调用在后台刷新任务中同步。
 - **静态数据受保护** — 使用保存在 Keychain 中的密钥进行 AES-GCM 文件加密、数据保护级别、记录架构迁移，以及针对损坏文件的处理策略。
-- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 142 个 Swift Testing 测试，为服务器编写了 16 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
+- **针对真实服务器测试** — 在 macOS 上运行 375 个、在 iPhone 模拟器上运行 372 个 Swift Testing 测试，其中包括三个让每种冲突策略经受请求丢失、重启、令牌重置、重叠同步、较小页数上限、过期页面、同时进行的操作和崩溃考验、也针对不发送 `sequence` 的服务器的属性测试，在多次同步中持续回应同一台设备的副本、带回设备自己更早写入或遇上已被接受的推送的过期页面、在一次同步的每次写入时崩溃以及设备时钟向前跳变的场景测试，以及发送无用数据页面、嵌套极深的记录、大于应答上限的页面和改动多于所请求数量的页面（也包括通过套接字无休止地传输）的测试；为服务器编写了 28 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步存储，也包括跨越一次服务器重启的 68 条 250 KiB 记录、合计超过应答上限的 70 个 250 KiB 冲突应答、一次保存失败的写入在重启之后的情况、服务器在回应 504 的代理之后应用的一次推送，以及在令牌重置后提供重启之前页面的副本。
 
 ### 内容一览
 
@@ -58,7 +58,7 @@
 https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
-将其粘贴到窗口右上角的搜索框中。把 **Dependency Rule** 保持为从 `2.0.0` 开始的 **Up to Next Major Version**，然后点击 **Add Package**。在接下来的窗口中，在 **OfflineFirstFramework** 旁边选择你的应用 target，再次点击 **Add Package**。
+将其粘贴到窗口右上角的搜索框中。把 **Dependency Rule** 保持为从 `2.1.0` 开始的 **Up to Next Major Version**，然后点击 **Add Package**。在接下来的窗口中，在 **OfflineFirstFramework** 旁边选择你的应用 target，再次点击 **Add Package**。
 
 **2. 导入模块**
 
@@ -133,7 +133,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -280,6 +280,21 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## 保证与限制
+
+只要服务器遵循[协议](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)，无论使用哪种冲突策略，存储在请求丢失、应答丢失、应用和服务器重启以及过期页面的情况下都会信守以下承诺：
+
+- 保存或删除在调用返回之前就已写入文件，队列中的改动会一直推送，直到服务器给出应答。重试沿用同一个改动 ID，因此服务器只会应用一次。只有读到的应答才能确定一个改动的结果：遇到错误状态、连接中断或长到无法读取的应答之后，该改动会一直处于未定（in doubt）状态，直到下一次推送。
+- 过期的副本绝不会覆盖服务器已接受的写入：只有当一条记录在本设备和另一台设备上都发生了变化时才会询问解决器，服务器上较旧的版本会按服务器的 `sequence` 被跳过，在设备自己的写入刚被接受之后、跨越设备尚未察觉的服务器重启时以及调用 `resetChangeToken()` 之后也是如此。设备自己写入的版本永远不算冲突，即使过期页面让记录回退、用户又在其上做了编辑，或者某个页面在一个应答丢失的版本之前列出设备自己更早的写入，也是如此。没有 `sequence` 时，即使页面带回设备自己更早的写入，拉取也会把待处理的改动留给它的推送，由推送的应答来决定，无论是否被接受：由于推送的应答不说明 epoch，拉取在此期间暂存的版本绝不会取代应答。在该版本可能更新时，若是冲突，改动会再发送一次以获得新的应答；其他应答保持有效，下一次同步会从头拉取。
+- 服务器的另一个 epoch，以及存储首次得知的 epoch（新存储的第一页也是如此），只有在一次同步中的两个请求（带令牌的拉取和从头开始的拉取）都报告它时才算数，因此来自过期缓存或同一 URL 后面另一个部署的单独一页，既无法让存储回退，也无法给新存储带来服务器从未有过的记录，更无法把存储挡在外面。两个请求报告过 epoch 之后，不带 epoch 的页面也永远不会被接受。每次只拉取一页的同步也能跟上服务器重启；两个请求不一致时，同步会失败，而不是报告成功。epoch 只朝一个方向前进：早于存储当前 epoch 的 epoch，无论是存储离开的还是从未持有的，都永远不会被接受，调用 `resetChangeToken()` 之后也是如此，因此同时回应两个请求的过期副本或缓存，无论连续回应多少次同步，也无法让存储回退。
+- 已删除的记录保持删除状态。丢失了数据的服务器或另一台服务器会让存储从头重新拉取全部内容，并保留待同步改动；这些改动通过自己推送的应答、而不是通过页面与新的历史相遇。应用无法解码的记录，或嵌套超过 64 层的记录，会被放进 `quarantinedChanges()`，而不会让拉取停止。
+- 服务器应答的开销是有限的。嵌套超过 64 层的记录永远不会进入存储，因此写入文件不会导致栈溢出；充满无用数据、或改动多于拉取所请求数量（最多 1,000 个）的页面会在几毫秒内被拒绝，而不是占用数 GB 内存，并且其下载会被取消；大于应答上限的页面会让拉取请求更少的改动，单独就超过上限的改动在上限的四倍以内会被放在一边；推送会被拆分成服务器请求体上限能接受的请求，当服务器回应 413 或 2xx 应答长于应答上限时，会对半拆分后重新发送，最多额外 16 个请求，单个改动的应答本身就超过上限时该改动保持未定；错误状态的应答只读取前 4 KiB，因此出问题的网关只消耗一次失败的尝试；UTF-8 字节顺序标记可以被读取。
+- 走快或被往回调的时钟、对每次推送都回应冲突的服务器、从不应答的服务器以及无法写入的文件，其影响都是有限的：参考服务器保存的推送时间戳最多比自己的时钟领先五分钟，设备时钟短暂出错不会延续到之后的写入，服务器版本从不按时间戳排序（走快的时钟不会隐藏任何之后的版本，也不会让任何改动被搁置），重试会退避并被搁置，一次同步会在 `syncTimeout` 之后结束，文件无法写入期间同步会等待。
+
+服务器绝不能把同一个 revision 分配给一条记录的两个版本，应当在每一页中发送只会前进到更晚值且永不回头的 `epoch`（更长，或长度相同时按字节更大）、在重启后继续计数的 `sequence`（存储使用的唯一顺序）、推送时的时间戳（远超其时钟的时间被拉回到上限）以及写入每个版本的 `changeID`，必须在重启后仍记得改动 ID，只在写入保存之后才在页面中显示它，并让每一页以及对每个推送改动的应答都不超过客户端的应答上限（每页最多 `limit` 个改动，同时按字节截断，每页至少一个改动）。限制：服务器在恢复备份时丢失的写入不会被重新上传；不发送 `sequence` 的服务器没有顺序保证（过期页面可能让记录回退，直到它再次改动，但不会丢失任何写入）；在 `discardChange(for:)` 之后立即再次保存的记录会与服务器的副本作为冲突相遇；每个文件只能有一个存储实例（对 `FileStore`、`InMemoryStorage` 和提供 `claimIdentity` 的自定义后端强制执行）；每次改动都会写入整个文件；记录最多嵌套 64 层；每页最多 1,000 个改动，单个大于应答上限四倍的改动会让拉取停止；推送应答本身大于应答上限的改动保持未定，并在最后一次尝试后被搁置；更早的 epoch 在服务器报告晚于存储的 epoch 之前一直被拒绝，不带 epoch 的页面在服务器再次报告 epoch 之前也一直被拒绝；超过 10,000 条的删除会被遗忘。完整列表见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
+
+**已知限制。** 来自同一 URL 后面另一个部署的应答（把请求发到预发布环境或数据独立的区域的负载均衡器或代理，或者提供数据丢失之前历史的副本）只会作为单独的页面被挡在外面。当新存储的第一次同步只到达那个部署，或者有一个推送应答来自它时，记录可能在没有任何错误的情况下停留在那个部署的副本上，编辑可能被判定为输给它或被搁置，服务器从未收到的写入也可能被当作已接受。提供数据丢失之前历史的副本在推送到达服务器的同时应答存储的拉取时，设备自己已被接受的写入也可能被替换。`resetChangeToken()` 能找回那个部署的令牌跳过的记录；其他情况下，请把存储文件移到一边，重新开始一个新存储。详情见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
+
 ## 演示
 
 | 已同步                                                          | 离线，有两处改动等待同步                                       |
@@ -338,7 +353,7 @@ xcodebuild docbuild -scheme OfflineFirstFramework -destination 'generic/platform
 ## 架构
 
 - `OfflineStore` 是一个 actor，拥有一个集合。它的状态（记录、待同步改动、变更令牌、时钟）会写成一个 JSON 文件；每次改动都在一份副本上进行，只有写入成功后该副本才会成为当前状态，因此崩溃或磁盘写满都不会留下只应用了一半的改动。每条记录都带有它的服务器 revision、最后一个时间戳，并且在尚未同步时带有一条待同步改动，其 ID 会随每次本地编辑而改变。
-- 一次同步会分批推送待同步改动（最旧的优先，并附上它们所基于的 revision），应用每个结果，然后在已保存的变更令牌之后分页拉取服务器改动。来自任一方的冲突都交给 `ConflictResolver`。推送进行期间所做的编辑会被保留，并在下一次推送。
+- 一次同步会分批推送待同步改动（最旧的优先，并附上它们所基于的 revision），应用每个结果，然后在已保存的变更令牌之后分页拉取服务器改动。在设备和服务器上都发生变化的记录交给 `ConflictResolver`；服务器上较旧的版本会被跳过。推送进行期间所做的编辑会被保留，并在下一次推送。
 - `Sync/` 包含 transport 协议、HTTP 与内存 transport、重试策略、断路器（circuit breaker）和连接状态；`Storage/` 包含文件与 Keychain 存储、加密和迁移；`Clock/` 与 `CRDT/` 是用于排序和合并的值类型；`SwiftUI/` 是可观察模型。只有 `OfflineStore`、`InMemorySyncServer` 和 `SyncedCollection` 是引用类型。
 - 存储会防范行为异常的服务器和损坏的文件：队列、页面、响应、revision 和变更令牌的大小上限，必须前进的变更令牌，每条记录每次同步最多三次推送，ID 不匹配而被忽略的记录，超出允许时钟偏差的时间戳，以及无法跳出其目录的文件名。测试覆盖了其中的每一项。
 - 每次改动都会重写整个文件，这适用于每个存储最多几万条记录的集合。
@@ -352,6 +367,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## 路线图

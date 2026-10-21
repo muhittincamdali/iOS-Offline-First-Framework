@@ -112,7 +112,7 @@ struct HTTPSyncTransportTests {
     @Test func pullSendsTheTokenAndReadsThePage() async throws {
         let transport = transport { request, _ in
             let query = request.url?.query() ?? ""
-            let answer = query == "since=7"
+            let answer = query == "since=7&limit=100"
                 ? #"{"changes": [{"recordID": "a", "revision": "8"}], "token": "8", "hasMore": false}"#
                 : #"{"changes": [{"recordID": "a", "record": {"id": "a", "text": "A"}, "revision": "7", "timestamp": {"wallTime": 5, "counter": 0, "nodeID": "x"}}], "token": "7", "hasMore": true}"#
             return (200, Data(answer.utf8))
@@ -126,17 +126,40 @@ struct HTTPSyncTransportTests {
         #expect(second.token == "8")
     }
 
+    /// A "+" in a token must reach a server that decodes the query as a form as "+", not as a
+    /// space; "&" and "=" must not split the query.
+    @Test func changeTokensAreEncodedForFormDecoding() async throws {
+        let seen = OSAllocatedUnfairLock<(query: String?, since: String?)>(initialState: (nil, nil))
+        let transport = transport { request, _ in
+            let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "since" }?.value
+            seen.withLock { $0 = (request.url?.query(percentEncoded: true), since) }
+            return (200, Data(#"{"changes":[],"token":"x","hasMore":false}"#.utf8))
+        }
+        _ = try await transport.pull(since: "ab+c/d==&e")
+        let (query, since) = seen.withLock { $0 }
+        #expect(query == "since=ab%2Bc/d%3D%3D%26e&limit=100")
+        #expect(since == "ab+c/d==&e")
+    }
+
+    /// An error page longer than the response limit is still an error status: one request,
+    /// with the start of the page, and not a page too large that makes the pull ask for fewer
+    /// changes again and again.
     @Test func errorStatusesThrowWithTheStartOfTheBody() async {
-        let transport = transport { _, _ in (503, Data(String(repeating: "busy ", count: 300).utf8)) }
+        let requests = OSAllocatedUnfairLock(initialState: 0)
+        let transport = transport(maximumResponseSize: 1_024) { _, _ in
+            requests.withLock { $0 += 1 }
+            return (503, Data(String(repeating: "busy ", count: 4_000).utf8))
+        }
         do {
             _ = try await transport.pull(since: nil)
             Issue.record("expected an error")
         } catch let HTTPSyncTransport<Note>.Failure.unexpectedStatus(code, body) {
             #expect(code == 503)
-            #expect(body.count == 500)
+            #expect(body.utf8.count == HTTPSyncTransport<Note>.errorBodyLimit)
         } catch {
             Issue.record("unexpected error \(error)")
         }
+        #expect(requests.withLock { $0 } == 1)
     }
 
     @Test func oversizedResponsesAreNotLoaded() async {
@@ -146,12 +169,108 @@ struct HTTPSyncTransportTests {
         }
     }
 
-    @Test func unknownOutcomesAreErrors() async {
-        let id = UUID()
-        let transport = transport { _, _ in (200, Data(#"{"outcomes": {"\#(id.uuidString)": {"status": "maybe"}}}"#.utf8)) }
-        await #expect(throws: HTTPSyncTransport<Note>.Failure.unknownOutcome("maybe")) {
-            try await transport.push([OutgoingChange(id: id, recordID: "a", operation: .delete, timestamp: timestamp, baseRevision: "1")])
+    /// An outcome that cannot be read leaves its own change unanswered; the others are settled.
+    @Test func anUnreadableOutcomeLeavesOnlyItsChangeUnanswered() async throws {
+        let unknown = UUID(), malformed = UUID(), accepted = UUID()
+        let transport = transport { _, _ in
+            let answer = """
+            {"outcomes": {
+              "\(unknown.uuidString)": {"status": "maybe"},
+              "\(malformed.uuidString)": {"status": "conflict", "current": {"recordID": "b", "record": {"id": "b", "text": 42}, "revision": "7"}},
+              "\(accepted.uuidString)": {"status": "accepted", "revision": "5"}
+            }}
+            """
+            return (200, Data(answer.utf8))
         }
+        let outcomes = try await transport.push([
+            OutgoingChange(id: unknown, recordID: "a", operation: .delete, timestamp: timestamp, baseRevision: "1"),
+            OutgoingChange(id: malformed, recordID: "b", operation: .delete, timestamp: timestamp, baseRevision: "1"),
+            OutgoingChange(id: accepted, recordID: "c", operation: .delete, timestamp: timestamp, baseRevision: "1")
+        ])
+        #expect(outcomes.count == 1)
+        guard case .accepted(let revision)? = outcomes[accepted] else { Issue.record("accepted"); return }
+        #expect(revision == "5")
+    }
+
+    /// One record the app cannot decode is set aside; the rest of the page is used and the
+    /// token moves on, so the pull does not stop for good.
+    @Test func aRecordThatDoesNotDecodeIsQuarantined() async throws {
+        let transport = transport { request, _ in
+            let page = #"{"changes":[{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"1"},{"recordID":"bad","record":{"id":"bad","text":42},"revision":"2"}],"token":"t9","hasMore":false}"#
+            return (200, onePageAnswer(request, holding: Data(page.utf8)))
+        }
+        let response = try await transport.pull(since: nil)
+        #expect(response.changes.map(\.recordID) == ["ok"])
+        let entry = try #require(response.quarantined.first)
+        #expect(entry.recordID == #""bad""#)
+        #expect(entry.revision == "2")
+        #expect(entry.reason.contains("text"))
+
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: TestClock()))
+        let report = try await store.sync()
+        #expect(report.pulled == 1)
+        #expect(report.quarantined == 1)
+        #expect(await store.record("ok") == Note(id: "ok", text: "fine"))
+        #expect(await store.state.token == "t9")
+        #expect(await store.quarantinedChanges() == [entry])
+    }
+
+    /// A record nested 500 levels deep, half a kilobyte of brackets in place of a text, and a
+    /// record ID nested as deep: both changes are set aside, without decoding their depth on
+    /// the task's stack, and the sync goes on.
+    @Test func aDeeplyNestedChangeIsQuarantinedWithoutReadingItsDepth() async throws {
+        let depth = 500
+        let nested = String(repeating: "[", count: depth) + String(repeating: "]", count: depth)
+        let transport = transport { request, _ in
+            if request.httpMethod == "POST" { return (200, Data(#"{"outcomes":{}}"#.utf8)) }
+            let page = #"{"changes":[{"recordID":"deep","record":{"id":"deep","text":"# + nested + #"},"revision":"1"},"#
+                + #"{"recordID":"# + nested + #","revision":"2"},"#
+                + #"{"recordID":"ok","record":{"id":"ok","text":"fine"},"revision":"3"}],"token":"t1","hasMore":false}"#
+            return (200, onePageAnswer(request, holding: Data(page.utf8)))
+        }
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport,
+                                           configuration: makeConfiguration(clock: TestClock()))
+        let report = try await store.sync()
+        #expect(report.pulled == 1)
+        #expect(report.quarantined == 2)
+        #expect(await store.quarantinedChanges().map(\.recordID) == [#""deep""#, "null"])
+        #expect(await store.quarantinedChanges().map(\.revision) == ["1", "2"])
+        #expect(await store.record("ok") == Note(id: "ok", text: "fine"))
+        #expect(await store.state.token == "t1")
+    }
+
+    /// A server whose pulls keep failing opens the circuit breaker, but local edits are still
+    /// pushed: the breaker pauses pulls only.
+    @Test func failingPullsDoNotStopPushes() async throws {
+        let pushes = OSAllocatedUnfairLock(initialState: 0)
+        let transport = transport { request, body in
+            guard request.httpMethod == "POST" else { return (500, Data()) }
+            pushes.withLock { $0 += 1 }
+            let json = try JSONDecoder().decode(JSONValue.self, from: body)
+            guard case .array(let changes)? = json["changes"] else { throw URLError(.badServerResponse) }
+            var outcomes: [String: JSONValue] = [:]
+            for change in changes {
+                if case .string(let id)? = change["id"] { outcomes[id] = ["status": "accepted", "revision": "1"] }
+            }
+            return (200, try JSONEncoder().encode(JSONValue.object(["outcomes": .object(outcomes)])))
+        }
+        let clock = TestClock()
+        var configuration = makeConfiguration(clock: clock)
+        configuration.circuitBreaker = CircuitBreaker(failureThreshold: 2, cooldown: .seconds(60))
+        let store = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: transport, configuration: configuration)
+        for _ in 0..<2 {
+            await #expect(throws: HTTPSyncTransport<Note>.Failure.self) { try await store.sync() }
+        }
+        #expect(try await store.sync().skipped)
+
+        try await store.save(Note(id: "new", text: "local"))
+        let report = try await store.sync()
+        #expect(report.pushed == 1)
+        #expect(report.skipped)
+        #expect(pushes.withLock { $0 } == 1)
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await store.status == .paused(until: clock.now.addingTimeInterval(60)))
     }
 
     @Test func cancellingASyncOverHTTPIsNotAFailedAttempt() async throws {
@@ -197,6 +316,9 @@ struct HTTPSyncTransportTests {
         let report = try await store.sync()
         #expect(report.pushed == 1)
         #expect(await server.record("a") == Note(id: "a", text: "Over HTTP"))
+        // The page names the server's epoch, and the token belongs to the transport's URL.
+        #expect(await store.state.serverEpoch != nil)
+        #expect(await store.state.serverIdentity == transport.baseURL.absoluteString)
     }
 
     /// Translates the wire format to the in-memory server and back.
@@ -216,7 +338,7 @@ struct HTTPSyncTransportTests {
         }
         let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "since" }?.value
         let page = try await server.pull(since: since)
-        struct Page: Encodable { let changes: [RemoteChange<Note>]; let token: String?; let hasMore: Bool }
-        return try JSONEncoder().encode(Page(changes: page.changes, token: page.token, hasMore: page.hasMore))
+        struct Page: Encodable { let changes: [RemoteChange<Note>]; let token: String?; let hasMore: Bool; let epoch: String? }
+        return try JSONEncoder().encode(Page(changes: page.changes, token: page.token, hasMore: page.hasMore, epoch: page.epoch))
     }
 }

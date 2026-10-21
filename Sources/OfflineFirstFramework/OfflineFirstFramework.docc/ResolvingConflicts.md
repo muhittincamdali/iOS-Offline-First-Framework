@@ -4,13 +4,21 @@ Decide what happens when a record changed on the device and on the server since 
 
 ## Overview
 
-A conflict happens when the device pushes a change based on an old server revision, when a
-pull brings a server change for a record that still has a local change waiting, or when a pull
-brings a version with an older timestamp than the one the store holds (a page out of order, a
-lagging replica, an earlier version of a record whose deletion the server confirmed). For that
-last case the store keeps confirmed deletions as tombstones, the newest 1,000 of them. The store hands
-both versions to its ``ConflictResolver`` as a ``Conflict`` and acts on the
-``ConflictResolution``:
+A conflict happens only when a record changed on the device and on the server: the device pushes
+a change based on an old server revision, or a pull brings a newer server version of a record
+that still has a local change waiting. Both changes can be deletions. A server version older
+than the one the store holds (a page out of order, a lagging replica, an earlier version of a
+deleted record) is not a conflict: the store skips it, whatever the resolver, and a record
+without a local change simply takes the server's newer version. Neither is a version the device
+wrote itself, such as a push the server applied although its answer was lost: the change made
+on top of it goes out again on its revision without asking the resolver. The store tells older
+from newer only by the server's ``RemoteChange/sequence`` (see <doc:ServerProtocol>), never by
+timestamps, which device clocks write, and keeps deletions as tombstones, the newest
+``OfflineStore/Configuration/maximumTombstones`` of them, so an older version of a deleted
+record does not bring it back. From a server without sequences a pull cannot tell a newer
+version from a stale copy: it leaves a waiting local change to its push, and the resolver meets
+the version the server names in its conflict answer. The store hands both versions to its
+``ConflictResolver`` as a ``Conflict`` and acts on the ``ConflictResolution``:
 
 - ``ConflictResolution/keepRemote``: the server's version replaces the local one, and the local
   change is dropped.
@@ -38,12 +46,17 @@ let store = try OfflineStore<Todo>(name: "todos", transport: transport, configur
 
 Last write wins compares hybrid logical clock timestamps, not plain dates. A
 ``HybridLogicalClock`` never goes backwards when the user changes the device time, moves past
-every timestamp it receives, and orders writes from the same millisecond by a counter and the
-device ID, so all devices agree on the winner. A server timestamp more than
-``OfflineStore/Configuration/maximumClockDrift`` ahead of the device clock does not move the
-clock, so one wrong timestamp cannot push every later local write into the future. A device
-whose own clock runs ahead still stamps its writes with that time and wins conflicts against
-edits made before it; if devices with wrong clocks are a concern, use
+every timestamp it receives within its drift limit, and orders writes from the same millisecond
+by a counter and the device ID, so all devices agree on which of two timestamps is newer. A
+server timestamp more than ``OfflineStore/Configuration/maximumClockDrift`` ahead of the device
+clock does not move the clock, and the store weighs it against local writes as if it were at
+that limit, so one wrong timestamp cannot win every later conflict. The limit counts from the
+newest timestamp the store holds when that is later than the device clock: on a device whose
+clock was set back, a newer edit from another device stays newer than the device's own older
+edit. A device whose own clock runs ahead still stamps its writes with that time and wins the
+conflicts it resolves itself, and one whose clock is behind stamps its edits before the newer
+ones it received from correct clocks, so with last write wins its concurrent edits lose to
+those until its clock catches up. If devices with wrong clocks are a concern, use
 ``ConflictResolver/serverWins`` or a merge.
 
 ## Merging fields
@@ -81,5 +94,9 @@ configuration.conflictResolver = .mergeable
 ## Limits
 
 A resolver that returns a record with another ID is ignored and the server's version is kept.
-If the server answers every push of a record with a new conflict, the store stops pushing that
-record after three attempts in one sync and tries again in the next one.
+A push the server answers with a conflict counts as a failed attempt of the
+``OfflineStore/Configuration/retryPolicy``. The resolved version goes out again right away once
+per sync; if that push conflicts too, it waits for its retry date, and after the last attempt
+it is parked in ``OfflineStore/failedChanges()``. So a server that answers every push with a
+conflict, or two devices that both keep their own version with
+``ConflictResolver/clientWins``, cannot keep the store pushing.

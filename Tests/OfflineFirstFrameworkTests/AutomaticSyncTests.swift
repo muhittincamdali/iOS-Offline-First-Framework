@@ -51,7 +51,8 @@ struct AutomaticSyncTests {
         let store = try makeStore(server)
         let connectivity = SimulatedConnectivity(isOnline: true)
         await store.startAutomaticSync(monitor: connectivity, interval: nil, debounce: .milliseconds(300))
-        #expect(await eventually { await server.pullRequests == 1 })
+        // The first sync: its pull, and the second request that checks a new store's first page.
+        #expect(await eventually { await server.pullRequests == 2 })
 
         for index in 0..<5 {
             try await store.save(Note(id: "n\(index)", text: "Edit \(index)"))
@@ -106,11 +107,14 @@ struct AutomaticSyncTests {
         let server = InMemorySyncServer<Note>()
         let store = try OfflineStore<Note>(name: "notes", storage: storage, transport: server, configuration: makeConfiguration(clock: clock))
         await store.startAutomaticSync(monitor: SimulatedConnectivity(isOnline: true), interval: .seconds(300), debounce: .zero)
-        #expect(await eventually { await server.pullRequests == 1 })
-        // The next run is scheduled after the sync; computing its wait used to trap.
+        // The pull, and the second request that checks the server's first epoch.
+        #expect(await eventually { await server.pullRequests == 2 })
+        // The next run is scheduled after the sync; computing its wait used to trap. No wait of
+        // the retry policy is that long, so the change counts as due and goes out.
         try await Task.sleep(for: .milliseconds(100))
         #expect(await store.isAutomaticSyncEnabled)
-        #expect(await store.pendingChanges().count == 1)
+        #expect(await server.record("a")?.text == "A")
+        #expect(await store.pendingChanges().isEmpty)
         await store.stopAutomaticSync()
     }
 }

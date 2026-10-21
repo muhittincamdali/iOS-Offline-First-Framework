@@ -8,7 +8,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Latest version: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Latest version: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Supported platforms: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Language version: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="License: MIT"></picture></a>
@@ -46,9 +46,19 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 142 Swift Testing tests on macOS and an iPhone simulator,
-  16 Node tests for the server, and an end-to-end suite in CI that syncs two stores through the
-  server over HTTP.
+- **Tested against a real server** — 375 Swift Testing tests on macOS and 372 on an iPhone
+  simulator, among them three property tests that run every conflict policy through lost requests,
+  restarts, token resets, overlapping syncs, small page limits, stale pages, operations at once and
+  crashes, also against a server without sequences, scenario tests of a replica that answers a
+  device for many syncs, of a stale page that brings back an older own write or meets an accepted
+  push, of a crash at every write of a sync and of device clocks that jump ahead, and tests that
+  send pages of junk, deeply nested records, pages larger than the response limit and pages with
+  more changes than asked for, also streamed endlessly over a socket; 28 Node tests for the server;
+  and an end-to-end suite in CI that syncs stores through the server over HTTP, also with 68 records
+  of 250 KiB across a server restart, with 70 conflict answers of 250 KiB that together exceed the
+  response limit, with a write whose save failed before a restart, with a push the server applied
+  behind a proxy that answers 504, and with a replica that serves pages from before a restart after
+  a token reset.
 
 ### What's included
 
@@ -74,7 +84,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Paste it into the search field at the top right of the window. Leave **Dependency Rule** at
-**Up to Next Major Version** from `2.0.0`, then click **Add Package**. In the next window,
+**Up to Next Major Version** from `2.1.0`, then click **Add Package**. In the next window,
 choose your app target next to **OfflineFirstFramework** and click **Add Package** again.
 
 **2. Import the module**
@@ -154,7 +164,7 @@ Or add it to the `dependencies` in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -318,6 +328,90 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Guarantees and limits
+
+The store keeps these promises for every conflict policy, through lost requests, lost answers,
+app and server restarts and stale pages, as long as the server follows the
+[protocol](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md):
+
+- A save or delete is in the file before it returns, and a queued change is pushed until the
+  server answers it. A retry keeps the change ID, so the server applies it once. Only an answer
+  that was read settles a change: after an error status, a lost connection or an answer too
+  long to read, the change stays in doubt until its next push.
+- A stale copy never replaces a write the server accepted: the resolver is asked only when a record
+  changed on the device and on another device, and an older server version is skipped by the
+  server's `sequence`, also right after the device's own write was accepted, even across a server
+  restart the device has not seen yet, and after `resetChangeToken()`. A version the device wrote
+  itself is never a conflict, also when a stale page took the record back and the user edited on top
+  of it, or a page lists an older own write before a version whose answer was lost. Without
+  sequences a pull leaves a pending change to its push, also when the page brings an older write of
+  the device itself, and the push's answer decides, accepted or not: a version a pull kept back
+  meanwhile never takes its place, since a push answer names no epoch. When that version may be
+  newer, a conflict sends the change once more for a fresh answer, and any other answer stands while
+  the next sync pulls from the beginning.
+- Another server epoch, and the first one a store hears of, also on a new store's first page, counts
+  only when two requests of one sync report it, the pull with the token and the pull from the
+  beginning, so one page from a stale cache or another deployment behind the same URL cannot roll
+  the store back, bring a new store records the server never held, or lock a store out. A page
+  without an epoch, once two requests reported one, is never taken either. A sync that fetches a
+  single page still follows a server restart, and when the two requests disagree the sync fails
+  instead of reporting success. Epochs go one way: an earlier epoch than the store's, one it left or
+  one it never held, is never taken, also after `resetChangeToken()`, so a stale replica or cache
+  that answers both requests, however many syncs in a row, cannot take the store back either.
+- Deleted records stay deleted. A server that lost its data, or another server, makes the store
+  pull everything again and keep its pending changes, which meet the new history through their
+  push's answer, not through a page. A record the app cannot decode, or one nested deeper than 64
+  levels, is set aside in `quarantinedChanges()` instead of stopping the pull.
+- A server's answers have a bounded cost. A record nested deeper than 64 levels never enters the
+  store, so writing the file cannot overflow the stack; a page of junk, or of more changes than
+  the pull asked for (1,000 at most), is refused within milliseconds instead of taking gigabytes,
+  and its download is cancelled; a page larger than the response limit makes the pull ask for
+  fewer changes, and a single change larger than the limit, up to four times it, is set aside; a
+  push is split into requests the server's body limit takes and sent again in halves, 16 more
+  requests at most, while the server answers 413 or a 2xx answer is longer than the response
+  limit, and a change whose answer alone is longer stays in doubt; of an error status only the
+  first 4 KiB is read, so a gateway in trouble costs one failed attempt; a UTF-8 byte order mark
+  is read.
+- A clock that runs ahead or was set back, a server that answers every push with a conflict, a
+  server that never answers and a file that cannot be written have a bounded effect: the
+  reference servers keep a pushed timestamp at most five minutes past their own clock, a moment
+  of a wrong device clock does not stamp later writes, server versions are never ordered by
+  timestamps (a clock that ran ahead hides no later version and parks no change), retries back
+  off and are parked, a sync ends after `syncTimeout`, and syncs wait while the file cannot be
+  written.
+
+The server must never give the same revision to two versions of a record, should send on every page
+an `epoch` that only moves to later ones (longer, or greater byte by byte) and never comes back, a
+`sequence` that keeps counting across restarts (the only order the store uses), the pushed
+timestamps (a wall time far ahead of its clock moved back to a limit) and the `changeID` that wrote
+each version, and must remember change IDs across restarts, show a write in pages only once it is
+stored, and keep every page and the answer to each pushed change within the client's response limit
+(a page holds at most `limit` changes, cut by bytes, at least one change per page). Limits: writes a
+server lost in a restore are not uploaded again, a server without `sequence` gets no order guarantee
+(a stale page can roll a record back until it changes again, though no write is lost), a record
+saved again right after `discardChange(for:)` meets the server's copy as a conflict, one store
+instance per file (enforced for `FileStore`, `InMemoryStorage` and custom backends that report a
+`claimIdentity`), the whole file is written on every change, records nest at most 64 levels, a page
+holds at most 1,000 changes, a single change larger than four times the response limit stops the
+pull, a change whose push answer alone is larger than the response limit stays in doubt and is
+parked after its last attempt, an earlier epoch stays refused until the server reports one later
+than the store's and a page without an epoch until it reports one again, and deletions beyond 10,000
+are forgotten.
+[Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+has the full list.
+
+**Known limitations.** Answers from another deployment behind the same URL (a load balancer or proxy
+that sends a request to staging or to a region with separate data, or a replica that serves the
+history from before a data loss) are kept out as single pages only. When a new store's first sync
+reaches only that deployment, or one push answer comes from it, a record can keep that deployment's
+copy without an error, an edit can be decided against it or park, and a write the server never got
+can count as accepted. A replica of the history from before a data loss that answers a store's pulls
+while its push reaches the server can replace the device's own accepted write. `resetChangeToken()`
+brings back the records that deployment's token skipped; otherwise move the store file aside and
+start a new store. [Guarantees and
+limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) has the
+details.
+
 ## Demo
 
 | Synced                                                      | Offline, two changes waiting                                   |
@@ -388,8 +482,8 @@ The reference server needs Node 24 or later.
   pending change with an ID that changes with every local edit.
 - A sync pushes pending changes in batches (oldest first, with the revision they were based on),
   applies each outcome, then pulls pages of server changes after the saved change token.
-  Conflicts from either side go to the `ConflictResolver`. Edits made while a push is on its way
-  are kept and pushed next.
+  A record that changed on the device and on the server goes to the `ConflictResolver`; an older
+  server version is skipped. Edits made while a push is on its way are kept and pushed next.
 - `Sync/` holds the transport protocol, the HTTP and in-memory transports, retry policy,
   circuit breaker and connectivity; `Storage/` the file and Keychain stores, encryption and
   migrations; `Clock/` and `CRDT/` the value types for ordering and merging; `SwiftUI/` the
@@ -411,6 +505,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Roadmap

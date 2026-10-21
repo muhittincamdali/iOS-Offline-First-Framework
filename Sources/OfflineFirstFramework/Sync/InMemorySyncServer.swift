@@ -1,12 +1,16 @@
 import Foundation
+import os
 
 /// A sync server that lives in memory, for tests, SwiftUI previews and demos.
 ///
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
-/// remembered so a repeated push is not applied twice, and ``isOnline`` simulates losing the
-/// connection. Change tokens name the server instance, so a store that kept a token from an
-/// earlier instance (an app relaunched with a fresh demo server) pulls everything again.
+/// remembered so a repeated push is not applied twice and sent back with the version they wrote,
+/// a pushed timestamp more than ``maximumClockDrift`` ahead of the server's clock is moved back
+/// to that limit, and ``isOnline`` simulates losing the connection. Revisions and change tokens start with an epoch that is new for every instance
+/// and every ``restart()``, and later than every earlier one, so a revision is never handed out
+/// twice, a store that kept a token from an earlier instance (an app relaunched with a fresh demo
+/// server) pulls everything again, and a page answered from before a restart is recognised.
 ///
 /// ```swift
 /// let server = InMemorySyncServer<Note>()
@@ -17,17 +21,33 @@ import Foundation
 public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     private struct Stored {
         var record: Record?
-        var revision: Int
+        /// `<epoch>.<sequence>` of the write that stored this version.
+        var revision: String
+        /// The position of the write in the change feed.
+        var sequence: Int
         var timestamp: HLCTimestamp
+        /// The pushed change that wrote this version; `nil` for ``write(_:at:)`` and
+        /// ``delete(_:at:)``.
+        var changeID: UUID?
     }
 
     /// Change IDs the server remembers for idempotent pushes; older ones are forgotten.
     public static var rememberedChangeLimit: Int { 10_000 }
 
+    /// How far ahead of the server's clock a pushed timestamp may be; one further ahead is
+    /// stored at this limit, so a device whose clock runs ahead wins over later edits on other
+    /// devices for this long at most.
+    public static var maximumClockDrift: Duration { .seconds(300) }
+
     private var stored: [Record.ID: Stored] = [:]
-    private var revision = 0
-    /// Identifies this instance in change tokens.
-    private let epoch = String(UUID().uuidString.prefix(8))
+    /// The number of writes so far; the last write's position in the change feed.
+    private var sequence = 0
+    /// Names this run of the server in revisions and change tokens.
+    private var epoch = InMemorySyncServer.makeEpoch()
+
+    /// Different for every instance, so a store that is opened with a new server instance
+    /// pulls everything again.
+    public nonisolated let serverIdentity: String? = "in-memory-\(UUID().uuidString)"
     private var clock: HybridLogicalClock
     private var answers: [UUID: PushOutcome<Record>] = [:]
     private var answerOrder: [UUID] = []
@@ -57,7 +77,8 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
     /// Creates an empty server.
     ///
     /// - Parameters:
-    ///   - pageSize: The most changes per pull, at least 1.
+    ///   - pageSize: The most changes per pull, from 1 to
+    ///     ``OfflineStore/maximumChangesPerPage`` (1,000).
     ///   - latency: How long each request takes.
     ///   - validate: Returns a reason to reject a pushed record, or `nil` to accept it.
     ///   - now: The server's current time. Replace it in tests.
@@ -67,11 +88,11 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         validate: @escaping @Sendable (Record) -> String? = { _ in nil },
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
-        self.pageSize = max(1, pageSize)
+        self.pageSize = min(max(1, pageSize), OfflineStore<Record>.maximumChangesPerPage)
         self.latency = max(.zero, latency)
         self.validate = validate
         self.now = now
-        self.clock = HybridLogicalClock(nodeID: "server", maximumDrift: .seconds(300))
+        self.clock = HybridLogicalClock(nodeID: "server", maximumDrift: Self.maximumClockDrift)
     }
 
     /// Simulates losing or regaining the connection.
@@ -89,14 +110,24 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         stored[id]?.record
     }
 
-    /// All records on the server, in revision order.
+    /// All records on the server, in the order they were last written.
     public func records() -> [Record] {
-        stored.values.sorted { $0.revision < $1.revision }.compactMap(\.record)
+        stored.values.sorted { $0.sequence < $1.sequence }.compactMap(\.record)
     }
 
     /// The server's current revision of a record.
     public func revision(of id: Record.ID) -> String? {
-        stored[id].map { String($0.revision) }
+        stored[id]?.revision
+    }
+
+    /// Simulates a restart of a server that keeps its records and the change IDs it answered.
+    ///
+    /// The server starts a new, later epoch: change tokens handed out before make the next pull
+    /// start from the beginning, and writes from now on get revisions that the earlier run never
+    /// handed out, so a push based on a revision from before the restart is still checked
+    /// against the record's current revision.
+    public func restart() {
+        epoch = Self.makeEpoch()
     }
 
     /// Writes a record as another device would, with a new revision.
@@ -137,31 +168,32 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         pullRequests += 1
         try await simulateNetwork()
         let after = position(of: token)
-        let changed = stored.filter { $0.value.revision > after }.sorted { $0.value.revision < $1.value.revision }
+        let changed = stored.filter { $0.value.sequence > after }.sorted { $0.value.sequence < $1.value.sequence }
         let page = changed.prefix(pageSize)
-        let next = page.last?.value.revision ?? after
+        let next = page.last?.value.sequence ?? after
         return PullResponse(
-            changes: page.map { RemoteChange(recordID: $0.key, record: $0.value.record, revision: String($0.value.revision), timestamp: $0.value.timestamp) },
+            changes: page.map { remote($0.key, $0.value) },
             token: "\(epoch).\(next)",
-            hasMore: changed.count > page.count
+            hasMore: changed.count > page.count,
+            epoch: epoch
         )
     }
 
     // MARK: - Internals
 
-    /// The revision a token stands for. A token of another instance, or one this instance has
-    /// not reached, starts from the beginning: the client then gets every record again instead
-    /// of waiting for revisions that may never come.
+    /// The feed position a token stands for. A token of another epoch, or one this run has not
+    /// reached, starts from the beginning: the client then gets every record again instead of
+    /// waiting for writes that may never come.
     private func position(of token: String?) -> Int {
         guard let token, let dot = token.firstIndex(of: "."), token[..<dot] == epoch,
-              let after = Int(token[token.index(after: dot)...]), (0...revision).contains(after)
+              let after = Int(token[token.index(after: dot)...]), (0...sequence).contains(after)
         else { return 0 }
         return after
     }
 
     private func handle(_ change: OutgoingChange<Record>) -> PushOutcome<Record> {
         let current = stored[change.recordID]
-        if current.map({ String($0.revision) }) != change.baseRevision {
+        if current?.revision != change.baseRevision {
             if let current {
                 return .conflict(current: remote(change.recordID, current))
             }
@@ -170,18 +202,39 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         if let record = change.record, let reason = validate(record) {
             return .rejected(reason: reason, current: current.map { remote(change.recordID, $0) })
         }
-        _ = try? clock.receive(change.timestamp, at: now())
-        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: change.timestamp))
+        let now = now()
+        _ = try? clock.receive(change.timestamp, at: now)
+        // The device recognises its own write after a lost answer by the change ID, so the
+        // timestamp can be bounded by the server's clock, the one clock all devices share.
+        let limit = HybridLogicalClock.milliseconds(since1970: now.addingTimeInterval(Self.maximumClockDrift.seconds))
+        let timestamp = change.timestamp.wallTime > limit
+            ? HLCTimestamp(wallTime: limit, counter: change.timestamp.counter, nodeID: change.timestamp.nodeID)
+            : change.timestamp
+        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: timestamp, changeID: change.id))
     }
 
-    private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp) -> String {
-        revision += 1
-        stored[id] = Stored(record: record, revision: revision, timestamp: timestamp)
-        return String(revision)
+    private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp, changeID: UUID? = nil) -> String {
+        sequence += 1
+        let revision = "\(epoch).\(sequence)"
+        stored[id] = Stored(record: record, revision: revision, sequence: sequence, timestamp: timestamp, changeID: changeID)
+        return revision
     }
 
     private func remote(_ id: Record.ID, _ stored: Stored) -> RemoteChange<Record> {
-        RemoteChange(recordID: id, record: stored.record, revision: String(stored.revision), timestamp: stored.timestamp)
+        RemoteChange(recordID: id, record: stored.record, revision: stored.revision, timestamp: stored.timestamp,
+                     sequence: UInt64(stored.sequence), changeID: stored.changeID)
+    }
+
+    /// A new epoch, later than every earlier one of this process: the time in microseconds
+    /// since 1970, or one more than the last epoch when that is later, as 16 hexadecimal
+    /// digits, so the order of the texts is the order of the numbers.
+    private static func makeEpoch() -> String {
+        let microseconds = UInt64(max(0, Date().timeIntervalSince1970 * 1_000_000))
+        let epoch = lastEpoch.withLock { last in
+            last = max(last &+ 1, microseconds)
+            return last
+        }
+        return String(format: "%016llx", epoch)
     }
 
     private func remember(_ answer: PushOutcome<Record>, for changeID: UUID) {
@@ -199,3 +252,6 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         guard isOnline else { throw URLError(.notConnectedToInternet) }
     }
 }
+
+/// The last epoch an ``InMemorySyncServer`` of this process handed out.
+private let lastEpoch = OSAllocatedUnfairLock(initialState: UInt64(0))

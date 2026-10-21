@@ -29,8 +29,9 @@ attempt the change is parked: it stays on the device and in
 ``OfflineStore/failedChanges()``, and ``OfflineStore/retryFailedChanges()`` queues it again.
 Rejected changes are parked the same way unless the server sent its current version.
 
-After five failed syncs in a row the ``CircuitBreaker`` pauses syncing for a minute; the status
-is then ``SyncStatus/paused(until:)``.
+After five failed pulls in a row the ``CircuitBreaker`` pauses pulling for a minute; the status
+is then ``SyncStatus/paused(until:)``. Changes that are due are still pushed meanwhile, each
+after its own retry date, so edits reach a server whose pulls fail.
 
 ## In a background refresh task (iOS)
 

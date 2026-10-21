@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -30,6 +31,9 @@ struct InterleavingTests {
 
         storage.setFailing(false)
         await transport.onPull { try await server.pull(since: $0) }
+        // After a failed write the store waits for the retry delay before it syncs again.
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        clock.advance(by: 10)
         #expect(try await store.sync().pulled == 1)
         #expect(await store.records() == [Note(id: "a", text: "A")])
         #expect(await store.state.token != nil)
@@ -118,5 +122,168 @@ struct InterleavingTests {
         let expected: Note? = deleteIsNewer ? nil : Note(id: "a", text: "server edit")
         #expect(await store.record("a") == expected)
         #expect(await server.record("a") == expected)
+    }
+
+    /// discardChange(for:) resets the token so the next pull brings the server's copy back. A
+    /// pull on its way at that moment must not store its own token over the reset.
+    @Test func discardingAChangeWhileAPullRunsBringsBackTheServerCopy() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { try await server.pull(since: $0) }
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "v1"))
+        try await store.sync()
+        let once = OneShot()
+        await transport.onPull { token in
+            if await once.fire() {
+                try await store.save(Note(id: "a", text: "local edit"))
+                try await store.discardChange(for: "a")
+            }
+            return try await server.pull(since: token)
+        }
+        try await store.sync()
+        #expect(await server.record("a") == Note(id: "a", text: "v1"))
+        #expect(await store.record("a") == Note(id: "a", text: "v1"))
+        #expect(await store.pendingChanges().isEmpty)
+    }
+
+    @Test func aTokenResetDuringAPullIsKept() async throws {
+        let gate = PullGate()
+        // The gate holds pulls after "t1" from the second sync on: the first one checks the new
+        // store's first page with such a pull.
+        let armed = OSAllocatedUnfairLock(initialState: false)
+        let serverCopy = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "server"), revision: "1", timestamp: nil)
+        let transport = ScriptedTransport(pull: { token in
+            switch token {
+            case nil: return PullResponse(changes: [serverCopy], token: "t1", hasMore: false)
+            case "t1" where armed.withLock({ $0 }):
+                await gate.enter()
+                return PullResponse(changes: [], token: "t2", hasMore: false)
+            default: return PullResponse(changes: [], token: token, hasMore: false)
+            }
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        armed.withLock { $0 = true }
+
+        let running = Task { try await store.sync() }
+        await gate.waitUntilEntered()
+        try await store.save(Note(id: "a", text: "local edit"))
+        try await store.discardChange(for: "a")
+        #expect(await store.state.token == nil)
+        await gate.release()
+        _ = try await running.value
+        // The page for "t1" was dropped; the pull started over and brought the server copy.
+        #expect(await store.state.token == "t1")
+        #expect(await store.record("a")?.text == "server")
+    }
+
+    /// A save made while a sync pulls, followed by `sync()`: the call must not return the
+    /// running sync's report before the save was pushed.
+    @Test func aSyncCalledDuringAPullPushesTheNewSave() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let gate = PullGate()
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { token in
+            await gate.enter()
+            return try await server.pull(since: token)
+        }
+        let store = try makeStore(transport)
+        let running = Task { try await store.sync() }
+        await gate.waitUntilEntered()
+        try await store.save(Note(id: "late", text: "saved during the pull"))
+        let mine = Task { try await store.sync() }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        _ = try await running.value
+        let report = try await mine.value
+        #expect(report.pushed == 1)
+        #expect(await store.pendingChanges().isEmpty)
+        #expect(await server.record("late") != nil)
+    }
+
+    /// Without new changes a call made during the pull still joins the running sync.
+    @Test func aSyncCalledDuringAPullWithoutNewChangesJoinsIt() async throws {
+        let gate = PullGate()
+        let armed = OSAllocatedUnfairLock(initialState: false)
+        let transport = ScriptedTransport(pull: { token in
+            if armed.withLock({ $0 }) { await gate.enter() }
+            return PullResponse(changes: [], token: token, hasMore: false)
+        })
+        let store = try makeStore(transport)
+        // The first sync checks with a second request that the server reports no epoch; the
+        // sync under test pulls once.
+        try await store.sync()
+        armed.withLock { $0 = true }
+        let running = Task { try await store.sync() }
+        await gate.waitUntilEntered()
+        let mine = Task { try await store.sync() }
+        try await Task.sleep(for: .milliseconds(50))
+        await gate.release()
+        _ = try await running.value
+        _ = try await mine.value
+        #expect(await transport.pulls == 3)
+    }
+
+    @Test func resettingTheChangeTokenPullsEverythingAgain() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        for id in ["a", "b"] { await server.write(Note(id: id, text: id)) }
+        let tokens = TokenRecorder()
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { token in
+            await tokens.add(token)
+            return try await server.pull(since: token)
+        }
+        let store = try makeStore(transport)
+        try await store.sync()
+        try await store.save(Note(id: "local", text: "pending"))
+        try await store.resetChangeToken()
+        #expect(await store.state.token == nil)
+        #expect(await store.pendingChanges().count == 1)
+
+        let report = try await store.sync()
+        // Everything came again; the store already had it. The first sync checked the server's
+        // epoch with a second request, after the first page's token.
+        #expect(report.pulled == 0)
+        #expect(await tokens.all.map { $0 == nil } == [true, false, true])
+        #expect(await store.records().map(\.id) == ["a", "b", "local"])
+        #expect(await store.pendingChanges().isEmpty)
+    }
+}
+
+/// Holds a pull until the test releases it.
+private actor PullGate {
+    private var entered = false
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func enter() async {
+        entered = true
+        while !released {
+            await withCheckedContinuation { waiters.append($0) }
+        }
+    }
+
+    func waitUntilEntered() async {
+        while !entered {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
+    func release() {
+        released = true
+        waiters.forEach { $0.resume() }
+        waiters.removeAll()
+    }
+}
+
+private actor TokenRecorder {
+    private(set) var all: [String?] = []
+
+    func add(_ token: String?) {
+        all.append(token)
     }
 }

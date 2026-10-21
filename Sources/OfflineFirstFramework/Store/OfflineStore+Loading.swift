@@ -7,8 +7,8 @@ extension OfflineStore {
         let empty = StoreFile<Record>(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion,
                                       nodeID: UUID().uuidString, clock: nil, token: nil, lastSyncedAt: nil,
                                       nextSequence: 0, entries: [])
-        guard let data = try storage.read(fileName) else { return empty }
         do {
+            guard let data = try storage.read(fileName) else { return empty }
             let plaintext = try configuration.encryption.open(data, name: name)
             return try StoreFileCoder.decode(plaintext, as: Record.self, name: name,
                                              schemaVersion: configuration.schemaVersion, migrations: configuration.migrations)
@@ -48,15 +48,23 @@ extension OfflineStore {
 
         let nodeID = file.nodeID.isEmpty ? UUID().uuidString : file.nodeID
         let clock = HybridLogicalClock(nodeID: nodeID, maximumDrift: configuration.maximumClockDrift, latest: file.clock)
-        return State(entries: byID, clock: clock, token: file.token, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence)
+        return State(entries: byID, clock: clock, token: file.token, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence,
+                     serverIdentity: file.serverIdentity, serverEpoch: file.serverEpoch,
+                     epochIsConfirmed: file.epochIsConfirmed == true,
+                     hasHeldEpoch: file.hasHeldEpoch == true || file.serverEpoch != nil || file.retiredEpochs?.isEmpty == false,
+                     history: file.history ?? 0,
+                     quarantine: Array((file.quarantine ?? []).suffix(maximumQuarantinedChanges)),
+                     retiredEpochs: file.retiredEpochs ?? [], pullsFromBeginning: file.pullsFromBeginning == true)
     }
 }
 
 extension OfflineFirstError {
-    /// Errors after which ``CorruptionPolicy/moveAsideAndStartEmpty`` may reset the store.
+    /// Errors after which ``CorruptionPolicy/moveAsideAndStartEmpty`` may reset the store: the
+    /// file is damaged, or larger than the backend reads (written before writes were limited,
+    /// or the limit was lowered).
     var allowsReset: Bool {
         switch self {
-        case .corruptStore, .decryptionFailed: true
+        case .corruptStore, .decryptionFailed, .fileTooLarge: true
         default: false
         }
     }

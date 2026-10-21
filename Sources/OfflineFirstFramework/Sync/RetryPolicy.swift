@@ -8,6 +8,10 @@ import Foundation
 /// pushes the change is parked: it stays in the store, ``OfflineStore/failedChanges()`` lists
 /// it, and ``OfflineStore/retryFailedChanges()`` puts it back in the queue.
 ///
+/// A push the server answers with a conflict is a failed attempt too. The resolved version goes
+/// out again right away once per sync, which settles an ordinary conflict; a further conflict
+/// waits like any other failure, so a change that keeps conflicting ends up parked.
+///
 /// Every value is checked when the policy is created: negative or non-finite numbers are
 /// replaced, so a policy built from remote configuration cannot produce a negative, infinite
 /// or overflowing delay.
@@ -70,6 +74,19 @@ public struct RetryPolicy: Hashable, Sendable {
         let fraction = random.isFinite ? min(max(random, 0), 1) : 0
         seconds -= seconds * jitter * fraction
         return .seconds(max(0, seconds))
+    }
+
+    /// Whether a wait this policy set, which ends at `date`, still lasts at `now`. No such wait
+    /// is longer than ``maximumDelay``, so a date further ahead was set while the device clock
+    /// was ahead (a clock set a year forward and back again) and counts as passed; it would
+    /// otherwise hold the change back for as long as the clock had been ahead.
+    func isWaiting(until date: Date, now: Date) -> Bool {
+        Self.isWaiting(until: date, now: now, longest: maximumDelay)
+    }
+
+    /// Whether a wait that ends at `date` and lasts at most `longest` still lasts at `now`.
+    static func isWaiting(until date: Date, now: Date, longest: Duration) -> Bool {
+        date > now && date.timeIntervalSince(now) <= longest.seconds
     }
 }
 

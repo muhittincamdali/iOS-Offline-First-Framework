@@ -6,7 +6,11 @@
 // GET  /sync/<collection>/changes?since=<token>&limit=<n>
 //                                   ->  {"changes": [...], "token": "...", "hasMore": false}
 //
-// It keeps the data in memory and, with --data, in a JSON file written after every push.
+// A page holds at most `limit` changes (100 by default, 1,000 at most) and 8 MiB of them.
+//
+// It keeps the data in memory and, with --data, in a JSON file written after every push. A push
+// is answered, and its writes appear in pages, once the file was written; a failed write answers
+// the push with status 500, and the next push that is saved keeps its changes too.
 // It has no authentication: put it behind your own auth before you expose it.
 import { createServer } from 'node:http';
 import { readFile, rename, writeFile } from 'node:fs/promises';
@@ -50,9 +54,22 @@ function send(response, status, body) {
 
 /**
  * Creates the HTTP server. `collections` maps collection names to `Collection`s and grows as
- * clients use new names; `save` is called after every accepted push.
+ * clients use new names; `save` is called with all of them after every push, and the push is
+ * answered once it returns. Pages show a push's writes only after a save that followed it
+ * succeeded: a device that pulled a write the server then lost in a restart would keep it for
+ * good, as the write of another device or as its own push, applied, while every other device
+ * goes without it.
  */
 export function createSyncServer({ collections = new Map(), save = async () => {}, validate } = {}) {
+  // Saves run one after another, so two pushes never write the data at the same time. A save
+  // that fails (a full disk, a missing permission) answers its push with an error and leaves the
+  // next one to run: that save writes every collection, the failed push's changes included.
+  let saving = Promise.resolve();
+  const saveAll = () => {
+    const saved = saving.then(() => save(collections));
+    saving = saved.catch(() => {});
+    return saved;
+  };
   const collection = (name) => {
     if (!collections.has(name)) {
       if (collections.size >= MAX_COLLECTIONS) throw new HTTPError(507, `at most ${MAX_COLLECTIONS} collections`);
@@ -69,8 +86,11 @@ export function createSyncServer({ collections = new Map(), save = async () => {
       const [, name, action] = match;
       if (action === 'push') {
         if (request.method !== 'POST') throw new HTTPError(405, 'use POST');
-        const answer = collection(name).push(await readBody(request));
-        await save(collections);
+        const target = collection(name);
+        const answer = target.push(await readBody(request), { publish: false });
+        const written = target.sequence;
+        await saveAll();
+        target.publish(written);
         send(response, 200, answer);
       } else {
         if (request.method !== 'GET') throw new HTTPError(405, 'use GET');
@@ -110,9 +130,7 @@ export async function saveToFile(path, collections) {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const { values } = parseArgs({ options: { port: { type: 'string', default: '8080' }, data: { type: 'string' } } });
   const collections = values.data ? await loadFromFile(values.data) : new Map();
-  // Saves run one after another, so two pushes never write the file at the same time.
-  let saving = Promise.resolve();
-  const save = values.data ? (all) => (saving = saving.then(() => saveToFile(values.data, all))) : undefined;
+  const save = values.data ? (all) => saveToFile(values.data, all) : undefined;
   const server = createSyncServer({ collections, save });
   server.listen(Number(values.port), () => {
     console.log(`Sync server listening on http://localhost:${server.address().port}/sync/<collection>`);

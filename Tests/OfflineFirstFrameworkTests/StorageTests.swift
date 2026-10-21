@@ -48,7 +48,13 @@ struct FileStoreTests {
 
     @Test func refusesFilesAboveTheSizeLimit() throws {
         let store = try FileStore(directory: temporaryDirectory(), maximumFileSize: 8)
-        try store.write(Data(repeating: 1, count: 9), to: "big")
+        // A file it would not read is not written either.
+        #expect(throws: OfflineFirstError.fileTooLarge(name: "big", size: 9, limit: 8)) {
+            try store.write(Data(repeating: 1, count: 9), to: "big")
+        }
+        #expect(try store.read("big") == nil)
+        // One that got there another way (an older version, a lower limit) is not read.
+        try Data(repeating: 1, count: 9).write(to: store.url(for: "big"))
         #expect(throws: OfflineFirstError.fileTooLarge(name: "big", size: 9, limit: 8)) {
             try store.read("big")
         }

@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI durumu"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Son sürüm: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Son sürüm: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Desteklenen platformlar: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Dil sürümü: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Lisans: MIT"></picture></a>
@@ -50,9 +50,21 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 142 Swift Testing
-  testi, sunucu için 16 Node testi ve CI'da iki yerel depoyu sunucu üzerinden HTTP ile eşitleyen uçtan uca
-  bir test paketi.
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta 375, bir iPhone simülatöründe 372 Swift
+  Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
+  sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları, bayat sayfalar, aynı anda
+  çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan üç özellik
+  testi, bir cihaza art arda birçok eşitlemede yanıt veren bir replikayı, cihazın kendi daha eski
+  bir yazmasını geri getiren ya da kabul edilmiş bir gönderimle karşılaşan bayat bir sayfayı, bir
+  eşitlemenin her yazımındaki bir çökmeyi ve ileri sıçrayan cihaz saatlerini deneyen senaryo
+  testleri ile anlamsız verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar, yanıt sınırından
+  büyük sayfalar ve istenenden fazla değişiklik içeren sayfalar gönderen, bunları bir soket
+  üzerinden sonsuz akışla da gönderen testler), sunucu için 28 Node testi ve CI'da depoları sunucu
+  üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca da
+  taşıyan, toplamı yanıt sınırını aşan 250 KiB'lık 70 çakışma yanıtını işleyen, sunucunun diske
+  kaydedemediği bir yazmayı bir yeniden başlatmadan sonra da sınayan, sunucunun 504 yanıtı veren bir
+  proxy arkasında uyguladığı bir gönderimi ve bir token sıfırlamasından sonra yeniden başlatma
+  öncesinin sayfalarını sunan bir replikayı da deneyen uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -77,7 +89,7 @@ Xcode'da **File › Add Package Dependencies…** menüsünü seçin ve depo adr
 https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
-Pencerenin sağ üstündeki arama alanına yapıştırın. **Dependency Rule** ayarını `2.0.0` sürümünden
+Pencerenin sağ üstündeki arama alanına yapıştırın. **Dependency Rule** ayarını `2.1.0` sürümünden
 başlayan **Up to Next Major Version** olarak bırakın, ardından **Add Package**'a tıklayın. Açılan
 pencerede **OfflineFirstFramework** yanında uygulama hedefinizi seçin ve yeniden **Add Package**'a
 tıklayın.
@@ -159,7 +171,7 @@ Ya da `Package.swift` dosyanızdaki `dependencies` listesine ekleyin:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -325,6 +337,98 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Güvenceler ve sınırlar
+
+Sunucu [protokole](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md) uyduğu sürece depo, her çakışma politikasında; kaybolan isteklerde,
+kaybolan yanıtlarda, uygulama ve sunucu yeniden başlatmalarında ve bayat sayfalarda şu sözleri
+tutar:
+
+- Bir kaydetme ya da silme, çağrı dönmeden önce dosyadadır ve kuyruktaki bir değişiklik, sunucu
+  yanıtlayana kadar gönderilir. Yeniden deneme aynı değişiklik kimliğini kullanır, böylece sunucu
+  onu bir kez uygular. Bir değişikliği yalnızca okunmuş bir yanıt sonuçlandırır: bir hata
+  durumundan, kopan bir bağlantıdan ya da okunamayacak kadar uzun bir yanıttan sonra değişiklik
+  bir sonraki gönderimine kadar belirsiz (in doubt) kalır.
+- Bayat bir kopya, sunucunun kabul ettiği bir yazmanın yerini asla almaz: çözücüye yalnızca kayıt
+  hem bu cihazda hem başka bir cihazda değiştiyse sorulur ve sunucunun daha eski bir sürümü,
+  sunucunun `sequence` değerine göre, cihazın kendi yazması kabul edildikten hemen sonra da, cihazın
+  henüz görmediği bir sunucu yeniden başlatmasının ardından ve `resetChangeToken()` sonrasında bile
+  atlanır. Cihazın kendi yazdığı bir sürüm, bayat bir sayfa kaydı geri sarmış ve kullanıcı onun
+  üzerinde düzenleme yapmış olsa ya da bir sayfa, yanıtı kaybolmuş bir sürümden önce cihazın daha
+  eski bir yazmasını listelese bile asla çakışma sayılmaz. `sequence` olmadan bir çekme, sayfa
+  cihazın kendi daha eski bir yazmasını getirdiğinde de bekleyen bir değişikliği gönderimine bırakır
+  ve kararı, kabul olsun olmasın, gönderimin yanıtı verir: bu arada bir çekmenin geri tuttuğu bir
+  sürüm yanıtın yerini hiçbir zaman almaz, çünkü bir gönderimin yanıtı epoch belirtmez. Bu sürüm
+  daha yeni olabildiğinde bir çakışma değişikliği taze bir yanıt için bir kez daha gönderir; başka
+  her yanıt geçerli kalır ve bir sonraki eşitleme baştan çeker.
+- Başka bir sunucu epoch'u da, bir deponun duyduğu ilk epoch da, yeni bir deponun ilk sayfasında
+  bile, ancak tek bir eşitlemedeki iki istek, yani token ile çekme ve baştan çekme, onu birlikte
+  bildirdiğinde sayılır; böylece bayat bir önbellekten ya da aynı URL'nin arkasındaki başka bir
+  dağıtımdan gelen tek bir sayfa depoyu geri saramaz, yeni bir depoya sunucunun hiç tutmadığı
+  kayıtlar getiremez ve bir depoyu dışarıda bırakamaz. İki istek bir epoch bildirdikten sonra
+  epoch'suz bir sayfa da asla alınmaz. Tek sayfa çeken bir eşitleme de sunucunun yeniden
+  başlatılmasını izler ve iki istek uyuşmadığında eşitleme başarı bildirmek yerine hata verir.
+  Epoch'lar tek yönde ilerler: deponunkinden önceki bir epoch, ister deponun geride bıraktığı
+  ister hiç tutmadığı bir epoch olsun, `resetChangeToken()` sonrasında da asla alınmaz; böylece
+  iki isteği de art arda kaç eşitlemede yanıtlarsa yanıtlasın, bayat bir replika ya da önbellek de
+  depoyu geri saramaz.
+- Silinen kayıtlar silinmiş kalır. Verisini kaybetmiş bir sunucu ya da başka bir sunucu, deponun
+  her şeyi baştan çekmesine yol açar ve bekleyen değişiklikler korunur; bunlar yeni geçmişle bir
+  sayfa üzerinden değil, kendi gönderimlerinin yanıtıyla karşılaşır. Uygulamanın çözemediği bir
+  kayıt ya da 64 seviyeden daha derin iç içe geçmiş bir kayıt, çekmeyi durdurmak yerine
+  `quarantinedChanges()` içine ayrılır.
+- Sunucu yanıtlarının maliyeti sınırlıdır. 64 seviyeden daha derin iç içe geçmiş bir kayıt depoya
+  hiç girmez, bu yüzden dosyayı yazmak yığını (stack) taşıramaz; anlamsız verilerle dolu ya da
+  çekmenin istediğinden fazla değişiklik içeren (en fazla 1.000) bir sayfa gigabaytlarca bellek
+  harcamak yerine milisaniyeler içinde reddedilir ve indirmesi iptal edilir; yanıt sınırından
+  büyük bir sayfa, çekmenin daha az değişiklik istemesine yol açar ve tek başına sınırı aşan bir
+  değişiklik, sınırın dört katına kadar, ayrılır; bir gönderim, sunucunun gövde sınırına sığan
+  isteklere bölünür ve sunucu 413 döndüğü ya da 2xx yanıtı yanıt sınırından uzun olduğu sürece, en
+  fazla 16 ek istekle, yarılara bölünerek yeniden gönderilir, yanıtı tek başına sınırdan uzun olan
+  bir değişiklik ise belirsiz kalır; bir hata durumunun yalnızca ilk 4 KiB'ı okunur, böylece sorun
+  yaşayan bir ağ geçidi tek bir başarısız denemeye mal olur; UTF-8 bayt sırası işareti okunur.
+- İleri giden ya da geri alınmış bir saat, her gönderime çakışmayla yanıt veren bir sunucu, hiç
+  yanıt vermeyen bir sunucu ve yazılamayan bir dosya sınırlı etki yapar: referans sunucular
+  gönderilen bir zaman damgasını kendi saatlerinin en fazla beş dakika ötesinde tutar, cihaz
+  saatinin bir anlık yanlışlığı sonraki yazmalara taşınmaz, sunucu sürümleri asla zaman
+  damgalarına göre sıralanmaz (ileri giden bir saat daha sonraki hiçbir sürümü gizlemez ve hiçbir
+  değişikliği park ettirmez), yeniden denemeler bekletilir ve park edilir, bir eşitleme
+  `syncTimeout` sonunda biter ve dosya yazılamadığı sürece eşitlemeler bekler.
+
+Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; her sayfada yalnızca daha geç
+olanlara ilerleyen ve asla geri dönmeyen bir `epoch` (daha uzun ya da bayt bayt daha büyük),
+yeniden başlatmalarda saymayı sürdüren bir `sequence` (deponun kullandığı tek sıra), gönderilen
+zaman damgalarını (saatinin çok ilerisindeki bir zaman bir sınıra çekilmiş olarak) ve her sürümü
+yazan `changeID`'yi göndermeli, değişiklik kimliklerini yeniden başlatmalar boyunca hatırlamalı,
+bir yazmayı ancak kaydedildikten sonra sayfalarda göstermeli ve her sayfayı ve gönderilen her
+değişikliğin yanıtını istemcinin yanıt sınırı içinde tutmalıdır (bir sayfada en fazla `limit`
+değişiklik, bayt olarak da kesilmiş, sayfa başına en az bir değişiklik). Sınırlar: sunucunun bir
+geri yüklemede kaybettiği yazmalar yeniden yüklenmez, `sequence` göndermeyen bir sunucu sıra
+güvencesi almaz (hiçbir yazma kaybolmasa da bayat bir sayfa bir kaydı yeniden değişene kadar geri
+sarabilir), `discardChange(for:)` çağrısının hemen ardından yeniden kaydedilen bir kayıt sunucunun
+kopyasıyla çakışma olarak karşılaşır, dosya başına tek bir depo örneği kullanılır (`FileStore`,
+`InMemoryStorage` ve bir `claimIdentity` bildiren özel backend'lerde zorunlu tutulur), her
+değişiklikte dosyanın tamamı yazılır, kayıtlar en fazla 64 seviye iç içe geçebilir, bir sayfa en
+fazla 1.000 değişiklik içerir, yanıt sınırının dört katından büyük tek bir değişiklik çekmeyi
+durdurur, gönderim yanıtı tek başına yanıt sınırından büyük olan bir değişiklik belirsiz kalır ve
+son denemesinden sonra park edilir, daha önceki bir epoch, sunucu deponunkinden daha geç bir epoch
+bildirene kadar, epoch'suz bir sayfa da sunucu yeniden bir epoch bildirene kadar reddedilir ve
+10.000'i aşan silmeler unutulur. Tam liste [Güvenceler ve
+sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+makalesindedir.
+
+**Bilinen sınırlamalar.** Aynı URL'nin arkasındaki başka bir dağıtımdan gelen cevaplar (bir isteği
+staging'e ya da verisi ayrı bir bölgeye gönderen bir yük dengeleyici veya proxy, ya da bir veri
+kaybından önceki geçmişi sunan bir kopya) yalnızca tek sayfa olarak dışarıda tutulur. Yeni bir
+deponun ilk eşitlemesi yalnızca o dağıtıma ulaşırsa ya da bir push cevabı ondan gelirse, bir kayıt
+hatasız biçimde o dağıtımın kopyasında kalabilir, bir düzenleme ona karşı karara bağlanabilir ya da
+bekletilebilir ve sunucunun hiç almadığı bir yazma kabul edilmiş sayılabilir. Bir veri kaybından
+önceki geçmişi sunan ve bir deponun çekmelerine, gönderimi sunucuya ulaşırken cevap veren bir kopya,
+cihazın kendi kabul edilmiş yazmasının yerine geçebilir. `resetChangeToken()` o dağıtımın token'ının
+atladığı kayıtları geri getirir; aksi hâlde depo dosyasını kenara taşıyıp yeni bir depoyla başlayın.
+Ayrıntılar [Güvenceler ve
+sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+makalesindedir.
+
 ## Demo
 
 | Eşitlendi                                                                           | Çevrimdışı, iki değişiklik bekliyor                                                  |
@@ -397,8 +501,9 @@ Referans sunucu Node 24 veya üstünü gerektirir.
   sahip tek bir bekleyen değişikliği taşır.
 - Bir eşitleme, bekleyen değişiklikleri gruplar halinde gönderir (en eskiden başlayarak, dayandıkları
   revision ile), her sonucu uygular, ardından kayıtlı değişiklik belirtecinden sonraki sunucu
-  değişikliklerini sayfa sayfa çeker. Her iki taraftan gelen çakışmalar `ConflictResolver`'a gider.
-  Bir gönderim sürerken yapılan düzenlemeler korunur ve bir sonraki turda gönderilir.
+  değişikliklerini sayfa sayfa çeker. Hem cihazda hem sunucuda değişen bir kayıt
+  `ConflictResolver`'a gider; sunucunun daha eski bir sürümü atlanır. Bir gönderim sürerken yapılan
+  düzenlemeler korunur ve bir sonraki turda gönderilir.
 - `Sync/` transport protokolünü, HTTP ve bellek içi transport'ları, yeniden deneme politikasını,
   devre kesiciyi (circuit breaker) ve bağlantı denetimini; `Storage/` dosya ve Keychain depolarını,
   şifrelemeyi ve geçişleri; `Clock/` ve `CRDT/` sıralama ve birleştirme için değer türlerini;
@@ -421,6 +526,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Yol haritası

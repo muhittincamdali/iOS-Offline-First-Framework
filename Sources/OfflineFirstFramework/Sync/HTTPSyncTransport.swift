@@ -7,8 +7,8 @@ import Foundation
 /// of JavaScript):
 ///
 /// - `POST <baseURL>/push` with `{"changes": [...]}`, answered with `{"outcomes": {...}}`.
-/// - `GET <baseURL>/changes?since=<token>`, answered with
-///   `{"changes": [...], "token": "...", "hasMore": false}`.
+/// - `GET <baseURL>/changes?since=<token>&limit=<n>`, answered with
+///   `{"changes": [...], "token": "...", "hasMore": false, "epoch": "..."}`.
 ///
 /// ```swift
 /// let transport = HTTPSyncTransport<Note>(
@@ -18,19 +18,34 @@ import Foundation
 /// let store = try OfflineStore<Note>(name: "notes", transport: transport)
 /// ```
 ///
-/// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)``, so the store
-/// retries the changes with its ``RetryPolicy``. Responses are read up to
-/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded.
+/// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)`` after its first
+/// ``errorBodyLimit`` bytes, however long it says it is, so the store retries the changes with
+/// its ``RetryPolicy``. Only a 2xx answer that was read to its end settles a change. Responses are
+/// read up to ``maximumResponseSize`` bytes; a larger 2xx answer is cancelled instead of being
+/// loaded, at once when it announces its length. A push is split into requests of at most
+/// ``maximumRequestSize`` bytes, and a request is halved while the server answers it with
+/// status 413 or with a 2xx answer longer than ``maximumResponseSize``, by at most
+/// ``maximumSplitRequests`` requests per push; it is never halved after another status, such as
+/// a 5xx of a server or gateway in trouble. A pull asks for ``pageSize`` changes
+/// and, while the page is larger than that, for half as many; a single change that is larger on
+/// its own, up to four times ``maximumResponseSize``, is set aside in
+/// ``OfflineStore/quarantinedChanges()`` and the pull moves past it. A page with more changes
+/// than the pull asked for is cancelled as soon as the change after the limit starts, and
+/// refused.
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
-        /// The server answered with a status outside 200–299.
+        /// The server answered with a status outside 200–299. `body` holds at most the first
+        /// ``HTTPSyncTransport/errorBodyLimit`` bytes of its answer.
         case unexpectedStatus(code: Int, body: String)
-        /// The response was longer than the limit.
+        /// A 2xx response was longer than the limit.
         case responseTooLarge(limit: Int)
         /// The response was not an HTTP response.
         case notHTTP
         /// The push answer used an outcome status other than accepted, conflict or rejected.
+        ///
+        /// No longer thrown: an outcome that cannot be read counts as a missing answer for its
+        /// change only, so the other changes of the push are still settled.
         case unknownOutcome(String)
 
         public var errorDescription: String? {
@@ -53,10 +68,26 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// The session that sends the requests.
     public let session: URLSession
 
-    /// The longest response, in bytes, that is read. Default: 16 MiB.
+    /// The longest response, in bytes, that is read. Default: 16 MiB. To set aside a single change
+    /// that is larger, the pull reads its page without what the change holds, up to four times
+    /// this size.
     public let maximumResponseSize: Int
 
+    /// The longest push request body, in bytes. A push of more changes is sent in several
+    /// requests, one after the other; a change that is larger on its own is sent alone. Default:
+    /// 1 MiB, the limit of the reference server.
+    public let maximumRequestSize: Int
+
+    /// The most changes a pull asks for (the `limit` of the request), from 1 to 1,000. Default:
+    /// 100, the reference server's page size.
+    public let pageSize: Int
+
     private let headers: @Sendable () async throws -> [String: String]
+
+    /// The base URL: a store opened with a transport for another URL pulls everything again.
+    public var serverIdentity: String? {
+        baseURL.absoluteString
+    }
 
     /// Creates a transport.
     ///
@@ -65,42 +96,162 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     ///     `https://api.example.com/sync/notes`.
     ///   - session: The URL session. Default: `URLSession.shared`.
     ///   - maximumResponseSize: The longest response that is read, in bytes.
+    ///   - maximumRequestSize: The longest push request body, in bytes.
+    ///   - pageSize: The most changes a pull asks for.
     ///   - headers: Extra headers for each request, such as an `Authorization` header. Called
     ///     before every request, so it can refresh a token.
     public init(
         baseURL: URL,
         session: URLSession = .shared,
         maximumResponseSize: Int = 16 * 1024 * 1024,
+        maximumRequestSize: Int = 1024 * 1024,
+        pageSize: Int = 100,
         headers: @escaping @Sendable () async throws -> [String: String] = { [:] }
     ) {
         self.baseURL = baseURL
         self.session = session
         self.maximumResponseSize = max(1, maximumResponseSize)
+        self.maximumRequestSize = max(1, maximumRequestSize)
+        self.pageSize = min(max(1, pageSize), OfflineStore<Record>.maximumChangesPerPage)
         self.headers = headers
     }
 
+    /// Pushes `changes` in requests of at most ``maximumRequestSize`` bytes, in order.
+    ///
+    /// A request the server refuses as too large (status 413), or whose 2xx answer is longer than
+    /// ``maximumResponseSize`` (conflicts that each bring a large version), is sent again as two
+    /// halves; the server answers the changes it already applied from its memory of change IDs.
+    /// Halving adds at most ``maximumSplitRequests`` requests to one push, and no other status
+    /// halves a request.
+    ///
+    /// A request that stays too large, of a single change or once the halving is spent, settles
+    /// none of its changes: only an answer that was read settles a change, and the server may
+    /// have applied them. They get no outcome, so the store keeps them in doubt and retries them
+    /// as its ``RetryPolicy`` says, and the other requests go on. When no request of the push
+    /// got an answer, the error is thrown instead. When a request fails otherwise after earlier
+    /// ones were answered, their outcomes are returned, and the changes without an answer are
+    /// retried later.
     public func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>] {
-        var request = try await makeRequest(url: baseURL.appending(path: "push"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(PushBody(changes: changes.map(WireChange.init)))
-        let answer = try JSONDecoder().decode(PushAnswer.self, from: try await send(request))
+        let encoder = JSONEncoder()
+        let encoded = try changes.map { EncodedChange(id: $0.id, json: try encoder.encode(WireChange($0))) }
+        var requests = Self.requests(for: encoded, upTo: maximumRequestSize)
         var outcomes: [UUID: PushOutcome<Record>] = [:]
-        for (key, outcome) in answer.outcomes {
-            guard let id = UUID(uuidString: key) else { continue }
-            outcomes[id] = try outcome.pushOutcome()
+        var splitRequests = 0
+        var unsettled: Failure?
+        while !requests.isEmpty {
+            let batch = requests.removeFirst()
+            do {
+                outcomes.merge(try await push(batch)) { _, answer in answer }
+            } catch let failure as Failure where Self.asksForSmallerRequests(failure) {
+                guard batch.count > 1, splitRequests + 2 <= Self.maximumSplitRequests else {
+                    unsettled = failure
+                    continue
+                }
+                splitRequests += 2
+                let half = batch.count / 2
+                requests.insert(contentsOf: [Array(batch[..<half]), Array(batch[half...])], at: 0)
+            } catch where !outcomes.isEmpty && !(error is CancellationError) {
+                return outcomes
+            }
         }
+        if outcomes.isEmpty, let unsettled { throw unsettled }
         return outcomes
     }
 
-    public func pull(since token: String?) async throws -> PullResponse<Record> {
-        var url = baseURL.appending(path: "changes")
-        if let token {
-            url.append(queryItems: [URLQueryItem(name: "since", value: token)])
+    /// The most requests that halving adds to one push: 16, eight halvings. A push call carries
+    /// one batch of the store (``OfflineStore/Configuration/pushBatchSize`` changes at most), so
+    /// a server that refuses every request as too large costs a sync at most this many requests
+    /// more per batch, not 2n − 1 for n changes.
+    public static var maximumSplitRequests: Int { 16 }
+
+    /// Whether `failure` says that a request with fewer changes may succeed: status 413, or a 2xx
+    /// answer longer than ``maximumResponseSize``.
+    private static func asksForSmallerRequests(_ failure: Failure) -> Bool {
+        switch failure {
+        case .unexpectedStatus(code: 413, body: _), .responseTooLarge: true
+        default: false
         }
-        let request = try await makeRequest(url: url)
-        let page = try JSONDecoder().decode(PullPage.self, from: try await send(request))
-        return PullResponse(changes: page.changes, token: page.token, hasMore: page.hasMore)
+    }
+
+    /// One pushed change as the JSON it is sent as.
+    private struct EncodedChange {
+        let id: UUID
+        let json: Data
+    }
+
+    /// `{"changes":[]}`.
+    private static var emptyPushSize: Int { 14 }
+
+    /// Splits `changes`, in order, into request bodies of at most `limit` bytes; a change that is
+    /// larger on its own goes alone.
+    private static func requests(for changes: [EncodedChange], upTo limit: Int) -> [[EncodedChange]] {
+        var requests: [[EncodedChange]] = []
+        var current: [EncodedChange] = []
+        var size = emptyPushSize
+        for change in changes {
+            if !current.isEmpty, size + 1 + change.json.count > limit {
+                requests.append(current)
+                current = []
+                size = emptyPushSize
+            }
+            size += change.json.count + (current.isEmpty ? 0 : 1)
+            current.append(change)
+        }
+        if !current.isEmpty { requests.append(current) }
+        return requests
+    }
+
+    /// Sends one request of `batch` and reads the outcomes of its changes.
+    private func push(_ batch: [EncodedChange]) async throws -> [UUID: PushOutcome<Record>] {
+        var request = try await makeRequest(url: baseURL.appending(path: "push"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body = Data(#"{"changes":["#.utf8)
+        for (index, change) in batch.enumerated() {
+            if index > 0 { body.append(UInt8(ascii: ",")) }
+            body.append(change.json)
+        }
+        body.append(contentsOf: Array("]}".utf8))
+        request.httpBody = body
+        return try Self.outcomes(from: try await send(request), for: Set(batch.map(\.id)))
+    }
+
+    /// Pulls the page after `token`. A page must fit in ``maximumResponseSize``; while it does
+    /// not, the pull asks for half as many changes, down to one. A change that is larger than
+    /// the limit on its own is read as it streams in without what it holds, set aside, and the
+    /// page's token moves past it, so one large record cannot stop every later pull; that read
+    /// stops after four times ``maximumResponseSize`` with ``Failure/responseTooLarge(limit:)``,
+    /// and before it starts when the page announces more. A page with more changes than the
+    /// request's `limit`, readable or not, is cancelled when the change after the limit starts
+    /// and refused with a `DecodingError`, so a server that ignores `limit` fails the pull after
+    /// one request, without a change to the store.
+    public func pull(since token: String?) async throws -> PullResponse<Record> {
+        var limit = pageSize
+        while true {
+            let request = try await makeRequest(url: changesURL(after: token, limit: limit))
+            do {
+                return try Self.page(from: try await send(request, page: limit), limit: limit)
+            } catch Failure.responseTooLarge(limit: _) where limit > 1 {
+                limit /= 2
+            } catch Failure.responseTooLarge(limit: _) {
+                return try Self.oversizedPage(from: try await send(request, page: 1, outlining: true), limit: maximumResponseSize)
+            }
+        }
+    }
+
+    /// `<base>/changes?since=<token>&limit=<n>`, without `since` on the first pull. The token is
+    /// encoded by hand: URLQueryItem leaves "+" as it is, and servers that decode the query as a
+    /// form (URLSearchParams, the reference server) read it as a space.
+    private func changesURL(after token: String?, limit: Int) -> URL {
+        let url = baseURL.appending(path: "changes")
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var query: [String] = []
+        if let token, let encoded = token.addingPercentEncoding(withAllowedCharacters: changeTokenCharacters) {
+            query.append("since=\(encoded)")
+        }
+        query.append("limit=\(limit)")
+        components.percentEncodedQuery = query.joined(separator: "&")
+        return components.url ?? url
     }
 
     // MARK: - HTTP
@@ -114,11 +265,12 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         return request
     }
 
-    /// Sends `request` and returns the body of a 2xx answer, reading at most
-    /// ``maximumResponseSize`` bytes.
-    private func send(_ request: URLRequest) async throws -> Data {
+    /// Sends `request` and returns the body of a 2xx answer, read by a ``ResponseReader``: at
+    /// most ``maximumResponseSize`` bytes, for a page of at most `page` changes, and with
+    /// `outlining` only the outline of the page.
+    private func send(_ request: URLRequest, page changeLimit: Int? = nil, outlining: Bool = false) async throws -> Data {
         do {
-            return try await receive(request)
+            return try await receive(request, page: changeLimit, outlining: outlining)
         } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
             // URLSession reports a cancelled task as URLError(.cancelled). The store treats
             // CancellationError as "stopped", not as a failed attempt.
@@ -126,32 +278,56 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    private func receive(_ request: URLRequest) async throws -> Data {
+    /// The most bytes read of an answer outside 200–299, for ``Failure/unexpectedStatus(code:body:)``:
+    /// 4 KiB.
+    public static var errorBodyLimit: Int { 4 * 1024 }
+
+    /// The body of the answer to `request`, read by a ``ResponseReader`` when its status is 2xx;
+    /// the download is cancelled as soon as the reader stops.
+    ///
+    /// Of any other answer only the first ``errorBodyLimit`` bytes are read, whatever length it
+    /// announces and however it ends, and ``Failure/unexpectedStatus(code:body:)`` is thrown. Such
+    /// an answer says nothing about the changes of a push, and it is never taken for a long one:
+    /// a 503 or 504 of a gateway that announces 17 MiB, or a 502 page that streams without end,
+    /// would otherwise make the push split its request and park its changes.
+    private func receive(_ request: URLRequest, page changeLimit: Int?, outlining: Bool) async throws -> Data {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.notHTTP }
-        if response.expectedContentLength > Int64(maximumResponseSize) {
-            bytes.task.cancel()
-            throw Failure.responseTooLarge(limit: maximumResponseSize)
-        }
-        var body = Data()
-        for try await byte in bytes {
-            guard body.count < maximumResponseSize else {
-                bytes.task.cancel()
-                throw Failure.responseTooLarge(limit: maximumResponseSize)
-            }
-            body.append(byte)
-        }
         guard (200..<300).contains(http.statusCode) else {
-            throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: body.prefix(500), as: UTF8.self))
+            let prefix = await Self.prefix(of: bytes, length: Self.errorBodyLimit)
+            bytes.task.cancel()
+            try Task.checkCancellation()
+            throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: prefix, as: UTF8.self))
         }
-        return body
+        do {
+            var reader = try ResponseReader(expectedLength: response.expectedContentLength, maximumResponseSize: maximumResponseSize,
+                                            changeLimit: changeLimit, outlining: outlining)
+            for try await byte in bytes { try reader.read(byte) }
+            return reader.body
+        } catch let stop as ResponseReader.Stop {
+            bytes.task.cancel()
+            switch stop {
+            case .tooLarge: throw Failure.responseTooLarge(limit: maximumResponseSize)
+            case .tooManyChanges: throw Self.tooManyChanges(changeLimit ?? 0)
+            }
+        }
+    }
+
+    /// The first `length` bytes of `bytes`, or fewer when the body ends or breaks off before.
+    private static func prefix(of bytes: URLSession.AsyncBytes, length: Int) async -> Data {
+        var prefix = Data()
+        do {
+            for try await byte in bytes {
+                prefix.append(byte)
+                if prefix.count >= length { break }
+            }
+        } catch {
+            // The status is known; the body only describes it.
+        }
+        return prefix
     }
 
     // MARK: - Wire format
-
-    private struct PushBody: Encodable {
-        let changes: [WireChange]
-    }
 
     private struct WireChange: Encodable {
         let id: UUID
@@ -170,36 +346,8 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             baseRevision = change.baseRevision
         }
     }
-
-    private struct PushAnswer: Decodable {
-        let outcomes: [String: WireOutcome]
-    }
-
-    private struct WireOutcome: Decodable {
-        let status: String
-        let revision: String?
-        let reason: String?
-        let current: RemoteChange<Record>?
-
-        func pushOutcome() throws -> PushOutcome<Record> {
-            switch status {
-            case "accepted":
-                guard let revision else { throw Failure.unknownOutcome("accepted without a revision") }
-                return .accepted(revision: revision)
-            case "conflict":
-                guard let current else { throw Failure.unknownOutcome("conflict without the current record") }
-                return .conflict(current: current)
-            case "rejected":
-                return .rejected(reason: reason ?? "Rejected by the server.", current: current)
-            default:
-                throw Failure.unknownOutcome(String(status.prefix(100)))
-            }
-        }
-    }
-
-    private struct PullPage: Decodable {
-        let changes: [RemoteChange<Record>]
-        let token: String?
-        let hasMore: Bool
-    }
 }
+
+/// The characters a change token keeps unencoded in the query: the URL query characters without
+/// `+`, `&`, `=` and `;`, which form decoding would read as separators or a space.
+private let changeTokenCharacters = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&=;"))

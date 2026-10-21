@@ -1,6 +1,5 @@
 // The sync logic of one collection: revisions, conflict checks, idempotent pushes and paged
 // pulls. It has no I/O, so the tests drive it directly.
-import { randomBytes } from 'node:crypto';
 
 export const LIMITS = Object.freeze({
   changesPerPush: 500,
@@ -11,13 +10,38 @@ export const LIMITS = Object.freeze({
   idLength: 256,
   nodeIDLength: 128,
   revisionLength: 64,
+  // How far ahead of the server's clock a pushed timestamp may be, in milliseconds.
+  clockDrift: 300_000,
+  // How deep a record may nest objects and arrays, the record itself counting as one, and how
+  // many bytes of JSON it may take. Clients read each change of a page on their own, but a
+  // record nested deeper than their decoder reads is still set aside on every device.
+  recordDepth: 64,
+  recordBytes: 256 * 1024,
+  // How many bytes of JSON the changes of one page may take. A page must fit in a client's
+  // response limit (16 MiB for HTTPSyncTransport by default); it holds at least one change, and
+  // a change is at most recordBytes of record and a few hundred bytes more, so every page fits.
+  pageBytes: 8 * 1024 * 1024,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EPOCH = /^[0-9a-f]{16}$/;
 const TOKEN = /^([0-9a-f]{16})\.(\d{1,15})$/;
 
 export class ValidationError extends Error {}
+
+/** The last epoch handed out in this process, as a number. */
+let lastEpoch = 0n;
+
+/**
+ * A new epoch, later than every earlier one: the time in microseconds since 1970, or one more
+ * than the last epoch of this process or `after` (the epoch of a saved file) when that is
+ * later, as 16 hexadecimal digits. Devices compare epochs, so a page from a stale replica of an
+ * earlier run can be told from a new history.
+ */
+function nextEpoch(after = 0n) {
+  const candidates = [BigInt(Date.now()) * 1000n, lastEpoch + 1n, after + 1n];
+  lastEpoch = candidates.reduce((a, b) => (a > b ? a : b));
+  return lastEpoch.toString(16).padStart(16, '0');
+}
 
 /** Map key for a record ID (a JSON string or number). */
 function keyOf(recordID) {
@@ -30,6 +54,25 @@ function check(condition, message) {
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Whether `record` nests objects and arrays deeper than `limit`, counted without recursion. */
+function nestsDeeperThan(record, limit) {
+  const stack = [[record, 1]];
+  while (stack.length > 0) {
+    const [value, depth] = stack.pop();
+    if (typeof value !== 'object' || value === null) continue;
+    if (depth > limit) return true;
+    for (const child of Object.values(value)) stack.push([child, depth + 1]);
+  }
+  return false;
+}
+
+/** Why `record` breaks the size limits, or null. */
+function sizeProblem(record) {
+  if (nestsDeeperThan(record, LIMITS.recordDepth)) return `The record nests deeper than ${LIMITS.recordDepth} levels.`;
+  if (Buffer.byteLength(JSON.stringify(record)) > LIMITS.recordBytes) return `The record is larger than ${LIMITS.recordBytes} bytes.`;
+  return null;
 }
 
 function validateRecordID(recordID) {
@@ -67,33 +110,52 @@ export function validateChange(change) {
 }
 
 export class Collection {
-  #records = new Map(); // key -> { recordID, record, revision, timestamp }
-  #revision = 0;
+  #records = new Map(); // key -> { recordID, record, revision, sequence, timestamp, changeID }
+  #sequence = 0; // the number of writes; the newest write's position in the change feed
+  // The newest write that pages show. A server that saves its data shows a write only once it
+  // is saved: a write a device pulled and a restart then lost would stay on that device, which
+  // took it for applied, and on no other.
+  #published = 0;
   #answers = new Map(); // change ID -> outcome, oldest first
-  // Names this collection's history in change tokens. A collection created empty (a restarted
-  // in-memory server) gets a new one, so tokens handed out before do not match.
-  #epoch = randomBytes(8).toString('hex');
+  // Names this run of the collection in revisions and change tokens. Every start gets a new one,
+  // also a start from saved data: the file may be an older backup, so the writes after it were
+  // lost and their revisions and token positions would be handed out again. With a new epoch a
+  // revision is never reused, and a token from before starts the pull from the beginning. Each
+  // epoch is later than the ones before it (see nextEpoch).
+  #epoch = nextEpoch();
 
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
-   * deleted ones included, so clients cannot grow the server's memory without limit.
+   * deleted ones included, so clients cannot grow the server's memory without limit. `now`
+   * returns the server's time in milliseconds. `pageBytes` bounds the JSON of a page's changes.
    */
-  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection } = {}) {
+  constructor({
+    validate = () => null,
+    state,
+    maxRecords = LIMITS.recordsPerCollection,
+    now = () => Date.now(),
+    pageBytes = LIMITS.pageBytes,
+  } = {}) {
     this.validate = validate;
     this.maxRecords = maxRecords;
+    this.now = now;
+    this.pageBytes = pageBytes;
     if (state) this.#restore(state);
   }
 
-  get revision() {
-    return this.#revision;
+  get sequence() {
+    return this.#sequence;
   }
 
   get epoch() {
     return this.#epoch;
   }
 
-  /** Applies a push body and returns `{ outcomes }`. */
-  push(body) {
+  /**
+   * Applies a push body and returns `{ outcomes }`. Pages show its writes right away, or, with
+   * `publish: false`, once `publish` is called for them, as a server does after saving them.
+   */
+  push(body, { publish = true } = {}) {
     check(isPlainObject(body) && Array.isArray(body.changes), 'the body must be {"changes": [...]}');
     check(body.changes.length <= LIMITS.changesPerPush, `at most ${LIMITS.changesPerPush} changes per push`);
     const changes = body.changes.map(validateChange);
@@ -103,58 +165,92 @@ export class Collection {
       this.#remember(change.id, answer);
       outcomes[change.id.toUpperCase()] = answer;
     }
+    if (publish) this.publish();
     return { outcomes };
   }
 
+  /** Lets pages show the writes up to `sequence` (all of them by default), and the ones before. */
+  publish(sequence = this.#sequence) {
+    this.#published = Math.max(this.#published, Math.min(sequence, this.#sequence));
+  }
+
   /**
-   * Returns changes after `token` (`<epoch>.<revision>`), oldest first. A token of another
-   * epoch, or one ahead of this collection (a backup was restored), starts from the beginning,
-   * so the client gets every record again instead of waiting for revisions that never come.
+   * Returns changes after `token` (`<epoch>.<sequence>`), oldest first, and the epoch: at most
+   * `limit` of them, and no more than `pageBytes` of JSON, but always at least one. A token of
+   * another epoch, or one ahead of the published writes, starts from the beginning, so the
+   * client gets every record again instead of waiting for writes that never come. A record whose
+   * newest write is not published yet is left out until it is.
    */
   changes(token, limit = LIMITS.pageSize) {
     const match = TOKEN.exec(token ?? '');
     const position = match && match[1] === this.#epoch ? Number(match[2]) : 0;
-    const since = position <= this.#revision ? position : 0;
+    const since = position <= this.#published ? position : 0;
     const size = Math.min(Math.max(1, Number.isSafeInteger(limit) ? limit : LIMITS.pageSize), LIMITS.maxPageSize);
-    const changed = [...this.#records.values()].filter((entry) => entry.revision > since).sort((a, b) => a.revision - b.revision);
-    const page = changed.slice(0, size);
+    const changed = [...this.#records.values()]
+      .filter((entry) => entry.sequence > since && entry.sequence <= this.#published)
+      .sort((a, b) => a.sequence - b.sequence);
+    const page = [];
+    let bytes = 0;
+    for (const entry of changed) {
+      if (page.length === size) break;
+      const remote = this.#remote(entry);
+      // The change's JSON and the comma before the next one.
+      const length = Buffer.byteLength(JSON.stringify(remote)) + 1;
+      if (page.length > 0 && bytes + length > this.pageBytes) break;
+      page.push(remote);
+      bytes += length;
+    }
     return {
-      changes: page.map((entry) => this.#remote(entry)),
-      token: `${this.#epoch}.${page.at(-1)?.revision ?? since}`,
+      changes: page,
+      token: `${this.#epoch}.${page.at(-1)?.sequence ?? since}`,
       hasMore: changed.length > page.length,
+      epoch: this.#epoch,
     };
   }
 
-  /** A plain object for saving to disk. */
+  /** A plain object for saving to disk: the records and the remembered answers. */
   snapshot() {
-    return { epoch: this.#epoch, revision: this.#revision, records: [...this.#records.values()] };
+    return { epoch: this.#epoch, sequence: this.#sequence, records: [...this.#records.values()], answers: [...this.#answers] };
   }
 
   #apply(change) {
     const current = this.#records.get(keyOf(change.recordID));
-    if (current && String(current.revision) !== change.baseRevision) {
+    if (current && current.revision !== change.baseRevision) {
       return { status: 'conflict', current: this.#remote(current) };
     }
     if (!current && this.#records.size >= this.maxRecords) {
       return { status: 'rejected', reason: `The collection holds the maximum of ${this.maxRecords} records.` };
     }
-    const reason = change.record ? this.validate(change.record) : null;
+    const reason = change.record ? (sizeProblem(change.record) ?? this.validate(change.record)) : null;
     if (reason) {
       return { status: 'rejected', reason, ...(current ? { current: this.#remote(current) } : {}) };
     }
-    this.#revision += 1;
+    this.#sequence += 1;
+    const revision = `${this.#epoch}.${this.#sequence}`;
     this.#records.set(keyOf(change.recordID), {
       recordID: change.recordID,
       record: change.record,
-      revision: this.#revision,
-      timestamp: change.timestamp,
+      revision,
+      sequence: this.#sequence,
+      // Bounded by the server's clock, the one clock all devices share: a device whose clock
+      // runs ahead wins over later edits on other devices for LIMITS.clockDrift at most.
+      timestamp: this.#bounded(change.timestamp),
+      // Sent back with the version, so the device that pushed it recognises its own write when
+      // the answer was lost.
+      changeID: change.id,
     });
-    return { status: 'accepted', revision: String(this.#revision) };
+    return { status: 'accepted', revision };
+  }
+
+  #bounded(timestamp) {
+    const limit = this.now() + LIMITS.clockDrift;
+    return timestamp.wallTime > limit ? { ...timestamp, wallTime: limit } : timestamp;
   }
 
   #remote(entry) {
-    const remote = { recordID: entry.recordID, revision: String(entry.revision), timestamp: entry.timestamp };
+    const remote = { recordID: entry.recordID, revision: entry.revision, sequence: entry.sequence, timestamp: entry.timestamp };
     if (entry.record) remote.record = entry.record;
+    if (entry.changeID) remote.changeID = entry.changeID;
     return remote;
   }
 
@@ -167,13 +263,32 @@ export class Collection {
   }
 
   #restore(state) {
-    check(isPlainObject(state) && Number.isSafeInteger(state.revision) && Array.isArray(state.records), 'invalid saved state');
-    this.#revision = state.revision;
-    // Files saved before epochs existed get a new one; their clients pull everything once.
-    if (EPOCH.test(state.epoch ?? '')) this.#epoch = state.epoch;
-    for (const entry of state.records) {
-      validateRecordID(entry.recordID);
+    check(isPlainObject(state), 'invalid saved state');
+    // Files written before revisions had an epoch call the counter `revision`.
+    const sequence = state.sequence ?? state.revision;
+    check(Number.isSafeInteger(sequence) && sequence >= 0 && Array.isArray(state.records), 'invalid saved state');
+    this.#sequence = sequence;
+    this.#published = sequence;
+    // The new epoch is also later than the saved one, should the clock have gone back since.
+    if (typeof state.epoch === 'string' && /^[0-9a-f]{16}$/.test(state.epoch)) {
+      this.#epoch = nextEpoch(BigInt(`0x${state.epoch}`));
+    }
+    for (const saved of state.records) {
+      check(isPlainObject(saved), 'invalid saved record');
+      validateRecordID(saved.recordID);
+      // Such files also keep each record's revision as a plain number, which clients hold as
+      // a string; it stays valid, and new writes get revisions with an epoch.
+      const entry = typeof saved.revision === 'number' ? { ...saved, revision: String(saved.revision), sequence: saved.revision } : saved;
+      check(typeof entry.revision === 'string' && Number.isSafeInteger(entry.sequence) && entry.sequence <= sequence, 'invalid saved record');
+      check(entry.changeID === undefined || (typeof entry.changeID === 'string' && UUID.test(entry.changeID)), 'invalid saved record');
       this.#records.set(keyOf(entry.recordID), entry);
+    }
+    // The answers are kept, so a push repeated after a restart is still applied only once.
+    const answers = state.answers ?? [];
+    check(Array.isArray(answers), 'invalid saved answers');
+    for (const pair of answers.slice(-LIMITS.rememberedChanges)) {
+      check(Array.isArray(pair) && typeof pair[0] === 'string' && isPlainObject(pair[1]), 'invalid saved answer');
+      this.#remember(pair[0], pair[1]);
     }
   }
 }

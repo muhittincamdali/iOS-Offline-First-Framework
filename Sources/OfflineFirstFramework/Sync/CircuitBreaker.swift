@@ -1,11 +1,13 @@
 import Foundation
 
-/// Stops sync attempts for a while after repeated failures.
+/// Stops pulls for a while after repeated failures.
 ///
-/// After ``failureThreshold`` failed syncs in a row the breaker opens: the store skips sync
-/// attempts until ``cooldown`` has passed, which saves battery and server load while the
-/// server is down. The first attempt after the cooldown is a trial (half-open): success closes
-/// the breaker, failure opens it for another cooldown.
+/// After ``failureThreshold`` failed pulls in a row the breaker opens: the store skips pulls
+/// until ``cooldown`` has passed, which saves battery and server load while the server is down.
+/// The first pull after the cooldown is a trial (half-open): success closes the breaker,
+/// failure opens it for another cooldown. Pushes do not depend on the breaker: each change
+/// waits for its own retry date (see ``RetryPolicy``), so local edits still reach a server whose
+/// pulls fail.
 public struct CircuitBreaker: Hashable, Sendable {
     /// The state of the breaker.
     public enum State: Hashable, Sendable {
@@ -36,13 +38,15 @@ public struct CircuitBreaker: Hashable, Sendable {
     }
 
     /// Whether an attempt may start at `date`. An open breaker whose cooldown has passed turns
-    /// half-open and lets the attempt through.
+    /// half-open and lets the attempt through. So does one whose end lies more than
+    /// ``cooldown`` after `date`: it opened while the device clock was ahead, and would
+    /// otherwise stay open for as long as the clock had been ahead.
     public mutating func allowsAttempt(at date: Date) -> Bool {
         switch state {
         case .closed, .halfOpen:
             return true
         case .open(let until):
-            guard date >= until else { return false }
+            guard !RetryPolicy.isWaiting(until: until, now: date, longest: cooldown) else { return false }
             state = .halfOpen
             return true
         }

@@ -20,6 +20,30 @@ public actor OfflineStore<Record: SyncableRecord> {
         var token: String?
         var lastSyncedAt: Date?
         var nextSequence: UInt64
+        /// The ``SyncTransport/serverIdentity`` the token and revisions belong to.
+        var serverIdentity: String?
+        /// The last ``PullResponse/epoch`` the server reported.
+        var serverEpoch: String?
+        /// Whether two requests of one sync reported ``serverEpoch``, or that the server reports
+        /// none. Until they did (a new store, a store file from before the check, another
+        /// server), a page that names the store's epoch is checked like another epoch, and a page
+        /// without an epoch is not refused for it.
+        var epochIsConfirmed = false
+        /// Whether the store held an epoch of this server (``serverIdentity``). An epoch after a
+        /// history without one is then not a first one, which the pull goes on with after the
+        /// token, but starts a new history (``OfflineStore/EpochStanding/replacing``).
+        var hasHeldEpoch = false
+        /// Grows by one whenever the server's history changes: a new epoch or another server.
+        var history: UInt64
+        /// Server changes set aside, oldest first.
+        var quarantine: [QuarantinedChange] = []
+        /// Epochs the store left for a later one, oldest first; a page that names one is
+        /// refused. ``OfflineStore/resetChangeToken()`` keeps them.
+        var retiredEpochs: [String] = []
+        /// Set when a push answer stood over a version a pull kept back and nothing told which
+        /// of the two is newer (``OfflineStore/weigh(keptBack:against:in:)``): the next sync
+        /// forgets the token and pulls from the beginning.
+        var pullsFromBeginning = false
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -43,6 +67,16 @@ public actor OfflineStore<Record: SyncableRecord> {
     /// Records whose push is waiting for the server's answer.
     var inFlight: Set<Record.ID> = []
     var automaticSync: AutomaticSync?
+    /// Grows whenever the token is reset outside a pull, so a pull that was on its way at that
+    /// moment does not store its page and token over the reset.
+    var tokenGeneration: UInt64 = 0
+    /// Identifies the file among the stores of this process, or `nil` for a backend without a
+    /// ``StorageBackend/claimIdentity``; see ``FileClaims``.
+    let fileKey: String?
+    /// The file's generation when this store last read or wrote it.
+    var fileGeneration: UInt64
+    /// Set while the file cannot be written; see ``StorageWait``.
+    var storageWait: StorageWait?
 
     /// What the store is doing about sync.
     public internal(set) var status: SyncStatus = .idle
@@ -53,7 +87,11 @@ public actor OfflineStore<Record: SyncableRecord> {
     ///
     /// - Parameters:
     ///   - name: 1 to 249 letters, digits, `.`, `_` or `-`, not starting with a dot. Each store
-    ///     needs its own name.
+    ///     needs its own name, and one file one instance at a time. With the built-in backends,
+    ///     and with a custom one that reports a ``StorageBackend/claimIdentity``, a second
+    ///     instance on the same file in this process cannot write after the first one did
+    ///     (``OfflineFirstError/storeChangedElsewhere(name:)``). A custom backend without an
+    ///     identity is not protected: the instance that writes last drops the other's records.
     ///   - storage: Where the file lives. `nil` uses `Application Support/OfflineFirst`.
     ///   - transport: The connection to your server, or `nil` for a store that only keeps data
     ///     on the device (``sync()`` then does nothing).
@@ -69,6 +107,11 @@ public actor OfflineStore<Record: SyncableRecord> {
         try StorageName.validate("\(name).store")
         let configuration = configuration.normalized
         let storage = try storage ?? FileStore.applicationSupport()
+        // The generation is read before the file: a write by another instance in between makes
+        // this one refuse its first write instead of dropping that write.
+        let fileKey = FileClaims.key(for: storage, name: "\(name).store")
+        self.fileGeneration = fileKey.map { FileClaims.shared.generation(of: $0) } ?? 0
+        self.fileKey = fileKey
         let file = try Self.load(name: name, storage: storage, configuration: configuration)
         let state = Self.makeState(from: file, configuration: configuration)
         self.name = name
@@ -118,6 +161,13 @@ public actor OfflineStore<Record: SyncableRecord> {
         pendingChanges().filter(\.isParked)
     }
 
+    /// Server changes the store set aside because it could not use them, oldest first: a
+    /// record that does not decode, or a change whose IDs do not match. The pull went on
+    /// without them; see ``QuarantinedChange``.
+    public func quarantinedChanges() -> [QuarantinedChange] {
+        state.quarantine
+    }
+
     /// The records and sync state as one value.
     public func currentState() -> StoreState<Record> {
         let pending = state.entries.values.compactMap(\.pending)
@@ -129,8 +179,9 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Stores `record`, replacing a record with the same ID, and queues it for the server.
     ///
-    /// - Throws: ``OfflineFirstError/outboxFull(limit:)`` when too many changes wait, or a
-    ///   storage error; the store is unchanged then.
+    /// - Throws: ``OfflineFirstError/outboxFull(limit:)`` when too many changes wait,
+    ///   ``OfflineFirstError/recordNestedTooDeeply(limit:)`` for a record that nests deeper than
+    ///   ``maximumRecordDepth``, or a storage error; the store is unchanged then.
     public func save(_ record: Record) throws {
         try save(contentsOf: [record])
     }
@@ -175,15 +226,42 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Drops the waiting change of record `id`. A record that was never sent is removed; for one
     /// the server may know, the local version is removed too and the next sync pulls all server
-    /// changes again from the start, which brings back the server's copy.
+    /// changes again from the start, which brings back the server's copy. That holds also when
+    /// a sync is pulling at that moment: its page is dropped and the pull starts over.
     public func discardChange(for id: Record.ID) throws {
         guard let entry = state.entries[id], entry.pending != nil, !inFlight.contains(id) else { return }
+        let reachedServer = entry.revision != nil || entry.wasSent
         try update { state in
             state.entries[id] = nil
-            if entry.revision != nil || entry.wasSent {
+            if reachedServer {
                 state.token = nil
             }
         }
+        if reachedServer { tokenGeneration &+= 1 }
+    }
+
+    /// Forgets the change token, so the next sync pulls every server change from the
+    /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
+    /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
+    ///
+    /// What the store knows about the server's epochs stays: a later ``PullResponse/epoch`` than
+    /// the store's is believed, as always, once two requests of one sync report it, the pull
+    /// from the beginning and the pull after its token, and an earlier one, also an epoch the
+    /// store left for a later one, is never taken. A stale replica or a shared cache that answers
+    /// both requests after the reset, as one easily does since the pull from the beginning asks
+    /// every device for the same URL, therefore cannot roll the store back.
+    ///
+    /// Use it when the server can no longer continue after the token, for example when it
+    /// answers every pull with an error for it, or after an app update that can read records
+    /// the store set aside. It does not bring the store back to an earlier epoch: a store that
+    /// followed another deployment behind the same URL with a later epoch returns to the first
+    /// server only once that server reports an epoch later still.
+    public func resetChangeToken() throws {
+        try update { state in
+            state.token = nil
+            state.quarantine.removeAll()
+        }
+        tokenGeneration &+= 1
     }
 
     // MARK: - Observing
@@ -221,7 +299,14 @@ public actor OfflineStore<Record: SyncableRecord> {
     func update<T>(_ body: (inout State) throws -> T) throws -> T {
         var copy = state
         let result = try body(&copy)
-        try persist(copy)
+        do {
+            try persist(copy)
+        } catch {
+            storageWait = StorageWait(after: storageWait, error: error, retryPolicy: configuration.retryPolicy,
+                                      now: configuration.now(), random: configuration.random())
+            throw error
+        }
+        storageWait = nil
         state = copy
         notifyObservers()
         return result
@@ -232,9 +317,22 @@ public actor OfflineStore<Record: SyncableRecord> {
         let clock = state.clock.latest.wallTime == .min ? nil : state.clock.latest
         let file = StoreFile(format: StoreFile<Record>.currentFormat, schemaVersion: configuration.schemaVersion, nodeID: nodeID,
                              clock: clock, token: state.token, lastSyncedAt: state.lastSyncedAt,
-                             nextSequence: state.nextSequence, entries: entries)
+                             nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
+                             serverEpoch: state.serverEpoch, epochIsConfirmed: state.epochIsConfirmed ? true : nil,
+                             hasHeldEpoch: state.hasHeldEpoch && state.serverEpoch == nil ? true : nil,
+                             history: state.history,
+                             quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
+                             retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs,
+                             pullsFromBeginning: state.pullsFromBeginning ? true : nil)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
-        try storage.write(data, to: fileName)
+        guard let fileKey else {
+            try storage.write(data, to: fileName)
+            return
+        }
+        guard let generation = try FileClaims.shared.write(fileKey, expecting: fileGeneration, { try storage.write(data, to: fileName) }) else {
+            throw OfflineFirstError.storeChangedElsewhere(name: name)
+        }
+        fileGeneration = generation
     }
 
     func sortedEntries() -> [StoredEntry<Record>] {
@@ -243,14 +341,13 @@ public actor OfflineStore<Record: SyncableRecord> {
 
     /// Writes a local version (`nil` for a deletion) and queues it.
     static func write(_ record: Record?, id: Record.ID, into state: inout State, configuration: Configuration) throws {
-        let timestamp: HLCTimestamp
-        do {
-            timestamp = try state.clock.tick(at: configuration.now())
-        } catch {
-            throw OfflineFirstError.clock(error)
+        if let record, NestingDepth.exceeds(record, limit: maximumRecordDepth) {
+            throw OfflineFirstError.recordNestedTooDeeply(limit: maximumRecordDepth)
         }
+        let timestamp = try tick(&state, configuration: configuration)
         var entry = state.entries[id]
-            ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil)
+            ?? StoredEntry(id: id, record: nil, timestamp: timestamp, revision: nil, position: state.takeSequence(), pending: nil,
+                           history: state.history)
         // A record saved again after its deletion reached the server is new to the list.
         if entry.revision != nil, entry.record == nil, entry.pending == nil, record != nil {
             entry.position = state.takeSequence()
@@ -261,10 +358,22 @@ public actor OfflineStore<Record: SyncableRecord> {
                 throw OfflineFirstError.outboxFull(limit: configuration.maximumPendingChanges)
             }
         }
+        // The version this one replaces may have been applied although its answer was lost; its
+        // change ID and timestamp let the store recognise it on the server as its own earlier write.
+        var superseded = entry.pending?.supersededInDoubt ?? []
+        var supersededIDs = entry.pending?.supersededChangeIDs ?? []
+        if let pending = entry.pending, pending.isInDoubt {
+            superseded.append(entry.timestamp)
+            supersededIDs.append(pending.changeID)
+        }
         entry.record = record
         entry.timestamp = timestamp
+        // A new local version is pushed on its own base; its conflict answer brings the current one.
+        entry.deferredRemote = nil
         entry.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
-                                     attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
+                                     attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false,
+                                     supersededInDoubt: Array(superseded.suffix(PendingWrite.maximumSupersededInDoubt)),
+                                     supersededChangeIDs: Array(supersededIDs.suffix(PendingWrite.maximumSupersededInDoubt)))
         state.entries[id] = entry
     }
 }

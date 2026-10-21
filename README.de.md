@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@fdd9306240832e7c0e929da25647bda136e1d13a status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI-Status"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Aktuelle Version: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Aktuelle Version: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Unterstützte Plattformen: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Sprachversion: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Lizenz: MIT"></picture></a>
@@ -51,9 +51,22 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 142 Swift-Testing-Tests auf macOS und in einem
-  iPhone-Simulator, 16 Node-Tests für den Server und eine End-to-End-Testsuite in der CI, die zwei
-  Stores über HTTP durch den Server synchronisiert.
+- **Gegen einen echten Server getestet** — 375 Swift-Testing-Tests auf macOS und 372 in einem
+  iPhone-Simulator, darunter drei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
+  Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine Seitengrenzen,
+  veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, auch gegen einen Server ohne
+  Sequenzen, Szenariotests mit einem Replikat, das einem Gerät viele Synchronisierungen lang
+  antwortet, mit einer veralteten Seite, die einen älteren eigenen Schreibvorgang zurückbringt oder
+  auf eine angenommene Übertragung trifft, mit einem Absturz bei jedem Schreibvorgang einer
+  Synchronisierung und mit Geräteuhren, die nach vorn springen, und Tests, die Seiten voller
+  unbrauchbarer Daten, sehr tief verschachtelte Datensätze, Seiten über dem Antwortlimit und Seiten
+  mit mehr Änderungen als angefordert senden, auch endlos über einen Socket gestreamt; 28 Node-Tests
+  für den Server; und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch den Server
+  synchronisiert, auch mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg, mit 70
+  Konfliktantworten zu 250 KiB, die zusammen das Antwortlimit überschreiten, mit einem
+  Schreibvorgang, dessen Speichern vor einem Neustart fehlschlug, mit einer Übertragung, die der
+  Server hinter einem Proxy angewandt hat, der mit 504 antwortet, und mit einem Replikat, das nach
+  dem Zurücksetzen des Tokens Seiten von vor einem Neustart liefert.
 
 ### Was enthalten ist
 
@@ -79,7 +92,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Füge sie in das Suchfeld oben rechts im Fenster ein. Lass **Dependency Rule** auf **Up to Next Major
-Version** ab `2.0.0` stehen und klicke auf **Add Package**. Wähle im nächsten Fenster neben
+Version** ab `2.1.0` stehen und klicke auf **Add Package**. Wähle im nächsten Fenster neben
 **OfflineFirstFramework** dein App-Target aus und klicke noch einmal auf **Add Package**.
 
 **2. Modul importieren**
@@ -161,7 +174,7 @@ Oder füge es zu den `dependencies` in deiner `Package.swift` hinzu:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -326,6 +339,109 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 }
 ```
 
+## Garantien und Grenzen
+
+Der Store hält diese Zusagen bei jeder Konfliktrichtlinie ein, auch bei verlorenen Anfragen,
+verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solange der Server dem
+[Protokoll](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md) folgt:
+
+- Ein Speichern oder Löschen steht in der Datei, bevor der Aufruf zurückkehrt, und eine
+  ausstehende Änderung wird übertragen, bis der Server sie beantwortet. Eine Wiederholung behält
+  die Änderungs-ID, sodass der Server sie nur einmal anwendet. Nur eine gelesene Antwort
+  entscheidet über eine Änderung: Nach einem Fehlerstatus, einer abgebrochenen Verbindung oder
+  einer Antwort, die zu lang zum Lesen ist, bleibt die Änderung bis zu ihrer nächsten Übertragung
+  ungewiss.
+- Eine veraltete Kopie ersetzt nie einen Schreibvorgang, den der Server angenommen hat: Der Resolver
+  wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf einem anderen Gerät geändert hat,
+  und eine ältere Serverversion wird anhand der `sequence` des Servers übersprungen, auch direkt
+  nachdem der Server den eigenen Schreibvorgang des Geräts angenommen hat, selbst über einen
+  Serverneustart hinweg, den das Gerät noch nicht gesehen hat, und nach `resetChangeToken()`. Eine
+  Version, die das Gerät selbst geschrieben hat, ist nie ein Konflikt, auch wenn eine veraltete
+  Seite den Datensatz zurückgesetzt und der Nutzer darauf weiterbearbeitet hat oder eine Seite einen
+  älteren eigenen Schreibvorgang vor einer Version auflistet, deren Antwort verloren ging. Ohne
+  Sequenzen überlässt ein Abruf eine ausstehende Änderung ihrer Übertragung, auch wenn die Seite
+  einen älteren Schreibvorgang des Geräts selbst bringt, und die Antwort der Übertragung
+  entscheidet, ob angenommen oder nicht: Eine Version, die ein Abruf inzwischen zurückgehalten hat,
+  tritt nie an ihre Stelle, da die Antwort auf eine Übertragung keine Epoch nennt. Wenn diese
+  Version neuer sein kann, schickt ein Konflikt die Änderung für eine frische Antwort noch einmal
+  hinaus, und jede andere Antwort bleibt stehen, während die nächste Synchronisierung von Anfang an
+  abruft.
+- Eine andere Server-Epoch, und die erste, von der ein Store erfährt, auch auf der ersten Seite
+  eines neuen Stores, zählt nur, wenn zwei Anfragen derselben Synchronisierung sie melden, der
+  Abruf mit dem Token und der Abruf von Anfang an. Eine einzelne Seite aus einem veralteten Cache
+  oder von einem anderen Deployment hinter derselben URL kann den Store also weder zurücksetzen
+  noch einem neuen Store Datensätze bringen, die der Server nie hatte, noch einen Store
+  aussperren. Eine Seite ohne Epoch wird, sobald zwei Anfragen eine gemeldet haben, ebenfalls nie
+  übernommen. Eine Synchronisierung, die nur eine Seite abruft, folgt trotzdem einem
+  Serverneustart, und wenn die beiden Anfragen nicht übereinstimmen, schlägt die Synchronisierung
+  fehl, statt Erfolg zu melden. Epochs laufen nur in eine Richtung: Eine frühere Epoch als die des
+  Stores, ob er sie verlassen oder nie gehabt hat, wird nie übernommen, auch nicht nach
+  `resetChangeToken()`, sodass auch ein veraltetes Replikat oder ein Cache, das beide Anfragen
+  beantwortet, wie viele Synchronisierungen in Folge auch immer, den Store nicht zurücksetzen
+  kann.
+- Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein
+  anderer Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben;
+  sie treffen auf die neue Historie über die Antwort auf ihre Übertragung, nicht über eine Seite.
+  Ein Datensatz, den die App nicht dekodieren kann oder der tiefer als 64 Ebenen verschachtelt
+  ist, wird in `quarantinedChanges()` zurückgestellt, statt den Abruf anzuhalten.
+- Die Antworten eines Servers kosten nur begrenzt. Ein Datensatz, der tiefer als 64 Ebenen
+  verschachtelt ist, gelangt nie in den Store, sodass das Schreiben der Datei den Stack nicht
+  überlaufen lassen kann; eine Seite voller unbrauchbarer Daten oder mit mehr Änderungen, als der
+  Abruf angefordert hat (höchstens 1.000), wird in Millisekunden abgewiesen, statt Gigabytes zu
+  belegen, und ihr Download abgebrochen; eine Seite, die größer als das Antwortlimit ist, lässt
+  den Abruf weniger Änderungen anfordern, und eine einzelne Änderung, die allein größer als das
+  Limit ist, wird bis zum Vierfachen des Limits zurückgestellt; eine Übertragung wird in Anfragen
+  aufgeteilt, die das Body-Limit des Servers annimmt, und in Hälften erneut gesendet, mit
+  höchstens 16 zusätzlichen Anfragen, solange der Server 413 antwortet oder eine 2xx-Antwort
+  länger als das Antwortlimit ist, und eine Änderung, deren Antwort allein länger ist, bleibt
+  ungewiss; von einem Fehlerstatus werden nur die ersten 4 KiB gelesen, sodass ein Gateway in
+  Schwierigkeiten einen fehlgeschlagenen Versuch kostet; eine UTF-8-Byte-Order-Mark wird gelesen.
+- Eine vorgehende oder zurückgestellte Uhr, ein Server, der jede Übertragung mit einem Konflikt
+  beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
+  wirken nur begrenzt: Die Referenzserver speichern einen übertragenen Zeitstempel höchstens fünf
+  Minuten nach ihrer eigenen Uhr, ein kurzer Moment einer falschen Geräteuhr geht nicht auf
+  spätere Schreibvorgänge über, Serverversionen werden nie nach Zeitstempeln geordnet (eine
+  vorgehende Uhr verdeckt keine spätere Version und parkt keine Änderung), Wiederholungen warten
+  und werden geparkt, eine Synchronisierung endet nach `syncTimeout`, und Synchronisierungen
+  warten, solange die Datei nicht geschrieben werden kann.
+
+Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte auf jeder
+Seite eine `epoch`, die nur zu späteren wechselt (länger oder Byte für Byte größer) und nie
+zurückkehrt, eine `sequence`, die über Neustarts weiterzählt (die einzige Reihenfolge, die der
+Store nutzt), die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt, auf eine
+Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss sich
+Änderungs-IDs über Neustarts hinweg merken, einen Schreibvorgang erst in Seiten zeigen, wenn er
+gespeichert ist, und jede Seite sowie die Antwort auf jede übertragene Änderung innerhalb des
+Antwortlimits des Clients halten (eine Seite enthält höchstens `limit` Änderungen, auch nach Bytes
+begrenzt, mindestens eine Änderung pro Seite). Grenzen: Schreibvorgänge, die ein Server bei einer
+Wiederherstellung verloren hat, werden nicht erneut hochgeladen, ein Server ohne `sequence` erhält
+keine Garantie für die Reihenfolge (eine veraltete Seite kann einen Datensatz zurücksetzen, bis er
+sich wieder ändert, ohne dass ein Schreibvorgang verloren geht), ein Datensatz, der direkt nach
+`discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als Konflikt, eine
+Store-Instanz pro Datei (durchgesetzt für `FileStore`, `InMemoryStorage` und eigene Backends, die
+eine `claimIdentity` melden), die ganze Datei wird bei jeder Änderung geschrieben, Datensätze sind
+höchstens 64 Ebenen tief verschachtelt, eine Seite enthält höchstens 1.000 Änderungen, eine
+einzelne Änderung, die größer als das Vierfache des Antwortlimits ist, hält den Abruf an, eine
+Änderung, deren Übertragungsantwort allein größer als das Antwortlimit ist, bleibt ungewiss und
+wird nach ihrem letzten Versuch geparkt, eine frühere Epoch bleibt abgewiesen, bis der Server eine
+spätere als die des Stores meldet, eine Seite ohne Epoch, bis er wieder eine meldet, und
+Löschungen jenseits von 10.000 werden vergessen. [Garantien und
+Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
+die vollständige Liste.
+
+**Bekannte Einschränkungen.** Antworten eines anderen Deployments hinter derselben URL (ein Load
+Balancer oder Proxy, der eine Anfrage an Staging oder an eine Region mit eigenen Daten schickt, oder
+ein Replikat, das den Stand von vor einem Datenverlust ausliefert) werden nur als einzelne Seiten
+abgewehrt. Erreicht die erste Synchronisierung eines neuen Stores nur dieses Deployment, oder kommt
+eine Push-Antwort von dort, kann ein Datensatz ohne Fehler dessen Kopie behalten, eine Änderung
+gegen sie entschieden oder zurückgestellt werden und ein Schreibvorgang, den der Server nie bekam,
+als angenommen gelten. Ein Replikat des Stands von vor einem Datenverlust, das die Abrufe eines
+Stores beantwortet, während seine Übertragung den Server erreicht, kann den angenommenen
+Schreibvorgang des Geräts selbst ersetzen. `resetChangeToken()` holt die Datensätze zurück, die das
+Token dieses Deployments übersprungen hat; sonst die Store-Datei beiseitelegen und einen neuen Store
+beginnen. Details stehen in [Garantien und
+Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
+
 ## Demo
 
 | Synchronisiert                                                                | Offline, zwei Änderungen warten                                        |
@@ -398,9 +514,10 @@ Der Referenzserver benötigt Node 24 oder neuer.
   ausstehende Änderung mit einer ID, die sich bei jeder lokalen Bearbeitung ändert.
 - Eine Synchronisierung überträgt ausstehende Änderungen in Stapeln (die ältesten zuerst, mit der
   Revision, auf der sie beruhten), wendet jedes Ergebnis an und ruft dann Seiten mit
-  Serveränderungen nach dem gespeicherten Änderungstoken ab. Konflikte von beiden Seiten gehen an den
-  `ConflictResolver`. Bearbeitungen, die während einer laufenden Übertragung erfolgen, bleiben
-  erhalten und werden als Nächstes übertragen.
+  Serveränderungen nach dem gespeicherten Änderungstoken ab. Ein Datensatz, der sich auf dem Gerät
+  und auf dem Server geändert hat, geht an den `ConflictResolver`; eine ältere Serverversion wird
+  übersprungen. Bearbeitungen, die während einer laufenden Übertragung erfolgen, bleiben erhalten
+  und werden als Nächstes übertragen.
 - `Sync/` enthält das Transport-Protokoll, die HTTP- und In-Memory-Transporte, die
   Wiederholungsrichtlinie, den Circuit Breaker und die Konnektivität; `Storage/` die Datei- und
   Keychain-Stores, die Verschlüsselung und die Migrationen; `Clock/` und `CRDT/` die Werttypen zum
@@ -423,6 +540,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Roadmap

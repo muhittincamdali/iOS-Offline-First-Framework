@@ -47,6 +47,16 @@ public enum OfflineFirstError: Error, Equatable, Sendable {
 
     /// The hybrid logical clock could not produce a timestamp.
     case clock(HybridLogicalClock.Failure)
+
+    /// Another ``OfflineStore`` instance in this process wrote the store's file after this one
+    /// read it. The write is refused, because it would drop the other instance's changes; use
+    /// one instance per file, or open the store again to see the current file. Thrown for the
+    /// built-in backends and for backends that report a ``StorageBackend/claimIdentity``.
+    case storeChangedElsewhere(name: String)
+
+    /// The record nests objects and arrays deeper than ``OfflineStore/maximumRecordDepth``
+    /// levels, deeper than the store can write safely.
+    case recordNestedTooDeeply(limit: Int)
 }
 
 extension OfflineFirstError: LocalizedError {
@@ -80,6 +90,10 @@ extension OfflineFirstError: LocalizedError {
             "The sync server's answer could not be used: \(description)"
         case .clock(let failure):
             "The sync clock failed: \(failure)."
+        case .storeChangedElsewhere(let name):
+            "Another instance of the store “\(name)” changed its file; open the store again before writing."
+        case .recordNestedTooDeeply(let limit):
+            "The record nests objects and arrays deeper than \(limit) levels."
         }
     }
 }

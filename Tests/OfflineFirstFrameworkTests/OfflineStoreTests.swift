@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -127,6 +128,78 @@ struct OfflineStoreTests {
         #expect(storage.names == ["notes.store.corrupt-1700000000000"])
     }
 
+    /// A server that sends more data than the file may hold cannot make the store unopenable:
+    /// the page is not stored, the sync fails, and the store still opens.
+    @Test func aPullThatWouldOutgrowTheFileLimitIsNotStored() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let files = try FileStore(directory: directory, protection: .none, maximumFileSize: 64 * 1024)
+        let page = (0..<2_000).map {
+            RemoteChange<Note>(recordID: "r\($0)", record: Note(id: "r\($0)", text: String(repeating: "x", count: 100)), revision: "1", timestamp: nil)
+        }
+        let transport = ScriptedTransport(pull: { token in
+            token == nil ? PullResponse(changes: page, token: "t1", hasMore: false) : PullResponse(changes: [], token: token, hasMore: false)
+        })
+        let store = try OfflineStore<Note>(name: "notes", storage: files, transport: transport, configuration: makeConfiguration(clock: clock))
+        try await store.save(Note(id: "mine", text: "kept"))
+        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        guard case .failed = await store.status else {
+            Issue.record("expected a failed status")
+            return
+        }
+        #expect(await store.state.token == nil)
+        #expect(await store.records() == [Note(id: "mine", text: "kept")])
+
+        let reopened = try OfflineStore<Note>(name: "notes", storage: files, configuration: makeConfiguration(clock: clock))
+        #expect(await reopened.records() == [Note(id: "mine", text: "kept")])
+        // The push before the pull went through and was stored.
+        #expect(await reopened.pendingChanges().isEmpty)
+    }
+
+    /// A file over the limit (written before writes were limited, or the limit was lowered)
+    /// is moved aside with `.moveAsideAndStartEmpty`, like a damaged one.
+    @Test func aFileOverTheLimitIsMovedAside() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let large = try FileStore(directory: directory, protection: .none)
+        try await makeStore(large).save(contentsOf: (0..<100).map { Note(id: "n\($0)", text: String(repeating: "x", count: 100)) })
+        let small = try FileStore(directory: directory, protection: .none, maximumFileSize: 1_024)
+        #expect(throws: OfflineFirstError.self) { try makeStore(small) }
+        let store = try makeStore(small) { $0.corruptionPolicy = .moveAsideAndStartEmpty }
+        #expect(await store.records().isEmpty)
+        #expect(try small.names() == ["notes.store.corrupt-1700000000000"])
+    }
+
+    /// Two instances on one file: the second one's write is refused instead of dropping the
+    /// record the first one saved.
+    @Test func aSecondInstanceCannotDropTheFirstOnesSave() async throws {
+        let storage = InMemoryStorage()
+        let first = try makeStore(storage)
+        let second = try makeStore(storage)
+        try await first.save(Note(id: "a", text: "A"))
+        await #expect(throws: OfflineFirstError.storeChangedElsewhere(name: "notes")) {
+            try await second.save(Note(id: "b", text: "B"))
+        }
+        #expect(await second.records().isEmpty)
+        let reopened = try makeStore(storage)
+        #expect(await reopened.records() == [Note(id: "a", text: "A")])
+        try await reopened.save(Note(id: "b", text: "B"))
+        #expect(await reopened.count == 2)
+    }
+
+    @Test func twoFileStoresForOneDirectoryShareTheProtection() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try makeStore(try FileStore(directory: directory, protection: .none))
+        let second = try makeStore(try FileStore(directory: directory.appending(path: "."), protection: .none))
+        try await second.save(Note(id: "b", text: "B"))
+        await #expect(throws: OfflineFirstError.storeChangedElsewhere(name: "notes")) {
+            try await first.save(Note(id: "a", text: "A"))
+        }
+        // Another store name is another file.
+        try await makeStore(try FileStore(directory: directory, protection: .none), name: "other").save(Note(id: "c", text: "C"))
+    }
+
     @Test func storesFromANewerSchemaAreNeverReset() throws {
         let storage = InMemoryStorage()
         try storage.write(Data(#"{"format":1,"schemaVersion":5,"nodeID":"x","nextSequence":0,"entries":[]}"#.utf8), to: "notes.store")
@@ -151,6 +224,49 @@ struct OfflineStoreTests {
         }
         #expect(await store.records() == [Note(id: "a", text: "Renamed field")])
         #expect(await store.pendingChanges().count == 1)
+    }
+
+    /// A version a pull kept back for a change in doubt holds a record of the stored schema too.
+    /// Without its migration the store of the updated app failed to open (corruptStore), and
+    /// `.moveAsideAndStartEmpty` would have set the pending change aside with the file.
+    @Test func migrationsRewriteAVersionAPullKeptBack() async throws {
+        struct NewNote: SyncableRecord, Equatable { var id: String; var body: String }
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let loseAnswer = OSAllocatedUnfairLock(initialState: false)
+        let link = ScriptedTransport(push: { changes in
+            let outcomes = try await server.push(changes)
+            if loseAnswer.withLock({ lose in defer { lose = false }; return lose }) { throw URLError(.networkConnectionLost) }
+            return outcomes
+        }, pull: { try await server.pull(since: $0) })
+        let storage = InMemoryStorage()
+        let device = try OfflineStore<Note>(name: "notes", storage: storage, transport: link,
+                                            configuration: makeConfiguration(clock: clock))
+        // The other device keeps its edit in the conflict with the applied one, whatever the node IDs say.
+        let other = try OfflineStore<Note>(name: "notes", storage: InMemoryStorage(), transport: server,
+                                           configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        try await device.save(Note(id: "n", text: "v1"))
+        try await device.sync()
+        try await other.sync()
+        try await device.save(Note(id: "n", text: "device edit"))
+        loseAnswer.withLock { $0 = true }
+        _ = try? await device.sync()
+        clock.advance(by: 1)
+        try await other.save(Note(id: "n", text: "other edit"))
+        try await other.sync()
+        try await device.sync() // The change in doubt is not due yet; the pull keeps the other edit back.
+        #expect(await device.state.entries["n"]?.deferredRemote?.record?.text == "other edit")
+
+        var configuration = OfflineStore<NewNote>.Configuration(schemaVersion: 2, migrations: [
+            RecordMigration(to: 2) { record in
+                record["body"] = record["text"]
+                record["text"] = nil
+            }
+        ], now: { [clock] in clock.now })
+        configuration.corruptionPolicy = .fail
+        let migrated = try OfflineStore<NewNote>(name: "notes", storage: storage, configuration: configuration)
+        #expect(await migrated.records() == [NewNote(id: "n", body: "device edit")])
+        #expect(await migrated.state.entries["n"]?.deferredRemote?.record == NewNote(id: "n", body: "other edit"))
+        #expect(await migrated.pendingChanges().count == 1)
     }
 
     @Test func damagedCountersAreRepairedInsteadOfOverflowing() async throws {

@@ -24,9 +24,14 @@ let store = try OfflineStore<Todo>(name: "todos", transport: transport)
 ```
 
 The `headers` closure runs before every request, so it can refresh an expired token. A status
-outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` and the store
-retries the changes later. Responses longer than
-``HTTPSyncTransport/maximumResponseSize`` are not read.
+outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` with the first
+4 KiB of the answer, and the store retries the changes later. 2xx responses longer than
+``HTTPSyncTransport/maximumResponseSize`` are not read: a pull asks for
+``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer, and refuses a page
+with more changes than it asked for. A push is sent in requests of at most
+``HTTPSyncTransport/maximumRequestSize``, and in halves while an answer is longer than the
+response limit or the server answers 413, by at most 16 more requests; a change whose answer
+alone is longer stays in doubt and is retried, since only an answer that was read settles it.
 
 ## Write your own transport
 
@@ -47,22 +52,55 @@ struct TodoAPI: SyncTransport {
 The rules that keep sync correct:
 
 - **Revisions.** Every server write needs a new revision string (a version number, an ETag,
-  an update timestamp). ``OutgoingChange/baseRevision`` is the revision the device last saw; if
-  the server's revision differs, answer ``PushOutcome/conflict(current:)`` with the server's
-  record instead of overwriting it.
+  an update timestamp), and a revision must never name two versions of a record, also after a
+  restart or a restore from a backup: put an ID of the server's run in front of a counter, as
+  the reference servers do. ``OutgoingChange/baseRevision`` is the revision the device last
+  saw; if the server's revision differs, answer ``PushOutcome/conflict(current:)`` with the
+  server's record instead of overwriting it.
+- **Order and history.** Send ``RemoteChange/sequence``, a number that grows with every write,
+  also across a restart that keeps the data, so the store recognises older versions that
+  arrive late; it never orders versions by device clocks, so without a sequence a stale page
+  can roll a record back until it changes again. Send ``PullResponse/epoch`` on every page, which
+  changes to a later one (longer, or as long and greater byte by byte) when the server
+  restarted, lost or replaced its data, so the store pulls everything again, and never goes back
+  to an epoch it reported before a later one; the store refuses a page with an earlier epoch
+  than its own in every sync, as a stale replica or cache would send one, and a page without an
+  epoch once two requests reported one. Give the transport a
+  ``SyncTransport/serverIdentity`` (the HTTP transport uses its URL), so a store opened with
+  another server does not send it the old server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a
   change out of the answer to retry only that change. Answer
   ``PushOutcome/rejected(reason:current:)`` only when the change can never succeed.
 - **Idempotency.** ``OutgoingChange/id`` stays the same when the store retries the same version
   of a change. If the answer to a push is lost, the store sends it again; a server that
-  remembers change IDs can answer from memory instead of applying the change twice.
+  remembers change IDs can answer from memory instead of applying the change twice. Keep that
+  memory across restarts: until the answer arrives the store treats the change as in doubt and
+  learns from it whether the server applied the change.
 - **Deletions.** ``RemoteChange/record`` is `nil` for a deleted record. Keep deleted records
   (or their IDs and revisions) on the server, so pulls can tell other devices about them.
 - **Change tokens.** ``PullResponse/token`` must move forward while ``PullResponse/hasMore`` is
   `true`; a token that stays the same makes the sync fail with
   ``OfflineFirstError/pullTokenDidNotAdvance(token:)`` instead of looping.
-- **Timestamps.** Send ``RemoteChange/timestamp`` back if you store it; without it,
-  ``ConflictResolver/lastWriteWins`` lets the server's version win.
+- **Page length.** Return at most ``OfflineStore/maximumChangesPerPage`` (1,000) changes per
+  page, ``PullResponse/quarantined`` included; the store refuses a longer page, since it
+  applies a page in one step that no deadline interrupts.
+- **Durability.** Answer a push, and show its writes in pages, only once they are stored
+  durably; a device that pulled a write the server then lost keeps it alone.
+- **Timestamps and change IDs.** Send ``RemoteChange/timestamp`` back as it was pushed if you
+  store it, with a wall time far ahead of the server's clock moved back to a limit, as the
+  reference servers do with five minutes; without it, ``ConflictResolver/lastWriteWins`` lets
+  the server's version win. Send ``RemoteChange/changeID``, the ``OutgoingChange/id`` that
+  wrote the version, so the store recognises its own write after a lost answer; without it the
+  store compares the timestamps it pushed, and a change made after a lost answer meets the
+  resolver when the server changed the timestamp.
+- **Depth and size.** Records nest at most ``OfflineStore/maximumRecordDepth`` levels; the store
+  sets aside a deeper one it is handed, but a decoder runs before that and recurses once per
+  level, so limit the depth your decoder reads, and how much work one page may cost.
+- **Cancellation.** Stop both calls when their task is cancelled. The store cancels a request
+  when every caller gave up and when the sync runs past
+  ``OfflineStore/Configuration/syncTimeout``.
+
+<doc:GuaranteesAndLimits> lists what the store guarantees when a server follows these rules.
 
 The example app's `ReadmeSamples.swift` contains a complete transport for an ETag-based REST
 API (`PUT` and `DELETE` with `If-Match`, `412` for conflicts, `422` for rejections), and the

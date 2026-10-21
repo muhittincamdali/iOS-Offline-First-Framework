@@ -1,8 +1,8 @@
 import Foundation
 
 extension OfflineStore {
-    /// Pushes after a conflict are limited per record and sync, so a server that answers every
-    /// push with a new conflict cannot keep the sync running forever.
+    /// Pushes of one record in one sync. A second conflict already makes the change wait for
+    /// its retry date; the limit also holds with a ``RetryPolicy`` without delays.
     static var maximumPushesPerRecord: Int { 3 }
 
     /// Server-provided texts (rejection reasons, error descriptions) are cut to this length.
@@ -10,24 +10,30 @@ extension OfflineStore {
 
     /// Pushes local changes, then pulls server changes.
     ///
-    /// Calls made while a sync runs wait for that sync and return its report. Cancelling the
-    /// calling task stops the sync after the current request when no other call waits for it;
-    /// what was applied so far stays. While other calls still wait, the sync goes on and the
-    /// cancelled call returns its report too. A call made after every caller of the running
-    /// sync was cancelled waits for that sync to stop and then starts a new one.
+    /// Calls made while a sync runs wait for that sync and return its report. A call made after
+    /// the running sync finished pushing, while local changes are due that it did not push
+    /// (saved during its pull, say), waits for it and then starts a new sync, so the call does
+    /// not return before its changes were pushed. Cancelling the calling task stops the sync
+    /// after the current request when no other call waits for it; what was applied so far
+    /// stays. While other calls still wait, the sync goes on and the cancelled call returns its
+    /// report too. A call made after every caller of the running sync was cancelled waits for
+    /// that sync to stop and then starts a new one.
     ///
-    /// - Returns: What the sync did. Without a transport, or while the ``CircuitBreaker`` is
-    ///   open, nothing happens and ``SyncReport/skipped`` is `true`.
+    /// - Returns: What the sync did. Without a transport nothing happens and
+    ///   ``SyncReport/skipped`` is `true`; while the ``CircuitBreaker`` is open, only changes
+    ///   that are due are pushed, and ``SyncReport/skipped`` is `true` too.
     /// - Throws: The transport's error, or an ``OfflineFirstError``. Changes that failed are
-    ///   retried by a later sync, following the ``RetryPolicy``.
+    ///   retried by a later sync, following the ``RetryPolicy``. After the store file could not
+    ///   be written, syncs throw that error without a request until the ``RetryPolicy`` delay
+    ///   for the failed writes in a row has passed; a write that succeeds ends the wait.
     @discardableResult
     public func sync() async throws -> SyncReport {
         while let running = activeSync {
-            if running.join() {
+            if running.join(needsPush: !dueChanges(excluding: [:]).isEmpty) {
                 return try await running.value()
             }
-            // Every caller of that sync was cancelled; let it stop before starting over, so two
-            // syncs never push at the same time.
+            // Every caller of that sync was cancelled, or it is past its push and changes wait;
+            // let it end before starting over, so two syncs never push at the same time.
             _ = await running.task.result
             if activeSync === running { activeSync = nil }
             try Task.checkCancellation()
@@ -45,27 +51,85 @@ extension OfflineStore {
             report.skipped = true
             return report
         }
-        guard breaker.allowsAttempt(at: configuration.now()) else {
+        if let wait = storageWait, configuration.retryPolicy.isWaiting(until: wait.until, now: configuration.now()) {
+            throw failed(with: wait.error)
+        }
+        try bind(to: transport)
+        try startPullOverIfPlanned()
+        // The circuit breaker pauses pulls only. Due changes are pushed anyway: each waits for
+        // its own retry date, so a server that is down is not hit harder, and a server whose
+        // pulls fail still gets the device's edits.
+        let mayPull = breaker.allowsAttempt(at: configuration.now())
+        guard mayPull || !dueChanges(excluding: [:]).isEmpty else {
             if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }
             report.skipped = true
             return report
         }
         setStatus(.syncing)
+        let deadline = ContinuousClock.now + configuration.syncTimeout
         do {
-            try await push(using: transport, report: &report)
-            try await pull(using: transport, report: &report)
-            breaker.recordSuccess()
-            try update { $0.lastSyncedAt = configuration.now() }
-            setStatus(.idle)
-            return report
-        } catch is CancellationError {
-            setStatus(.idle)
-            throw CancellationError()
+            try await push(using: transport, until: deadline, report: &report)
         } catch {
-            breaker.recordFailure(at: configuration.now())
-            setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
+            throw failed(with: error)
+        }
+        activeSync?.finishPushing()
+        guard mayPull else {
+            report.skipped = true
+            if case .open(let until) = breaker.state { setStatus(.paused(until: until)) }
+            return report
+        }
+        do {
+            try await pull(using: transport, until: deadline, report: &report)
+            try update { $0.lastSyncedAt = configuration.now() }
+        } catch {
+            let error = failed(with: error)
+            if !(error is CancellationError) { breaker.recordFailure(at: configuration.now()) }
             throw error
         }
+        breaker.recordSuccess()
+        setStatus(.idle)
+        return report
+    }
+
+    /// Sets the status after a failed sync and returns the error to throw. A transport may report
+    /// its cancellation with an error of its own, such as URLError(.cancelled); the sync was
+    /// still cancelled, not failed.
+    private func failed(with error: any Error) -> any Error {
+        if error is CancellationError || Task.isCancelled {
+            setStatus(.idle)
+            return CancellationError()
+        }
+        setStatus(Self.isConnectivityError(error) ? .offline : .failed(Self.message(for: error)))
+        return error
+    }
+
+    /// Keeps the transport's identity with the token. A store opened with another server
+    /// starts a new history instead of sending that server the old one's token. A store that
+    /// has no identity yet (a new store, or a file from before identities) takes the
+    /// transport's.
+    private func bind(to transport: any SyncTransport<Record>) throws {
+        guard let identity = transport.serverIdentity, identity != state.serverIdentity else { return }
+        try update { state in
+            // Another server's epochs say nothing about this one's: its first one is taken.
+            if state.serverIdentity != nil {
+                Self.beginHistory(epoch: nil, .anotherServer, in: &state)
+                state.retiredEpochs.removeAll()
+            }
+            state.serverIdentity = identity
+        }
+    }
+
+    /// Forgets the token when a push answer of an earlier sync stood over a version a pull kept
+    /// back without anything to tell which is newer (``State/pullsFromBeginning``): this sync
+    /// pulls from the beginning, which brings the server's current version of the record. A pull
+    /// that is on its way starts over.
+    private func startPullOverIfPlanned() throws {
+        guard state.pullsFromBeginning else { return }
+        try update { state in
+            state.token = nil
+            state.pullsFromBeginning = false
+        }
+        tokenGeneration &+= 1
     }
 
     func setStatus(_ newStatus: SyncStatus) {
@@ -74,228 +138,60 @@ extension OfflineStore {
         notifyObservers()
     }
 
-    // MARK: - Push
-
-    private func push(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
-        var pushes: [Record.ID: Int] = [:]
-        while true {
-            try Task.checkCancellation()
-            let changes = dueChanges(excluding: pushes)
-            guard !changes.isEmpty else { return }
-            try markSent(changes)
-            for change in changes {
-                pushes[change.recordID, default: 0] += 1
-                inFlight.insert(change.recordID)
-            }
-            let outcomes: [UUID: PushOutcome<Record>]
-            do {
-                outcomes = try await transport.push(changes)
-            } catch {
-                inFlight.subtract(changes.map(\.recordID))
-                if !(error is CancellationError) {
-                    try recordFailedAttempts(changes, message: Self.message(for: error), report: &report)
-                }
-                throw error
-            }
-            inFlight.subtract(changes.map(\.recordID))
-            try apply(outcomes, for: changes, report: &report)
-        }
-    }
-
-    /// Records in `changes` the server has not confirmed are marked as sent, and the mark is
-    /// written before the request leaves: the server may apply a push whose answer never
-    /// arrives, so from now on deleting the record has to go through the server.
-    private func markSent(_ changes: [OutgoingChange<Record>]) throws {
-        let unmarked = changes.map(\.recordID).filter { id in
-            guard let entry = state.entries[id] else { return false }
-            return entry.revision == nil && !entry.wasSent
-        }
-        guard !unmarked.isEmpty else { return }
-        try update { state in
-            for id in unmarked {
-                state.entries[id]?.wasSent = true
-            }
-        }
-    }
-
-    /// The next batch: queued, not parked, due, and pushed fewer than the limit in this sync.
-    private func dueChanges(excluding pushes: [Record.ID: Int]) -> [OutgoingChange<Record>] {
-        let now = configuration.now()
-        return state.entries.values
-            .filter { entry in
-                guard let pending = entry.pending, !pending.isParked else { return false }
-                if let next = pending.nextAttemptAt, next > now { return false }
-                return pushes[entry.id, default: 0] < Self.maximumPushesPerRecord
-            }
-            .sorted { ($0.pending?.sequence ?? 0) < ($1.pending?.sequence ?? 0) }
-            .prefix(configuration.pushBatchSize)
-            .compactMap { entry in
-                guard let pending = entry.pending else { return nil }
-                return OutgoingChange(id: pending.changeID, recordID: entry.id, operation: entry.record.map { .upsert($0) } ?? .delete,
-                                      timestamp: entry.timestamp, baseRevision: entry.revision)
-            }
-    }
-
-    private func apply(_ outcomes: [UUID: PushOutcome<Record>], for changes: [OutgoingChange<Record>], report: inout SyncReport) throws {
-        try update { state in
-            for change in changes {
-                guard var entry = state.entries[change.recordID] else { continue }
-                // False when the record changed locally while the push was on its way.
-                let isCurrent = entry.pending?.changeID == change.id
-                switch outcomes[change.id] {
-                case nil:
-                    if isCurrent { fail(&entry, message: "The server did not answer this change.", report: &report) }
-                case .accepted(let revision) where revision.utf8.count > Self.maximumRevisionLength:
-                    if isCurrent {
-                        fail(&entry, message: "The server answered with a revision of more than \(Self.maximumRevisionLength) bytes.",
-                             report: &report)
-                    }
-                case .accepted(let revision):
-                    report.pushed += 1
-                    entry.revision = revision
-                    if isCurrent { entry.pending = nil }
-                case .conflict(let current):
-                    report.conflicts += 1
-                    guard isCurrent, Self.isConsistent(current, for: entry.id) else { break }
-                    observe(current.timestamp, in: &state)
-                    entry = try resolve(entry, against: current, in: &state)
-                case .rejected(let reason, let current):
-                    report.rejected += 1
-                    guard isCurrent else { break }
-                    if let current, Self.isConsistent(current, for: entry.id) {
-                        entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
-                    } else {
-                        entry.pending?.isParked = true
-                        entry.pending?.nextAttemptAt = nil
-                        entry.pending?.lastError = String(reason.prefix(Self.maximumMessageLength))
-                    }
-                }
-                Self.store(entry, in: &state)
-            }
-            Self.pruneTombstones(in: &state)
-        }
-    }
-
-    private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, report: inout SyncReport) throws {
-        try update { state in
-            for change in changes {
-                guard var entry = state.entries[change.recordID], entry.pending?.changeID == change.id else { continue }
-                fail(&entry, message: message, report: &report)
-                state.entries[change.recordID] = entry
-            }
-        }
-    }
-
-    /// Counts a failed push and schedules the next one, or parks the change.
-    private func fail(_ entry: inout StoredEntry<Record>, message: String, report: inout SyncReport) {
-        guard var pending = entry.pending else { return }
-        pending.attempts = pending.attempts == .max ? .max : pending.attempts + 1
-        pending.lastError = message
-        let policy = configuration.retryPolicy
-        if policy.allowsRetry(afterAttempts: pending.attempts) {
-            let delay = policy.delay(afterAttempt: pending.attempts, random: configuration.random())
-            pending.nextAttemptAt = configuration.now().addingTimeInterval(delay.seconds)
-        } else {
-            pending.isParked = true
-            pending.nextAttemptAt = nil
-            report.parked += 1
-        }
-        entry.pending = pending
-    }
-
-    // MARK: - Pull
-
-    private func pull(using transport: any SyncTransport<Record>, report: inout SyncReport) async throws {
-        for _ in 0..<configuration.maximumPullPages {
-            try Task.checkCancellation()
-            let token = state.token
-            let response = try await transport.pull(since: token)
-            if let next = response.token, next.utf8.count > Self.maximumRevisionLength {
-                throw OfflineFirstError.invalidServerResponse("The change token has more than \(Self.maximumRevisionLength) bytes.")
-            }
-            try update { state in
-                for change in response.changes {
-                    try applyRemote(change, to: &state, report: &report)
-                }
-                Self.pruneTombstones(in: &state)
-                // A page without a token keeps the previous one.
-                state.token = response.token ?? state.token
-            }
-            guard response.hasMore else { return }
-            guard response.token != nil, response.token != token else {
-                throw OfflineFirstError.pullTokenDidNotAdvance(token: token)
-            }
-        }
-        report.hasMoreChanges = true
-    }
-
-    private func applyRemote(_ change: RemoteChange<Record>, to state: inout State, report: inout SyncReport) throws {
-        guard Self.isConsistent(change, for: change.recordID) else { return }
-        observe(change.timestamp, in: &state)
-        guard let entry = state.entries[change.recordID] else {
-            guard change.record != nil else { return }
-            report.pulled += 1
-            Self.store(Self.entry(from: change, replacing: nil, in: &state, configuration: configuration), in: &state)
-            return
-        }
-        // The same revision is the echo of a change this store pushed.
-        guard entry.revision != change.revision else { return }
-        report.pulled += 1
-        // A server version older than the one the store holds (a page out of order, a lagging
-        // replica, a deleted record's earlier version) never replaces it silently: the conflict
-        // resolver decides, and a local win is pushed on top of that version, so the server's
-        // revision check settles what is current.
-        if entry.pending != nil || Self.isOlder(change, than: entry) {
-            report.conflicts += 1
-            Self.store(try resolve(entry, against: change, in: &state), in: &state)
-        } else {
-            Self.store(Self.entry(from: change, replacing: entry, in: &state, configuration: configuration), in: &state)
-        }
-    }
-
-    // MARK: - Conflicts
-
-    private func resolve(_ entry: StoredEntry<Record>, against remote: RemoteChange<Record>, in state: inout State) throws -> StoredEntry<Record> {
-        if entry.record == nil && remote.record == nil {
-            return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
-        }
-        let conflict = Conflict(recordID: entry.id, local: entry.record, localTimestamp: entry.timestamp,
-                                remote: remote.record, remoteTimestamp: remote.timestamp)
-        var result = entry
-        switch configuration.conflictResolver.resolve(conflict) {
-        case .keepRemote:
-            return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
-        case .merged(let merged) where merged.id != entry.id:
-            return Self.entry(from: remote, replacing: entry, in: &state, configuration: configuration)
-        case .merged(let merged):
-            result.record = merged
-            do {
-                result.timestamp = try state.clock.tick(at: configuration.now())
-            } catch {
-                throw OfflineFirstError.clock(error)
-            }
-        case .keepLocal:
-            break
-        }
-        // The local or merged version goes out again on top of the server's revision, under a
-        // new change ID so the server does not answer it from an idempotency cache.
-        result.revision = remote.revision
-        result.pending = PendingWrite(changeID: UUID(), sequence: entry.pending?.sequence ?? state.takeSequence(),
-                                      attempts: 0, nextAttemptAt: nil, lastError: nil, isParked: false)
-        return result
-    }
-
     // MARK: - Helpers
 
-    /// Moves the clock past a server timestamp; one too far in the future is ignored.
-    private func observe(_ timestamp: HLCTimestamp?, in state: inout State) {
-        guard let timestamp else { return }
+    /// Moves the clock past a server version's timestamp; one further ahead of the device clock
+    /// than ``Configuration/maximumClockDrift`` is ignored. The version keeps its timestamp: the
+    /// store weighs it against local writes no further ahead than ``driftLimit(of:configuration:)``
+    /// and orders server versions by it only within that limit.
+    func receive(_ change: RemoteChange<Record>, in state: inout State) {
+        guard let timestamp = change.timestamp else { return }
         _ = try? state.clock.receive(timestamp, at: configuration.now())
+    }
+
+    /// Runs a transport call, or cancels it and throws `URLError(.timedOut)` once `deadline`
+    /// passes. The call ends when the transport honours the cancellation. When the sync itself
+    /// is cancelled, the call decides how it ends, as without a deadline: an answer that still
+    /// arrives is used.
+    static func run<T: Sendable>(until deadline: ContinuousClock.Instant,
+                                 _ request: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: DeadlineRace<T>.self) { group in
+            group.addTask { .answered(try await request()) }
+            group.addTask {
+                do {
+                    try await Task.sleep(until: deadline, clock: .continuous)
+                    return .timedOut
+                } catch {
+                    return .stopped
+                }
+            }
+            defer { group.cancelAll() }
+            while let result = try await group.next() {
+                switch result {
+                case .answered(let value): return value
+                case .timedOut: throw URLError(.timedOut)
+                case .stopped: continue
+                }
+            }
+            throw CancellationError()
+        }
     }
 
     static func message(for error: any Error) -> String {
         let text = (error as? any LocalizedError)?.errorDescription ?? String(describing: error)
         return String(text.prefix(maximumMessageLength))
+    }
+
+    /// Whether a push that failed with `error` certainly did not reach the server: the device had
+    /// no connection, or could not find or reach the host. After other errors, such as a lost
+    /// connection or a timeout, the server may have applied it.
+    static func wasNeverSent(_ error: any Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        let unsentCodes: Set<URLError.Code> = [
+            .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .dataNotAllowed,
+            .internationalRoamingOff, .callIsActive
+        ]
+        return unsentCodes.contains(error.code)
     }
 
     static func isConnectivityError(_ error: any Error) -> Bool {
@@ -306,4 +202,12 @@ extension OfflineStore {
         ]
         return offlineCodes.contains(error.code)
     }
+}
+
+/// The first of a transport call and its deadline.
+enum DeadlineRace<Value: Sendable>: Sendable {
+    case answered(Value)
+    case timedOut
+    /// The deadline's timer was cancelled because the sync was.
+    case stopped
 }

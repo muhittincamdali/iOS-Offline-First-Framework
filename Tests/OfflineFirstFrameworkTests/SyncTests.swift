@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import OfflineFirstFramework
 
@@ -126,6 +127,94 @@ struct SyncTests {
         #expect(await server.record("a")?.text == expected)
     }
 
+    /// Two devices with `.clientWins`. B's edit wins by that policy; A has no local change of
+    /// its own any more, so it takes B's version and pushes nothing.
+    @Test func aDeviceWithoutLocalChangesTakesTheServerVersionWhateverThePolicy() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        clock.advance(by: 10)
+        try await deviceB.save(Note(id: "x", text: "B edit"))
+        clock.advance(by: 10)
+        try await deviceA.save(Note(id: "x", text: "A edit"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        #expect(await server.record("x")?.text == "B edit")
+        let pushesBefore = await server.pushRequests
+
+        let report = try await deviceA.sync()
+        try await deviceA.sync()
+        #expect(report.conflicts == 0)
+        #expect(await server.pushRequests == pushesBefore)
+        #expect(await server.record("x")?.text == "B edit")
+        #expect(await deviceA.record("x")?.text == "B edit")
+    }
+
+    /// With `.clientWins` a version accepted after the store's own write can carry an older
+    /// timestamp. Until the echo of its own write tells where that write stands, the store
+    /// cannot order the two, so it takes the server's version instead of skipping it.
+    @Test func aNewerVersionWithAnOlderTimestampReplacesTheStoresOwnWrite() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let pullFails = OneShot()
+        let failNextPull = Flag()
+        let transport = ScriptedTransport()
+        await transport.onPush { try await server.push($0) }
+        await transport.onPull { token in
+            if await failNextPull.isSet, await pullFails.fire() { throw URLError(.networkConnectionLost) }
+            return try await server.pull(since: token)
+        }
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: transport,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock, resolver: .clientWins))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        try await deviceB.save(Note(id: "x", text: "B, written first"))
+        clock.advance(by: 10)
+        try await deviceA.save(Note(id: "x", text: "A, written later"))
+        // A's push is accepted, but its pull fails, so A never sees the echo of its write.
+        await failNextPull.set()
+        await #expect(throws: URLError.self) { try await deviceA.sync() }
+        // B keeps its own version by policy and pushes it on top of A's.
+        try await deviceB.sync()
+        #expect(await server.record("x")?.text == "B, written first")
+
+        try await deviceA.sync()
+        #expect(await deviceA.record("x")?.text == "B, written first")
+    }
+
+    /// Two deletions are decided by the resolver too. With last write wins the newer one must
+    /// reach the server, so an edit made before it but pushed after it does not bring the record
+    /// back.
+    @Test func aNewerDeletionStaysWhenAnOlderEditArrivesLater() async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let deviceA = try OfflineStore<Note>(name: "a", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock))
+        let deviceB = try OfflineStore<Note>(name: "b", storage: InMemoryStorage(), transport: server,
+                                             configuration: makeConfiguration(clock: clock))
+        try await deviceA.save(Note(id: "x", text: "v1"))
+        try await deviceA.sync()
+        try await deviceB.sync()
+        try await deviceA.delete("x")
+        try await deviceA.sync()
+        clock.advance(by: 1)
+        try await deviceA.save(Note(id: "x", text: "A, written again offline"))
+        clock.advance(by: 10)
+        try await deviceB.delete("x")
+        try await deviceB.sync()
+        try await deviceA.sync()
+        try await deviceB.sync()
+        #expect(await server.record("x") == nil)
+        #expect(await deviceA.record("x") == nil)
+        #expect(await deviceB.record("x") == nil)
+    }
+
     @Test func mergeResolverPushesTheCombination() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let store = try makeStore(server) {
@@ -239,9 +328,93 @@ struct SyncTests {
         let store = try makeStore(transport) { $0.conflictResolver = .clientWins }
         try await store.save(Note(id: "a", text: "mine"))
         let report = try await store.sync()
-        #expect(report.conflicts == OfflineStore<Note>.maximumPushesPerRecord)
-        #expect(await transport.pushed.count == OfflineStore<Note>.maximumPushesPerRecord)
-        #expect(await store.pendingChanges().count == 1)
+        // The resolved version goes out again once right away; after the second conflict it
+        // waits for its retry date.
+        #expect(report.conflicts == 2)
+        #expect(await transport.pushed.count == 2)
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 2)
+        #expect(pending.nextAttemptAt == clock.now.addingTimeInterval(20))
+    }
+
+    /// A server (or a device with `.clientWins` on the other side) that answers every push with
+    /// a conflict: the change backs off, is parked after the last attempt and reported, and the
+    /// syncs in between push nothing.
+    @Test func aChangeThatKeepsConflictingIsParked() async throws {
+        let counter = Counter()
+        let transport = ScriptedTransport()
+        await transport.onPush { changes in
+            let revision = await counter.next()
+            return Dictionary(uniqueKeysWithValues: changes.map {
+                ($0.id, .conflict(current: RemoteChange(recordID: $0.recordID, record: Note(id: $0.recordID, text: "s"),
+                                                         revision: "\(revision)", timestamp: HLCTimestamp(wallTime: 1, nodeID: "old"))))
+            })
+        }
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "mine"))
+        var parked = 0
+        for _ in 0..<20 {
+            let report = try await store.sync()
+            #expect(!report.skipped)
+            parked += report.parked
+        }
+        #expect(await transport.pushed.count == 2)
+        clock.advance(by: 20)
+        parked += try await store.sync().parked
+        #expect(await transport.pushed.count == 3)
+        #expect(parked == 1)
+        let failed = try #require(await store.failedChanges().first)
+        #expect(failed.record?.text == "mine")
+        #expect(failed.lastError?.contains("conflict") == true)
+        clock.advance(by: 3_600)
+        try await store.sync()
+        #expect(await transport.pushed.count == 3)
+        #expect(await store.breaker.state == .closed)
+
+        // The user can try again; the count starts over.
+        try await store.retryFailedChanges()
+        try await store.sync()
+        #expect(await transport.pushed.count == 5)
+    }
+
+    /// A conflict answer whose current version belongs to another record is counted, explained
+    /// and retried later, instead of being pushed again on every sync.
+    @Test func aConflictAnswerForAnotherRecordIsAFailedAttempt() async throws {
+        let bogus = RemoteChange(recordID: "zzz", record: Note(id: "zzz", text: "?"), revision: "9", timestamp: nil)
+        let transport = ScriptedTransport(push: { changes in
+            Dictionary(uniqueKeysWithValues: changes.map { ($0.id, PushOutcome<Note>.conflict(current: bogus)) })
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "A"))
+        for _ in 0..<5 { try await store.sync() }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 1)
+        #expect(pending.lastError?.contains("another record") == true)
+        #expect(pending.nextAttemptAt == clock.now.addingTimeInterval(10))
+        #expect(await transport.pushed.count == 1)
+    }
+
+    /// A transport that reports its cancellation as URLError(.cancelled) was cancelled, not
+    /// failed: no attempt is counted.
+    @Test func aCancellationReportedAsAnErrorIsNotAFailedAttempt() async throws {
+        let transport = ScriptedTransport(push: { _ in
+            do {
+                try await Task.sleep(for: .seconds(3_600))
+            } catch {
+                throw URLError(.cancelled)
+            }
+            return [:]
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "a", text: "A"))
+        let caller = Task { try await store.sync() }
+        #expect(await eventually { await transport.pushed.count == 1 })
+        caller.cancel()
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        let pending = try #require(await store.pendingChanges().first)
+        #expect(pending.attempts == 0)
+        #expect(await store.status == .idle)
+        #expect(await store.breaker.consecutiveFailures == 0)
     }
 
     @Test func missingAnswersCountAsFailedAttempts() async throws {
@@ -261,7 +434,8 @@ struct SyncTests {
         await #expect(throws: OfflineFirstError.pullTokenDidNotAdvance(token: nil)) {
             try await store.sync()
         }
-        #expect(await transport.pulls == 1)
+        // The pull, and the second request that checks a new store's first page.
+        #expect(await transport.pulls == 2)
         guard case .failed = await store.status else {
             Issue.record("expected a failed status")
             return
@@ -275,26 +449,32 @@ struct SyncTests {
         }
         let store = try makeStore(server) { $0.maximumPullPages = 2 }
         let first = try await store.sync()
-        #expect(first.pulled == 2)
+        // The first step of a new store takes two pages: its second request, after the first
+        // page's token, checks the server's epoch.
+        #expect(first.pulled == 3)
         #expect(first.hasMoreChanges)
         try await store.sync()
         try await store.sync()
         #expect(await store.records().map(\.id) == ["n0", "n1", "n2", "n3", "n4"])
     }
 
-    @Test func malformedServerRecordsAreIgnored() async throws {
-        let transport = ScriptedTransport(pull: { _ in
+    @Test func malformedServerRecordsAreQuarantined() async throws {
+        let transport = ScriptedTransport(pull: servingOnePage(
             PullResponse(changes: [
                 RemoteChange(recordID: "a", record: Note(id: "b", text: "mismatched"), revision: "1", timestamp: nil),
                 RemoteChange(recordID: "c", record: Note(id: "c", text: "fine"), revision: "2", timestamp: nil)
-            ], token: "2", hasMore: false)
-        })
+            ], token: "2", hasMore: false)))
         let store = try makeStore(transport)
-        try await store.sync()
+        let report = try await store.sync()
         #expect(await store.records() == [Note(id: "c", text: "fine")])
+        // The page is not applied in part silently: the change that was not used is listed.
+        #expect(report.quarantined == 1)
+        #expect(await store.quarantinedChanges() == [
+            QuarantinedChange(recordID: #""a""#, revision: "1", reason: "The record's own ID differs from the change's recordID.")
+        ])
     }
 
-    @Test func oversizedRevisionsAndNodeIDsAreIgnored() async throws {
+    @Test func oversizedRevisionsAndNodeIDsAreQuarantined() async throws {
         let long = String(repeating: "r", count: OfflineStore<Note>.maximumRevisionLength + 1)
         let transport = ScriptedTransport(pull: { _ in
             PullResponse(changes: [
@@ -307,6 +487,58 @@ struct SyncTests {
         let store = try makeStore(transport)
         try await store.sync()
         #expect(await store.records() == [Note(id: "c", text: "fine")])
+        let quarantined = await store.quarantinedChanges()
+        #expect(quarantined.map(\.recordID) == [#""a""#, #""b""#])
+        #expect(quarantined.allSatisfy { ($0.revision?.utf8.count ?? 0) <= OfflineStore<Note>.maximumRevisionLength })
+    }
+
+    /// A later version that can be used replaces the entry; resetting the token clears the list
+    /// and pulls everything again.
+    @Test func quarantinedChangesGoWhenTheRecordComesAgain() async throws {
+        let fixed = OSAllocatedUnfairLock(initialState: false)
+        let transport = ScriptedTransport(pull: { token in
+            switch token {
+            case nil:
+                PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "x", text: "bad"), revision: "1", timestamp: nil),
+                                       RemoteChange(recordID: "b", record: Note(id: "y", text: "bad"), revision: "2", timestamp: nil)],
+                             token: "2", hasMore: false)
+            case "2" where fixed.withLock({ $0 }):
+                PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "fixed"), revision: "3", timestamp: nil)],
+                             token: "3", hasMore: false)
+            default: PullResponse(changes: [], token: token, hasMore: false)
+            }
+        })
+        let store = try makeStore(transport)
+        try await store.sync()
+        #expect(await store.quarantinedChanges().count == 2)
+        fixed.withLock { $0 = true }
+        try await store.sync()
+        #expect(await store.quarantinedChanges().map(\.recordID) == [#""b""#])
+        #expect(await store.record("a")?.text == "fixed")
+        try await store.resetChangeToken()
+        #expect(await store.quarantinedChanges().isEmpty)
+    }
+
+    /// One outcome the transport cannot read must not fail the changes the server accepted in
+    /// the same push.
+    @Test func anUnansweredChangeDoesNotFailTheRestOfThePush() async throws {
+        let transport = ScriptedTransport(push: { changes in
+            var outcomes: [UUID: PushOutcome<Note>] = [:]
+            for change in changes where change.recordID == "good" {
+                outcomes[change.id] = .accepted(revision: "7")
+            }
+            return outcomes
+        })
+        let store = try makeStore(transport)
+        try await store.save(Note(id: "good", text: "g"))
+        try await store.save(Note(id: "odd", text: "o"))
+        for _ in 0..<3 {
+            _ = try? await store.sync()
+            clock.advance(by: 1_000)
+        }
+        #expect(await store.failedChanges().map(\.recordID) == ["odd"])
+        #expect(await store.state.entries["good"]?.revision == "7")
+        #expect(await store.state.entries["good"]?.pending == nil)
     }
 
     @Test func oversizedChangeTokensFailTheSyncWithoutBeingSaved() async throws {
@@ -409,5 +641,14 @@ actor Counter {
     func next() -> Int {
         value += 1
         return value
+    }
+}
+
+/// A switch that tests turn on.
+actor Flag {
+    private(set) var isSet = false
+
+    func set() {
+        isSet = true
     }
 }

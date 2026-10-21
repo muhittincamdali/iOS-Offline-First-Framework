@@ -16,13 +16,39 @@ let store = try OfflineStore<Todo>(name: "todos", storage: storage, transport: t
 ``InMemoryStorage`` keeps everything in memory for tests and previews. Store and file names are
 checked by ``StorageName/validate(_:)``: letters, digits, `.`, `_` and `-` only, so a name can
 never point outside the directory. ``FileStore`` refuses to read files above
-``FileStore/maximumFileSize`` (256 MiB by default).
+``FileStore/maximumFileSize`` (256 MiB by default), and to write them, so a server that sends
+more data than that makes the sync fail with ``OfflineFirstError/fileTooLarge(name:size:limit:)``
+instead of leaving a file the store cannot open again.
 
 The store writes the whole file atomically after every change, and a change becomes visible
 only after the write succeeded. That keeps the file consistent after a crash or a full disk;
 it also means each write costs time proportional to the number of records. The design suits
 collections up to tens of thousands of records. For larger data sets, split them into several
 stores.
+
+Open one ``OfflineStore`` per file. With ``FileStore``, ``InMemoryStorage`` and a custom
+``StorageBackend`` that reports a ``StorageBackend/claimIdentity``, a second instance on the
+same file in the same process cannot write once the first one did: its write throws
+``OfflineFirstError/storeChangedElsewhere(name:)`` instead of dropping the other instance's
+changes. A custom backend has no identity unless it reports one, and then two instances on one
+file each write their own state: the one that writes last drops the records the other one
+saved. A backend that wraps a built-in one and keeps its names can forward the wrapped
+backend's identity:
+
+```swift
+struct WrappingStorage: StorageBackend {
+    let base: FileStore
+    var claimIdentity: String? { base.claimIdentity }
+
+    func read(_ name: String) throws -> Data? { try base.read(name) }
+    func write(_ data: Data, to name: String) throws { try base.write(data, to: name) }
+    func remove(_ name: String) throws { try base.remove(name) }
+    func move(_ name: String, to newName: String) throws { try base.move(name, to: newName) }
+}
+```
+
+Two processes, such as an app and its extension in one app group, are not coordinated; give
+each its own store, or make sure only one of them has the store open.
 
 ## Encryption
 
@@ -68,10 +94,10 @@ app version cannot drop fields it does not know.
 
 ## Damaged files
 
-If the file cannot be decoded or decrypted, the initializer throws by default. With
-``CorruptionPolicy/moveAsideAndStartEmpty`` the store renames the file to
-`<name>.store.corrupt-<milliseconds>` and starts empty; the next sync pulls the server's data,
-and local changes that had not been pushed are lost.
+If the file cannot be decoded or decrypted, or is larger than the backend reads, the initializer
+throws by default. With ``CorruptionPolicy/moveAsideAndStartEmpty`` the store renames the file
+to `<name>.store.corrupt-<milliseconds>` and starts empty; the next sync pulls the server's
+data, and local changes that had not been pushed stay only in the renamed file.
 
 When a file can be read but holds odd values, the store repairs what is safe to repair:
 duplicate record IDs (the last one wins), negative attempt counts, an empty device ID, and

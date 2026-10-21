@@ -47,4 +47,58 @@ struct EndToEndTests {
         #expect(await phone.pendingChanges().isEmpty)
         #expect(await laptop.pendingChanges().isEmpty)
     }
+
+    /// 68 records of 250 KiB, each within the server's limits, make a first page of about 17 MB
+    /// at 100 changes per page, more than the transport reads. The phone pushes them in requests
+    /// of at most 1 MiB; a new device and the phone after resetChangeToken() pull them all from
+    /// the beginning, in pages the server cuts at 8 MiB.
+    @Test func largeRecordsReachANewDeviceAndOneThatPullsAgain() async throws {
+        let phone = try device("phone")
+        let text = String(repeating: "x", count: 250 * 1024)
+        let ids = (0..<68).map { "big-\($0)" }
+        try await phone.save(contentsOf: ids.map { Note(id: $0, text: text) })
+        #expect(try await phone.sync().pushed == 68)
+        #expect(await phone.pendingChanges().isEmpty)
+
+        let laptop = try device("laptop")
+        let report = try await laptop.sync()
+        #expect(report.pulled == 68)
+        #expect(report.hasMoreChanges == false)
+        #expect(await laptop.records().map(\.id) == ids)
+
+        try await phone.resetChangeToken()
+        try await phone.sync()
+        #expect(await phone.records().count == 68)
+        #expect(await phone.quarantinedChanges().isEmpty)
+        #expect(await phone.state.token?.hasSuffix(".68") == true)
+    }
+
+    /// The phone edits 70 records offline while the laptop grows each of them to 250 KiB, within
+    /// the server's limits. The server answers the phone's push with 70 conflicts that bring the
+    /// laptop's versions, about 17.5 MiB, more than the transport reads; the transport sends the
+    /// push again in halves, which the server answers from its memory of change IDs. The
+    /// laptop's later edits win, and both devices end with the same records, none parked.
+    @Test func conflictAnswersLargerThanTheResponseLimitReachTheDevice() async throws {
+        let phone = try device("phone")
+        let laptop = try device("laptop")
+        let ids = (0..<70).map { "grown-\($0)" }
+        try await laptop.save(contentsOf: ids.map { Note(id: $0, text: "small") })
+        #expect(try await laptop.sync().pushed == 70)
+        #expect(try await phone.sync().pulled == 70)
+
+        try await phone.save(contentsOf: ids.map { Note(id: $0, text: "the phone's edit") })
+        try await Task.sleep(for: .milliseconds(20))
+        let grown = ids.map { Note(id: $0, text: String(repeating: "g", count: 250 * 1024)) }
+        try await laptop.save(contentsOf: grown)
+        #expect(try await laptop.sync().pushed == 70)
+
+        let report = try await phone.sync()
+        #expect(report.conflicts == 70)
+        #expect(report.parked == 0)
+        #expect(await phone.pendingChanges().isEmpty)
+        #expect(await phone.records() == grown)
+        try await laptop.sync()
+        #expect(await laptop.records() == grown)
+        #expect(await laptop.pendingChanges().isEmpty)
+    }
 }

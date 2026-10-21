@@ -11,7 +11,8 @@ public protocol StorageBackend: Sendable {
     func read(_ name: String) throws -> Data?
 
     /// Replaces the bytes stored under `name`. The write must be atomic: after a crash the
-    /// old or the new bytes are stored, never a mix.
+    /// old or the new bytes are stored, never a mix. A backend that limits what it reads must
+    /// refuse to write more, so the store never writes a file it cannot open again.
     func write(_ data: Data, to name: String) throws
 
     /// Deletes the bytes stored under `name`. Deleting a missing name is not an error.
@@ -19,6 +20,24 @@ public protocol StorageBackend: Sendable {
 
     /// Renames `name` to `newName`, replacing anything stored under `newName`.
     func move(_ name: String, to newName: String) throws
+
+    /// Names the place this backend keeps its bytes in, so that two ``OfflineStore`` instances
+    /// in this process that open one file through it do not overwrite each other: once one of
+    /// them wrote the file, the other one's write throws
+    /// ``OfflineFirstError/storeChangedElsewhere(name:)``.
+    ///
+    /// Two backends with the same identity must keep a name in the same place, and two that
+    /// keep it in different places need different identities. ``FileStore`` and
+    /// ``InMemoryStorage`` report one; a backend that wraps one of them and keeps its names can
+    /// return the wrapped backend's identity. The default, `nil`, leaves the backend's files
+    /// unprotected: two instances on one file then each write their own state, and the last
+    /// writer drops the records the other one saved.
+    var claimIdentity: String? { get }
+}
+
+extension StorageBackend {
+    /// `nil`: stores on this backend are not kept from overwriting each other.
+    public var claimIdentity: String? { nil }
 }
 
 /// Checks that names are safe to use as file names.
@@ -55,6 +74,11 @@ public final class InMemoryStorage: StorageBackend {
     /// The names that currently hold data, sorted.
     public var names: [String] {
         files.withLock { $0.keys.sorted() }
+    }
+
+    /// This instance: stores on the same `InMemoryStorage` share their files.
+    public var claimIdentity: String? {
+        "memory:\(ObjectIdentifier(self))"
     }
 
     public func read(_ name: String) throws -> Data? {

@@ -64,20 +64,50 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// The record, or `nil` when it was deleted on the server.
     public let record: Record?
 
-    /// The server's revision of the record. Any string that changes with every write works,
-    /// such as a version number or an ETag.
+    /// The server's revision of the record. Any string works, such as a version number or an
+    /// ETag, as long as the server never gives the same string to two different versions of
+    /// the record, not even after a restart or a restore from a backup: the store treats an
+    /// equal revision as the same version. The reference servers put their ``PullResponse/epoch``
+    /// in front of a counter (`"00064a1f3c2b9e18.43"`).
     public let revision: String
 
     /// When the record was last changed, if the server keeps the timestamps it receives.
-    /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing.
+    /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing. Keep it
+    /// as it was pushed, except that a wall time further ahead of the server's clock than a few
+    /// minutes is moved back to that limit, as the reference servers do: a device whose clock
+    /// runs ahead then wins over later edits on other devices for those minutes at most. A
+    /// timestamp further ahead than ``OfflineStore/Configuration/maximumClockDrift`` also counts
+    /// as at that limit when last write wins weighs it against a local write. The store never
+    /// orders the server's versions by timestamps: device clocks write them.
     public let timestamp: HLCTimestamp?
 
+    /// Where this version stands in the server's order of writes, if the server numbers them:
+    /// a number that grows with every write the server stores, such as a global change counter
+    /// or a per-record version number. It may start over only together with a new
+    /// ``PullResponse/epoch``. With it the store recognises an older version that arrives late
+    /// (a page out of order, a lagging replica) and keeps the newer one, and a pull resolves a
+    /// conflict with a pending change. Without it the store takes every version a page brings
+    /// as the newest, so a stale page can roll a record back until the record changes again,
+    /// and leaves a pending change to its push, whose conflict answer names the server's current
+    /// version. Timestamps never take its place.
+    public let sequence: UInt64?
+
+    /// The ``OutgoingChange/id`` of the pushed change that wrote this version, if the server
+    /// keeps it; `nil` for a version written another way. The store recognises a write of its
+    /// own whose answer was lost by it: the version is then not a conflict with another
+    /// device's edit. Without it the store compares the ``timestamp`` with the ones it pushed,
+    /// which works only while the server keeps timestamps exactly as they were pushed.
+    public let changeID: UUID?
+
     /// Creates a server record.
-    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?) {
+    public init(recordID: Record.ID, record: Record?, revision: String, timestamp: HLCTimestamp?, sequence: UInt64? = nil,
+                changeID: UUID? = nil) {
         self.recordID = recordID
         self.record = record
         self.revision = revision
         self.timestamp = timestamp
+        self.sequence = sequence
+        self.changeID = changeID
     }
 }
 
@@ -110,11 +140,73 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// Whether more changes follow; the store pulls again right away.
     public let hasMore: Bool
 
+    /// Names the server's history of the records, if the server reports it. A server that may
+    /// have lost or replaced its data (an in-memory server that restarted, a restore from a
+    /// backup, a different database) reports a new epoch, later than every earlier one: longer,
+    /// or as long and greater byte by byte, such as a counter or the start time in fixed-width
+    /// digits. The store pulls everything again from the start once a pull from the beginning
+    /// reports the later epoch too, and keeps its own pending changes. It refuses a page that
+    /// names an earlier epoch than its own in every sync, also after
+    /// ``OfflineStore/resetChangeToken()``, since only a stale replica or cache sends one: never
+    /// report an epoch again once you reported a later one. The first epoch a store hears of,
+    /// also on a new store's first page, is believed, like a later one, once a second request of
+    /// the sync reports it too. Once you report an epoch, report one on every page: while the
+    /// store holds an epoch that two requests reported, it refuses a page without one, as one from
+    /// another deployment behind the same URL.
+    public let epoch: String?
+
+    /// Changes in this page the transport could not read, for example a record that does not
+    /// decode as `Record`. The store lists them in ``OfflineStore/quarantinedChanges()`` and
+    /// goes on with the rest of the page.
+    public let quarantined: [QuarantinedChange]
+
+    /// How many changes of this page the transport set aside: those in ``quarantined`` and those
+    /// it only counted. ``HTTPSyncTransport`` lists the first 100 of a page. The store adds the
+    /// count to ``SyncReport/quarantined``.
+    public let quarantinedCount: Int
+
     /// Creates a page.
-    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool) {
+    ///
+    /// - Parameters:
+    ///   - changes: Changed records, oldest first.
+    ///   - token: The position after these changes.
+    ///   - hasMore: Whether more changes follow.
+    ///   - epoch: The server's history, if the server reports it.
+    ///   - quarantined: Changes the transport could not read.
+    ///   - quarantinedCount: How many changes the transport set aside; at least, and by default,
+    ///     the number of `quarantined`.
+    public init(changes: [RemoteChange<Record>], token: String?, hasMore: Bool, epoch: String? = nil,
+                quarantined: [QuarantinedChange] = [], quarantinedCount: Int? = nil) {
         self.changes = changes
         self.token = token
         self.hasMore = hasMore
+        self.epoch = epoch
+        self.quarantined = quarantined
+        self.quarantinedCount = max(quarantined.count, quarantinedCount ?? 0)
+    }
+}
+
+/// A server change the store set aside because it could not use it.
+///
+/// The pull goes on without it, so one bad record does not stop the sync. A later version of
+/// the same record that can be used removes the entry, and ``OfflineStore/resetChangeToken()``
+/// pulls everything again, for example after an app update that reads the record.
+public struct QuarantinedChange: Codable, Hashable, Sendable {
+    /// The record's ID as JSON, for example `"C2D6"` with its quotes, or `null` when the
+    /// change had none or one that does not decode as the record's ID type.
+    public let recordID: String
+
+    /// The server's revision of the change, if it could be read.
+    public let revision: String?
+
+    /// Why the change was set aside.
+    public let reason: String
+
+    /// Creates an entry.
+    public init(recordID: String, revision: String?, reason: String) {
+        self.recordID = recordID
+        self.revision = revision
+        self.reason = reason
     }
 }
 
@@ -123,7 +215,9 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
 /// Implement the two calls with your networking code (`URLSession`, a GraphQL client, a
 /// database SDK). Throw for a failure that is worth retrying, such as no connection or a 5xx
 /// status; answer ``PushOutcome/rejected(reason:current:)`` for a change that will never
-/// succeed.
+/// succeed. Both calls must stop when their task is cancelled: the store cancels a request when
+/// every caller of the sync gave up, and when the sync runs past
+/// ``OfflineStore/Configuration/syncTimeout``.
 ///
 /// ```swift
 /// struct NotesAPI: SyncTransport {
@@ -142,10 +236,23 @@ public protocol SyncTransport<Record>: Sendable {
     /// The record type the transport syncs.
     associatedtype Record: SyncableRecord
 
+    /// Identifies the server and collection the transport talks to, for example its URL. The
+    /// store keeps it with its change token; when the store is opened with a transport of
+    /// another identity, it pulls everything again instead of sending the old server's token.
+    /// Default: `nil`, which is not checked.
+    var serverIdentity: String? { get }
+
     /// Sends local changes and returns an outcome for each change ID. A change without an
     /// outcome counts as a failed attempt and is retried later.
     func push(_ changes: [OutgoingChange<Record>]) async throws -> [UUID: PushOutcome<Record>]
 
-    /// Returns server changes after `token`, which is `nil` on the first sync.
+    /// Returns server changes after `token`, which is `nil` on the first sync: at most
+    /// ``OfflineStore/maximumChangesPerPage`` (1,000), ``PullResponse/changes`` and
+    /// ``PullResponse/quarantined`` together. The store refuses a longer page.
     func pull(since token: String?) async throws -> PullResponse<Record>
+}
+
+extension SyncTransport {
+    /// No identity: the store keeps its token whatever transport it is opened with.
+    public var serverIdentity: String? { nil }
 }
