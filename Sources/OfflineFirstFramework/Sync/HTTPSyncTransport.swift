@@ -18,12 +18,15 @@ import Foundation
 /// let store = try OfflineStore<Note>(name: "notes", transport: transport)
 /// ```
 ///
-/// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)``, so the store
-/// retries the changes with its ``RetryPolicy``. Responses are read up to
-/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded, at once
-/// when it announces its length. A push is split into requests of at most
+/// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)`` after its first
+/// ``errorBodyLimit`` bytes, however long it says it is, so the store retries the changes with
+/// its ``RetryPolicy``. Only a 2xx answer that was read to its end settles a change. Responses are
+/// read up to ``maximumResponseSize`` bytes; a larger 2xx answer is cancelled instead of being
+/// loaded, at once when it announces its length. A push is split into requests of at most
 /// ``maximumRequestSize`` bytes, and a request is halved while the server answers it with
-/// status 413 or with more than ``maximumResponseSize``. A pull asks for ``pageSize`` changes
+/// status 413 or with a 2xx answer longer than ``maximumResponseSize``, by at most
+/// ``maximumSplitRequests`` requests per push; it is never halved after another status, such as
+/// a 5xx of a server or gateway in trouble. A pull asks for ``pageSize`` changes
 /// and, while the page is larger than that, for half as many; a single change that is larger on
 /// its own, up to four times ``maximumResponseSize``, is set aside in
 /// ``OfflineStore/quarantinedChanges()`` and the pull moves past it. A page with more changes
@@ -32,9 +35,10 @@ import Foundation
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
-        /// The server answered with a status outside 200–299.
+        /// The server answered with a status outside 200–299. `body` holds at most the first
+        /// ``HTTPSyncTransport/errorBodyLimit`` bytes of its answer.
         case unexpectedStatus(code: Int, body: String)
-        /// The response was longer than the limit.
+        /// A 2xx response was longer than the limit.
         case responseTooLarge(limit: Int)
         /// The response was not an HTTP response.
         case notHTTP
@@ -260,19 +264,31 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    /// The body of the answer to `request`. The answer is read as a page only when its status
-    /// is 2xx; the download is cancelled as soon as the reader stops.
+    /// The most bytes read of an answer outside 200–299, for ``Failure/unexpectedStatus(code:body:)``:
+    /// 4 KiB.
+    public static var errorBodyLimit: Int { 4 * 1024 }
+
+    /// The body of the answer to `request`, read by a ``ResponseReader`` when its status is 2xx;
+    /// the download is cancelled as soon as the reader stops.
+    ///
+    /// Of any other answer only the first ``errorBodyLimit`` bytes are read, whatever length it
+    /// announces and however it ends, and ``Failure/unexpectedStatus(code:body:)`` is thrown. Such
+    /// an answer says nothing about the changes of a push, and it is never taken for a long one:
+    /// a 503 or 504 of a gateway that announces 17 MiB, or a 502 page that streams without end,
+    /// would otherwise make the push split its request and park its changes.
     private func receive(_ request: URLRequest, page changeLimit: Int?, outlining: Bool) async throws -> Data {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.notHTTP }
-        let succeeded = (200..<300).contains(http.statusCode)
+        guard (200..<300).contains(http.statusCode) else {
+            let prefix = await Self.prefix(of: bytes, length: Self.errorBodyLimit)
+            bytes.task.cancel()
+            try Task.checkCancellation()
+            throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: prefix, as: UTF8.self))
+        }
         do {
             var reader = try ResponseReader(expectedLength: response.expectedContentLength, maximumResponseSize: maximumResponseSize,
-                                            changeLimit: succeeded ? changeLimit : nil, outlining: outlining)
+                                            changeLimit: changeLimit, outlining: outlining)
             for try await byte in bytes { try reader.read(byte) }
-            guard succeeded else {
-                throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: reader.body.prefix(500), as: UTF8.self))
-            }
             return reader.body
         } catch let stop as ResponseReader.Stop {
             bytes.task.cancel()
@@ -281,6 +297,20 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
             case .tooManyChanges: throw Self.tooManyChanges(changeLimit ?? 0)
             }
         }
+    }
+
+    /// The first `length` bytes of `bytes`, or fewer when the body ends or breaks off before.
+    private static func prefix(of bytes: URLSession.AsyncBytes, length: Int) async -> Data {
+        var prefix = Data()
+        do {
+            for try await byte in bytes {
+                prefix.append(byte)
+                if prefix.count >= length { break }
+            }
+        } catch {
+            // The status is known; the body only describes it.
+        }
+        return prefix
     }
 
     // MARK: - Wire format

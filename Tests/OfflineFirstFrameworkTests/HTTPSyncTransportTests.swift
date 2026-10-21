@@ -141,17 +141,25 @@ struct HTTPSyncTransportTests {
         #expect(since == "ab+c/d==&e")
     }
 
+    /// An error page longer than the response limit is still an error status: one request,
+    /// with the start of the page, and not a page too large that makes the pull ask for fewer
+    /// changes again and again.
     @Test func errorStatusesThrowWithTheStartOfTheBody() async {
-        let transport = transport { _, _ in (503, Data(String(repeating: "busy ", count: 300).utf8)) }
+        let requests = OSAllocatedUnfairLock(initialState: 0)
+        let transport = transport(maximumResponseSize: 1_024) { _, _ in
+            requests.withLock { $0 += 1 }
+            return (503, Data(String(repeating: "busy ", count: 4_000).utf8))
+        }
         do {
             _ = try await transport.pull(since: nil)
             Issue.record("expected an error")
         } catch let HTTPSyncTransport<Note>.Failure.unexpectedStatus(code, body) {
             #expect(code == 503)
-            #expect(body.count == 500)
+            #expect(body.utf8.count == HTTPSyncTransport<Note>.errorBodyLimit)
         } catch {
             Issue.record("unexpected error \(error)")
         }
+        #expect(requests.withLock { $0 } == 1)
     }
 
     @Test func oversizedResponsesAreNotLoaded() async {
