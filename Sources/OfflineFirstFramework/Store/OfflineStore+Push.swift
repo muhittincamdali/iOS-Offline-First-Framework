@@ -171,8 +171,13 @@ extension OfflineStore {
         }
     }
 
-    /// Handles the server's answer that `entry`'s pending change conflicts with `current`.
-    private func settle(_ entry: inout StoredEntry<Record>, conflictingWith current: RemoteChange<Record>, pushesInThisSync: Int,
+    /// Handles the server's answer that `entry`'s pending change conflicts with `answer`.
+    ///
+    /// Who wrote the version the answer names decides first: the device's own write is never a
+    /// conflict, whatever a pull kept back meanwhile. Only for another device's version may a
+    /// version a pull kept back while the change was in doubt take the answer's place, and only
+    /// when the server's sequences show it is newer (see ``newer(_:than:)``).
+    private func settle(_ entry: inout StoredEntry<Record>, conflictingWith answer: RemoteChange<Record>, pushesInThisSync: Int,
                         in state: inout State, report: inout SyncReport) throws {
         // The server did not apply the change, so it is no longer in doubt, and neither are its
         // earlier versions; those the server may have applied stay known as the device's own.
@@ -180,62 +185,79 @@ extension OfflineStore {
         Self.settleVersionsInDoubt(of: &entry)
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
-        guard Self.isConsistent(current, for: entry.id) else {
+        guard Self.isConsistent(answer, for: entry.id) else {
             report.conflicts += 1
             fail(&entry, message: "The server answered with a conflict that names another record or breaks the limits.",
                  report: &report)
             return
         }
-        receive(current, in: &state)
-        // A repeated push is answered from the server's memory of change IDs, with the version
-        // that was current then; a version pulled since is newer.
-        let current = newer(deferred, than: current)
+        receive(answer, in: &state)
         // The version the change is based on, which a conflict cannot name, or one the server's
         // sequences, or the store's own accepted write, show to be older (a lagging replica
         // answered): nothing to resolve; the change is pushed again later. A timestamp never
         // makes an answer older; without sequences the server's answer is its current version.
-        guard current.revision != entry.revision else {
+        guard answer.revision != entry.revision else {
             report.conflicts += 1
             fail(&entry, message: "The server answered with a conflict that names the version the change is based on.", report: &report)
             return
         }
-        guard !isStale(current, comparedWith: entry, in: state, isConflictAnswer: true) else {
+        guard !isStale(answer, comparedWith: entry, in: state, isConflictAnswer: true) else {
             report.conflicts += 1
             fail(&entry, message: "The server answered with a conflict that names an older version of the record than the store holds.",
                  report: &report)
             return
         }
-        switch authorship(of: current, comparedWith: entry) {
+        switch authorship(of: answer, comparedWith: entry) {
         case .pendingChange:
             // The server holds this very change: an earlier push of it was applied.
             report.pushed += 1
             entry.rememberOwnWrite(changeID: entry.pending?.changeID, timestamp: entry.timestamp)
-            entry = Self.entry(from: current, replacing: entry, in: &state, configuration: configuration)
+            entry = Self.entry(from: newer(deferred, than: answer), replacing: entry, in: &state, configuration: configuration)
         case .earlierWrite:
             // The device's own earlier write: applied although its answer was lost, or accepted
             // before a stale page took the record back. The pending change was made on this
-            // device after it, so it goes out again on its revision.
-            entry.rememberOwnWrite(changeID: current.changeID, timestamp: current.timestamp)
-            Self.base(&entry, on: current, in: state, configuration: configuration)
+            // device after it, so it goes out again on its revision, and the next answer tells
+            // whether another device wrote since.
+            entry.rememberOwnWrite(changeID: answer.changeID, timestamp: answer.timestamp)
+            Self.base(&entry, on: answer, in: state, configuration: configuration)
             if let pending = entry.pending {
                 entry.pending = conflictAttempt(renewed(pending), pushesInThisSync: pushesInThisSync, report: &report)
             }
         case .other:
+            if let pending = entry.pending, isUnordered(deferred, answer) {
+                // A pull kept another version back, and no sequences tell which of the two the
+                // server holds now: the answer may come from the server's memory of change IDs,
+                // from before the version pulled since, and the pulled version may come from a
+                // stale page. The resolver meets neither. The change goes out again under a new
+                // change ID on the same base, so the server answers with its current version.
+                entry.pending = conflictAttempt(renewed(pending), pushesInThisSync: pushesInThisSync, report: &report)
+                return
+            }
             report.conflicts += 1
-            entry = try resolve(entry, against: current, in: &state, pushesInThisSync: pushesInThisSync, report: &report)
+            entry = try resolve(entry, against: newer(deferred, than: answer), in: &state, pushesInThisSync: pushesInThisSync,
+                                report: &report)
         }
-        // Every path above makes `current` the version the entry is based on.
+        // Every path above makes the version the answer named, or a newer one the server's
+        // sequences show, the version the entry is based on.
         entry.pushedInHistory = state.history
     }
 
-    /// `deferred`, the version a pull brought while the change was in doubt, unless the
-    /// server's sequences show it is older than `current`, the version a push answer names;
-    /// otherwise `current`. Without sequences the pulled version is taken: it came after the
-    /// push went out, the answer to a repeated push comes from the server's memory of change
-    /// IDs, and the change token has moved past the pulled version, so no pull brings it again.
-    func newer(_ deferred: RemoteChange<Record>?, than current: RemoteChange<Record>) -> RemoteChange<Record> {
-        guard let deferred, deferred.revision != current.revision, !isOlder(deferred, than: current) else { return current }
+    /// The version a push answer leaves a record at: `answer`, the version the server named,
+    /// unless the server's sequences show it is older than `deferred`, a version a pull
+    /// brought while the change was in doubt. A repeated push is answered from the server's
+    /// memory of change IDs, with the version that was current then, so a version pulled since
+    /// may be newer; but the pull may also have come from a stale replica or cache. Only the
+    /// sequences tell the two apart, so without them the server's answer stands.
+    func newer(_ deferred: RemoteChange<Record>?, than answer: RemoteChange<Record>) -> RemoteChange<Record> {
+        guard let deferred, deferred.revision != answer.revision, isOlder(answer, than: deferred) else { return answer }
         return deferred
+    }
+
+    /// Whether `deferred` is another version than `answer` whose order the server's sequences
+    /// do not tell.
+    func isUnordered(_ deferred: RemoteChange<Record>?, _ answer: RemoteChange<Record>) -> Bool {
+        guard let deferred, deferred.revision != answer.revision else { return false }
+        return !isOlder(deferred, than: answer) && !isOlder(answer, than: deferred)
     }
 
     private func recordFailedAttempts(_ changes: [OutgoingChange<Record>], message: String, notInDoubt: Set<UUID>,
