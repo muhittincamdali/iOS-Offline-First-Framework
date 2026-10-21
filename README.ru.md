@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ru-light.svg" alt="Offline-First Framework: Локальное хранилище для Swift-приложений: работает без сети и синхронизируется с вашим сервером."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="Статус CI"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Последняя версия: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Последняя версия: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Поддерживаемые платформы: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Версия языка: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Лицензия: MIT"></picture></a>
@@ -50,21 +50,21 @@ HTTP-протоколом с эталонным сервером, вашим с�
   вызов синхронизирует из фоновой задачи обновления.
 - **Данные в покое защищены** — шифрование файлов AES-GCM с ключом в Keychain, классы защиты данных,
   миграции схемы записей и политика для повреждённых файлов.
-- **Проверено на настоящем сервере** — 374 теста Swift Testing на macOS и в симуляторе iPhone,
-  среди них три теста свойств, прогоняющих каждую политику конфликтов через потерянные запросы,
-  перезапуски, сбросы токена, одновременные синхронизации, малые лимиты страниц, устаревшие
+- **Проверено на настоящем сервере** — 375 тестов Swift Testing на macOS и 372 теста в симуляторе
+  iPhone, среди них три теста свойств, прогоняющих каждую политику конфликтов через потерянные
+  запросы, перезапуски, сбросы токена, одновременные синхронизации, малые лимиты страниц, устаревшие
   страницы, одновременные операции и сбои, в том числе против сервера без последовательностей,
   сценарные тесты с репликой, которая отвечает устройству много синхронизаций подряд, с устаревшей
   страницей, которая возвращает более старую собственную запись устройства или встречается с
-  принятой отправкой, со сбоем на каждой записи синхронизации и с часами устройства, которые
-  прыгают вперёд, и тесты, которые присылают страницы бесполезных данных, очень глубоко вложенные
-  записи, страницы больше предела ответа и страницы с большим числом изменений, чем запрошено, в
-  том числе бесконечно передаваемые через сокет; 28 тестов Node для сервера; и набор сквозных
-  тестов в CI, который синхронизирует хранилища через сервер по HTTP, в том числе 68 записей по
-  250 КиБ через перезапуск сервера, 70 ответов о конфликте по 250 КиБ, которые вместе превышают
-  предел ответа, запись, сохранение которой не удалось перед перезапуском, отправку, которую
-  сервер применил за прокси, отвечающим 504, и реплику, которая после сброса токена отдаёт
-  страницы времён до перезапуска.
+  принятой отправкой, со сбоем на каждой записи синхронизации и с часами устройства, которые прыгают
+  вперёд, и тесты, которые присылают страницы бесполезных данных, очень глубоко вложенные записи,
+  страницы больше предела ответа и страницы с большим числом изменений, чем запрошено, в том числе
+  бесконечно передаваемые через сокет; 28 тестов Node для сервера; и набор сквозных тестов в CI,
+  который синхронизирует хранилища через сервер по HTTP, в том числе 68 записей по 250 КиБ через
+  перезапуск сервера, 70 ответов о конфликте по 250 КиБ, которые вместе превышают предел ответа,
+  запись, сохранение которой не удалось перед перезапуском, отправку, которую сервер применил за
+  прокси, отвечающим 504, и реплику, которая после сброса токена отдаёт страницы времён до
+  перезапуска.
 
 ### Что входит
 
@@ -90,7 +90,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Вставьте его в поле поиска в правом верхнем углу окна. Оставьте **Dependency Rule** равным **Up to
-Next Major Version** от `2.0.0` и нажмите **Add Package**. В следующем окне выберите цель вашего
+Next Major Version** от `2.1.0` и нажмите **Add Package**. В следующем окне выберите цель вашего
 приложения рядом с **OfflineFirstFramework** и снова нажмите **Add Package**.
 
 **2. Импортируйте модуль**
@@ -170,7 +170,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -346,19 +346,19 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
   сервер применяет его один раз. Изменение решает только прочитанный ответ: после статуса ошибки,
   обрыва соединения или ответа, слишком длинного для чтения, изменение остаётся под сомнением до
   следующей отправки.
-- Устаревшая копия никогда не заменяет запись, принятую сервером: резолвер вызывается только
-  тогда, когда запись изменилась и на этом устройстве, и на другом, а более старая версия с
-  сервера пропускается по `sequence` сервера, в том числе сразу после того, как сервер принял
-  собственную запись устройства, даже после перезапуска сервера, которого устройство ещё не
-  видело, и после `resetChangeToken()`. Версия, которую записало само устройство, никогда не
-  считается конфликтом, даже если устаревшая страница откатила запись, а пользователь
-  отредактировал её поверх, или страница перечисляет более старую собственную запись устройства
-  перед версией, ответ на которую потерялся. Без последовательностей загрузка оставляет ожидающее
-  изменение его отправке, в том числе когда страница приносит более старую запись самого
-  устройства, и решает ответ на отправку, принят он или нет: версия, которую загрузка тем временем
-  отложила, занимает его место, только если `sequence` сервера показывает, что она новее. Если
-  ничто этого не показывает, при конфликте изменение отправляется ещё раз ради свежего ответа, а
-  любой другой ответ остаётся в силе, пока следующая синхронизация получает всё с самого начала.
+- Устаревшая копия никогда не заменяет запись, принятую сервером: резолвер вызывается только тогда,
+  когда запись изменилась и на этом устройстве, и на другом, а более старая версия с сервера
+  пропускается по `sequence` сервера, в том числе сразу после того, как сервер принял собственную
+  запись устройства, даже после перезапуска сервера, которого устройство ещё не видело, и после
+  `resetChangeToken()`. Версия, которую записало само устройство, никогда не считается конфликтом,
+  даже если устаревшая страница откатила запись, а пользователь отредактировал её поверх, или
+  страница перечисляет более старую собственную запись устройства перед версией, ответ на которую
+  потерялся. Без последовательностей загрузка оставляет ожидающее изменение его отправке, в том
+  числе когда страница приносит более старую запись самого устройства, и решает ответ на отправку,
+  принят он или нет: версия, которую загрузка тем временем отложила, никогда не занимает его место,
+  потому что ответ на отправку не называет epoch. Если эта версия может быть новее, при конфликте
+  изменение отправляется ещё раз ради свежего ответа, а любой другой ответ остаётся в силе, пока
+  следующая синхронизация получает всё с самого начала.
 - Другой `epoch` сервера, как и первый, о котором узнаёт хранилище, в том числе на первой странице
   нового хранилища, засчитывается, только если о нём сообщают два запроса одной синхронизации:
   получение по токену и получение с самого начала. Поэтому одна страница из устаревшего кэша или
@@ -423,9 +423,11 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 историю до потери данных) отсекаются только как отдельные страницы. Если первая синхронизация нового
 хранилища попадает только в это развёртывание или от него приходит один ответ на push, запись может
 без ошибки сохранить его копию, правка может быть решена против неё или отложена, а запись, которую
-сервер так и не получил, может считаться принятой. `resetChangeToken()` возвращает записи, которые
-пропустил токен этого развёртывания; иначе отложите файл хранилища в сторону и начните новое
-хранилище. Подробности: [Гарантии и
+сервер так и не получил, может считаться принятой. Реплика истории до потери данных, которая
+отвечает на загрузки хранилища, пока его отправка доходит до сервера, может заменить принятую запись
+самого устройства. `resetChangeToken()` возвращает записи, которые пропустил токен этого
+развёртывания; иначе отложите файл хранилища в сторону и начните новое хранилище. Подробности:
+[Гарантии и
 ограничения](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).
 
 ## Демо

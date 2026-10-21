@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="Status da CI"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Versão mais recente: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Versão mais recente: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Plataformas compatíveis: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Versão da linguagem: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Licença: MIT"></picture></a>
@@ -51,22 +51,22 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 374 testes de Swift Testing no macOS e em um simulador de
-  iPhone, entre eles três testes de propriedades que submetem cada política de conflito a
+- **Testado contra um servidor real** — 375 testes de Swift Testing no macOS e 372 em um simulador
+  de iPhone, entre eles três testes de propriedades que submetem cada política de conflito a
   solicitações perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de
   páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, também contra um
-  servidor sem sequências, testes de cenários com uma réplica que responde a um dispositivo
-  durante muitas sincronizações, com uma página desatualizada que traz de volta uma gravação mais
-  antiga do próprio dispositivo ou encontra um envio aceito, com uma falha em cada gravação de uma
-  sincronização e com relógios de dispositivo que saltam para a frente, e testes que enviam
-  páginas de dados inúteis, registros aninhados muito fundo, páginas maiores que o limite de
-  resposta e páginas com mais alterações do que o pedido, também transmitidas sem fim por um
-  socket; 28 testes de Node para o servidor; e uma suíte de testes de ponta a ponta na CI que
-  sincroniza stores por meio do servidor via HTTP, também com 68 registros de 250 KiB através de
-  um reinício do servidor, com 70 respostas de conflito de 250 KiB que juntas passam do limite de
-  resposta, com uma gravação cujo salvamento falhou antes de um reinício, com um envio que o
-  servidor aplicou atrás de um proxy que responde 504 e com uma réplica que serve páginas de antes
-  de um reinício depois de redefinir o token.
+  servidor sem sequências, testes de cenários com uma réplica que responde a um dispositivo durante
+  muitas sincronizações, com uma página desatualizada que traz de volta uma gravação mais antiga do
+  próprio dispositivo ou encontra um envio aceito, com uma falha em cada gravação de uma
+  sincronização e com relógios de dispositivo que saltam para a frente, e testes que enviam páginas
+  de dados inúteis, registros aninhados muito fundo, páginas maiores que o limite de resposta e
+  páginas com mais alterações do que o pedido, também transmitidas sem fim por um socket; 28 testes
+  de Node para o servidor; e uma suíte de testes de ponta a ponta na CI que sincroniza stores por
+  meio do servidor via HTTP, também com 68 registros de 250 KiB através de um reinício do servidor,
+  com 70 respostas de conflito de 250 KiB que juntas passam do limite de resposta, com uma gravação
+  cujo salvamento falhou antes de um reinício, com um envio que o servidor aplicou atrás de um proxy
+  que responde 504 e com uma réplica que serve páginas de antes de um reinício depois de redefinir o
+  token.
 
 ### O que está incluído
 
@@ -92,7 +92,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Cole no campo de busca no canto superior direito da janela. Deixe **Dependency Rule** em **Up to Next
-Major Version** a partir de `2.0.0` e clique em **Add Package**. Na janela seguinte, escolha o target
+Major Version** a partir de `2.1.0` e clique em **Add Package**. Na janela seguinte, escolha o target
 do seu app ao lado de **OfflineFirstFramework** e clique em **Add Package** de novo.
 
 **2. Importe o módulo**
@@ -172,7 +172,7 @@ Ou adicione-o às `dependencies` do seu `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -358,10 +358,10 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   usuário editou em cima dela, ou uma página lista uma gravação mais antiga do próprio dispositivo
   antes de uma versão cuja resposta se perdeu. Sem sequências, uma leitura deixa uma alteração
   pendente para o seu envio, também quando a página traz uma gravação mais antiga do próprio
-  dispositivo, e quem decide é a resposta do envio, aceita ou não: uma versão que uma leitura
-  reteve nesse meio-tempo só toma o seu lugar quando o `sequence` do servidor mostra que ela é
-  mais nova. Quando nada mostra isso, um conflito faz a alteração sair mais uma vez para obter uma
-  resposta nova, e qualquer outra resposta vale enquanto a próxima sincronização lê tudo desde o
+  dispositivo, e quem decide é a resposta do envio, aceita ou não: uma versão que uma leitura reteve
+  nesse meio-tempo nunca toma o seu lugar, porque a resposta de um envio não traz nenhuma epoch.
+  Quando essa versão pode ser mais nova, um conflito faz a alteração sair mais uma vez para obter
+  uma resposta nova, e qualquer outra resposta vale enquanto a próxima sincronização lê tudo desde o
   início.
 - Outro epoch do servidor, e o primeiro de que fica sabendo um store, também na primeira página de
   um store novo, só conta quando duas solicitações da mesma sincronização o informam, a leitura
@@ -428,7 +428,9 @@ réplica que serve o histórico de antes de uma perda de dados) só são barrada
 Quando a primeira sincronização de um store novo só chega a essa implantação, ou uma resposta de
 push vem dela, um registro pode ficar sem erro com a cópia dessa implantação, uma edição pode ser
 decidida contra ela ou ficar estacionada, e uma escrita que o servidor nunca recebeu pode contar
-como aceita. `resetChangeToken()` traz de volta os registros que o token dessa implantação pulou;
+como aceita. Uma réplica do histórico de antes de uma perda de dados que responde às leituras de um
+store enquanto o envio dele chega ao servidor pode substituir a gravação aceita do próprio
+dispositivo. `resetChangeToken()` traz de volta os registros que o token dessa implantação pulou;
 caso contrário, mova o arquivo do store para o lado e comece um store novo. Os detalhes estão em
 [Garantias e
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).

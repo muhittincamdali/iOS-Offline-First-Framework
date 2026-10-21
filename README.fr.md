@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-fr-light.svg" alt="Offline-First Framework: Un stockage local pour les apps Swift qui continue de fonctionner hors ligne et se synchronise avec votre serveur."></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="État de la CI"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Dernière version: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Dernière version: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Plateformes prises en charge: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Version du langage: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="Licence: MIT"></picture></a>
@@ -53,23 +53,22 @@ aperçus. Le paquet n’a aucune dépendance.
 - **Données au repos protégées** — chiffrement des fichiers en AES-GCM avec une clé conservée dans le
   Keychain, classes de protection des données, migrations de schéma des enregistrements et une
   politique pour les fichiers endommagés.
-- **Testé contre un vrai serveur** — 374 tests Swift Testing sur macOS et sur un simulateur
-  d’iPhone, dont trois tests de propriétés qui soumettent chaque politique de conflit à des
-  requêtes perdues, des redémarrages, des réinitialisations du jeton, des synchronisations
-  simultanées, de petites limites de pages, des pages périmées, des opérations simultanées et des
-  plantages, aussi face à un serveur sans séquences, des tests de scénarios avec une réplique qui
-  répond à un appareil pendant de nombreuses synchronisations, avec une page périmée qui ramène
-  une écriture plus ancienne de l’appareil ou rencontre un envoi accepté, avec un plantage à
-  chaque écriture d’une synchronisation et avec des horloges d’appareil qui sautent en avant, et
-  des tests qui envoient des pages de données inutilisables, des enregistrements très profondément
-  imbriqués, des pages plus grandes que la limite de réponse et des pages avec plus de
-  modifications que demandé, aussi diffusées sans fin sur un socket ; 28 tests Node pour le
-  serveur ; et une suite de tests de bout en bout dans la CI qui synchronise des stores via le
-  serveur en HTTP, aussi avec 68 enregistrements de 250 Kio à travers un redémarrage du serveur,
-  avec 70 réponses de conflit de 250 Kio qui ensemble dépassent la limite de réponse, avec une
-  écriture dont la sauvegarde a échoué avant un redémarrage, avec un envoi que le serveur a
-  appliqué derrière un proxy qui répond 504, et avec une réplique qui sert des pages d’avant un
-  redémarrage après une réinitialisation du jeton.
+- **Testé contre un vrai serveur** — 375 tests Swift Testing sur macOS et 372 sur un simulateur
+  d’iPhone, dont trois tests de propriétés qui soumettent chaque politique de conflit à des requêtes
+  perdues, des redémarrages, des réinitialisations du jeton, des synchronisations simultanées, de
+  petites limites de pages, des pages périmées, des opérations simultanées et des plantages, aussi
+  face à un serveur sans séquences, des tests de scénarios avec une réplique qui répond à un
+  appareil pendant de nombreuses synchronisations, avec une page périmée qui ramène une écriture
+  plus ancienne de l’appareil ou rencontre un envoi accepté, avec un plantage à chaque écriture
+  d’une synchronisation et avec des horloges d’appareil qui sautent en avant, et des tests qui
+  envoient des pages de données inutilisables, des enregistrements très profondément imbriqués, des
+  pages plus grandes que la limite de réponse et des pages avec plus de modifications que demandé,
+  aussi diffusées sans fin sur un socket ; 28 tests Node pour le serveur ; et une suite de tests de
+  bout en bout dans la CI qui synchronise des stores via le serveur en HTTP, aussi avec 68
+  enregistrements de 250 Kio à travers un redémarrage du serveur, avec 70 réponses de conflit de 250
+  Kio qui ensemble dépassent la limite de réponse, avec une écriture dont la sauvegarde a échoué
+  avant un redémarrage, avec un envoi que le serveur a appliqué derrière un proxy qui répond 504, et
+  avec une réplique qui sert des pages d’avant un redémarrage après une réinitialisation du jeton.
 
 ### Contenu
 
@@ -95,7 +94,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Collez-la dans le champ de recherche en haut à droite de la fenêtre. Laissez **Dependency Rule** sur
-**Up to Next Major Version** à partir de `2.0.0`, puis cliquez sur **Add Package**. Dans la fenêtre
+**Up to Next Major Version** à partir de `2.1.0`, puis cliquez sur **Add Package**. Dans la fenêtre
 suivante, choisissez la cible de votre app à côté de **OfflineFirstFramework** et cliquez de nouveau
 sur **Add Package**.
 
@@ -177,7 +176,7 @@ Ou ajoutez-le aux `dependencies` de votre `Package.swift` :
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -361,14 +360,15 @@ serveur suit le [protocole](Sources/OfflineFirstFramework/OfflineFirstFramework.
   après l’acceptation d’une écriture de l’appareil lui-même, même après un redémarrage du serveur
   que l’appareil n’a pas encore vu et après `resetChangeToken()`. Une version que l’appareil a
   écrite lui-même n’est jamais un conflit, même quand une page périmée a fait revenir
-  l’enregistrement en arrière et que l’utilisateur l’a modifié par-dessus, ou qu’une page liste
-  une écriture plus ancienne de l’appareil avant une version dont la réponse s’est perdue. Sans
+  l’enregistrement en arrière et que l’utilisateur l’a modifié par-dessus, ou qu’une page liste une
+  écriture plus ancienne de l’appareil avant une version dont la réponse s’est perdue. Sans
   séquences, une récupération laisse une modification en attente à son envoi, même quand la page
   apporte une écriture plus ancienne de l’appareil lui-même, et c’est la réponse de l’envoi qui
-  décide, acceptée ou non : une version qu’une récupération a mise de côté entre-temps ne prend sa
-  place que lorsque le `sequence` du serveur montre qu’elle est plus récente. Quand rien ne le
-  montre, un conflit renvoie la modification une fois de plus pour obtenir une réponse fraîche, et
-  toute autre réponse tient pendant que la synchronisation suivante récupère tout depuis le début.
+  décide, acceptée ou non : une version qu’une récupération a mise de côté entre-temps ne prend
+  jamais sa place, car la réponse d’un envoi ne nomme aucune epoch. Quand cette version peut être
+  plus récente, un conflit renvoie la modification une fois de plus pour obtenir une réponse
+  fraîche, et toute autre réponse tient pendant que la synchronisation suivante récupère tout depuis
+  le début.
 - Un autre epoch du serveur, et le premier dont entend parler un store, y compris sur la première
   page d’un nouveau store, ne compte que lorsque deux requêtes d’une même synchronisation le
   signalent, la récupération avec le jeton et la récupération depuis le début : une seule page
@@ -439,7 +439,9 @@ séparées, ou une réplique qui sert l’historique d’avant une perte de donn
 page par page. Quand la première synchronisation d’un nouveau store n’atteint que ce déploiement, ou
 qu’une réponse de push vient de lui, un enregistrement peut garder sans erreur la copie de ce
 déploiement, une modification peut être tranchée contre elle ou mise de côté, et une écriture que le
-serveur n’a jamais reçue peut compter comme acceptée. `resetChangeToken()` ramène les
+serveur n’a jamais reçue peut compter comme acceptée. Une réplique de l’historique d’avant une perte
+de données qui répond aux récupérations d’un store pendant que son envoi atteint le serveur peut
+remplacer l’écriture acceptée de l’appareil lui-même. `resetChangeToken()` ramène les
 enregistrements que le jeton de ce déploiement a sautés ; sinon, mettez le fichier du store de côté
 et commencez un nouveau store. Les détails sont dans [Garanties et
 limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md).

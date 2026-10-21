@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@5d98dcbab39713b3a5bd5419bc1fa798fcfbbe42 status=reviewed -->
+<!-- i18n-source: README.md@69dd62b788fe138a5526d9ef748603263c9b3885 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ja-light.svg" alt="Offline-First Framework: オフラインでも動き続け、サーバーと同期する Swift アプリ向けのローカルストア。"></picture></p>
@@ -9,7 +9,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI ステータス"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="最新バージョン: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="最新バージョン: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="対応プラットフォーム: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="言語バージョン: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="ライセンス: MIT"></picture></a>
@@ -33,7 +33,7 @@
 - **任意のバックエンド** — `HTTPSyncTransport` は、文書化された JSON プロトコルを使います。[`Examples/SyncServer`](Examples/SyncServer) のリファレンスサーバーは、約 280 行の JavaScript でこのプロトコルを実装しています。ほかの API も `SyncTransport` の背後に置けます。たとえば ETag を使う REST API です。
 - **SwiftUI 向けに設計** — `SyncedCollection` はストアの `@Observable` モデルです。自動同期は、デバイスがオンラインになったときとローカルでの編集の直後に実行され、バックグラウンドリフレッシュのタスクからは 1 回の呼び出しで同期できます。
 - **保存データを保護** — Keychain に保管したキーによる AES-GCM のファイル暗号化、データ保護クラス、レコードスキーマのマイグレーション、破損したファイルに対するポリシーを備えています。
-- **実際のサーバーに対してテスト済み** — macOS と iPhone シミュレータで 374 件の Swift Testing テスト（すべての競合ポリシーをリクエストの消失、再起動、トークンのリセット、重なった同期、小さなページ上限、古いページ、同時に走る操作、クラッシュに、`sequence` を送らないサーバーに対してもさらす 3 つのプロパティテスト、多くの同期にわたって 1 台のデバイスに応答し続けるレプリカ、デバイス自身の古い書き込みを持ち帰る、または受け入れられたプッシュと出会う古いページ、同期のすべての書き込みでのクラッシュ、先へ飛ぶデバイスの時計を試すシナリオテスト、使えないデータばかりのページ、非常に深く入れ子になったレコード、応答の上限より大きいページ、要求より多くの変更を含むページを、ソケット経由で終わりなく流すものも含めて送るテストを含む）、サーバー用の 28 件の Node テスト、そして CI ではストアを HTTP 経由でサーバーを通して同期し、250 KiB のレコード 68 件をサーバーの再起動をまたいでも扱い、合計で応答の上限を超える 250 KiB の競合応答 70 件も扱い、保存に失敗した書き込みを再起動後にも確かめ、504 を返すプロキシの背後でサーバーが適用したプッシュや、トークンのリセット後に再起動前のページを返すレプリカも扱うエンドツーエンドのテストスイートを実行しています。
+- **実際のサーバーに対してテスト済み** — macOS で 375 件、iPhone シミュレータで 372 件の Swift Testing テスト（すべての競合ポリシーをリクエストの消失、再起動、トークンのリセット、重なった同期、小さなページ上限、古いページ、同時に走る操作、クラッシュに、`sequence` を送らないサーバーに対してもさらす 3 つのプロパティテスト、多くの同期にわたって 1 台のデバイスに応答し続けるレプリカ、デバイス自身の古い書き込みを持ち帰る、または受け入れられたプッシュと出会う古いページ、同期のすべての書き込みでのクラッシュ、先へ飛ぶデバイスの時計を試すシナリオテスト、使えないデータばかりのページ、非常に深く入れ子になったレコード、応答の上限より大きいページ、要求より多くの変更を含むページを、ソケット経由で終わりなく流すものも含めて送るテストを含む）、サーバー用の 28 件の Node テスト、そして CI ではストアを HTTP 経由でサーバーを通して同期し、250 KiB のレコード 68 件をサーバーの再起動をまたいでも扱い、合計で応答の上限を超える 250 KiB の競合応答 70 件も扱い、保存に失敗した書き込みを再起動後にも確かめ、504 を返すプロキシの背後でサーバーが適用したプッシュや、トークンのリセット後に再起動前のページを返すレプリカも扱うエンドツーエンドのテストスイートを実行しています。
 
 ### 含まれるもの
 
@@ -58,7 +58,7 @@ Xcode で **File › Add Package Dependencies…** を選び、リポジトリ�
 https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
-ウィンドウ右上の検索欄に貼り付けます。**Dependency Rule** は `2.0.0` からの **Up to Next Major Version** のままにして、**Add Package** をクリックします。次のウィンドウで、**OfflineFirstFramework** の横にあるアプリのターゲットを選び、もう一度 **Add Package** をクリックします。
+ウィンドウ右上の検索欄に貼り付けます。**Dependency Rule** は `2.1.0` からの **Up to Next Major Version** のままにして、**Add Package** をクリックします。次のウィンドウで、**OfflineFirstFramework** の横にあるアプリのターゲットを選び、もう一度 **Add Package** をクリックします。
 
 **2. モジュールをインポートする**
 
@@ -133,7 +133,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [
@@ -285,7 +285,7 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 サーバーが[プロトコル](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)に従っている限り、ストアはどの競合ポリシーでも、リクエストの消失、応答の消失、アプリとサーバーの再起動、古いページがあっても、次の約束を守ります。
 
 - 保存や削除は呼び出しが戻る前にファイルに書き込まれ、キューに入った変更はサーバーが応答するまでプッシュされます。再試行では変更 ID が変わらないため、サーバーはそれを一度だけ適用します。変更を確定させるのは読み取れた応答だけです。エラーステータス、切れた接続、読み取れないほど長い応答の後は、変更は次のプッシュまで未確定（in doubt）のままです。
-- 古いコピーが、サーバーが受け入れた書き込みを置き換えることはありません。リゾルバーが呼ばれるのはレコードがこのデバイスと別のデバイスの両方で変更された場合だけで、サーバーの古いバージョンは、サーバーの `sequence` によって、デバイス自身の書き込みが受け入れられた直後でも、デバイスがまだ気づいていないサーバーの再起動をまたいでも、`resetChangeToken()` の後でもスキップされます。デバイス自身が書いたバージョンは、古いページがレコードを巻き戻し、ユーザーがその上で編集した場合でも、ページが応答の失われたバージョンより前にデバイス自身の古い書き込みを並べた場合でも、決して競合になりません。`sequence` がなければ、ページがデバイス自身の古い書き込みを持ってきた場合も含めて、プルは保留中の変更をそのプッシュに任せ、プッシュへの応答が、受け入れかどうかにかかわらず決めます。その間にプルが保留したバージョンが応答に取って代わるのは、サーバーの `sequence` がそちらのほうが新しいと示すときだけです。何も示さないときは、競合なら新しい応答を得るために変更をもう一度送り、それ以外の応答はそのまま有効で、次の同期が最初から取得し直します。
+- 古いコピーが、サーバーが受け入れた書き込みを置き換えることはありません。リゾルバーが呼ばれるのはレコードがこのデバイスと別のデバイスの両方で変更された場合だけで、サーバーの古いバージョンは、サーバーの `sequence` によって、デバイス自身の書き込みが受け入れられた直後でも、デバイスがまだ気づいていないサーバーの再起動をまたいでも、`resetChangeToken()` の後でもスキップされます。デバイス自身が書いたバージョンは、古いページがレコードを巻き戻し、ユーザーがその上で編集した場合でも、ページが応答の失われたバージョンより前にデバイス自身の古い書き込みを並べた場合でも、決して競合になりません。`sequence` がなければ、ページがデバイス自身の古い書き込みを持ってきた場合も含めて、プルは保留中の変更をそのプッシュに任せ、プッシュへの応答が、受け入れかどうかにかかわらず決めます。プッシュへの応答は epoch を示さないため、その間にプルが保留したバージョンが応答に取って代わることはありません。そのバージョンのほうが新しい可能性があるときは、競合なら新しい応答を得るために変更をもう一度送り、それ以外の応答はそのまま有効で、次の同期が最初から取得し直します。
 - サーバーの別の epoch も、ストアが初めて知る epoch も、新しいストアの最初のページであっても、1 回の同期の 2 つのリクエスト、つまりトークン付きの取得と最初からの取得の両方が報告したときだけ有効になります。そのため、古いキャッシュや同じ URL の背後にある別のデプロイから届いた 1 ページだけでは、ストアを巻き戻すことも、サーバーが一度も持たなかったレコードを新しいストアに持ち込むことも、ストアを締め出すこともできません。2 つのリクエストが一度 epoch を報告した後は、epoch のないページも決して受け入れられません。1 ページだけ取得する同期でもサーバーの再起動に追従し、2 つのリクエストが食い違うときは成功を報告せずに同期が失敗します。epoch は一方向にしか進みません。ストアの epoch より前の epoch は、ストアが離れたものでも一度も持たなかったものでも、`resetChangeToken()` の後でも決して受け入れられないため、何回続けて同期に応答しても、両方のリクエストに応答する古いレプリカやキャッシュはストアを巻き戻せません。
 - 削除されたレコードは削除されたままです。データを失ったサーバーや別のサーバーに対しては、ストアが保留中の変更を残したまますべてを最初から取得し直し、保留中の変更はページではなく自分のプッシュへの応答を通じて新しい履歴と出会います。アプリがデコードできないレコードや 64 階層より深く入れ子になったレコードは、取得を止めず、`quarantinedChanges()` に取り分けられます。
 - サーバーの応答にかかるコストは限られます。64 階層より深く入れ子になったレコードはストアに入らないため、ファイルの書き込みでスタックがあふれることはありません。使えないデータばかりのページや、取得が求めたより多くの変更（最大 1,000 件）を含むページは、ギガバイト単位のメモリを使う代わりに数ミリ秒で拒否され、ダウンロードも中止されます。応答の上限より大きいページでは取得がより少ない変更を求め、単独で上限を超える変更は上限の 4 倍まで取り分けられます。プッシュはサーバーのボディ上限に収まるリクエストに分割され、サーバーが 413 を返すか 2xx の応答が応答の上限より長い間は、追加のリクエスト 16 件までで半分ずつ送り直され、単独の応答が上限より長い変更は未確定のまま残り、エラーステータスの応答は最初の 4 KiB だけが読まれるので、不調なゲートウェイは失敗した 1 回の試行で済み、UTF-8 のバイトオーダーマークも読み取られます。
@@ -293,7 +293,7 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 
 サーバーは同じ revision をレコードの 2 つのバージョンに与えてはならず、すべてのページで、より後のものにだけ進み、決して戻らない `epoch`（より長いか、同じ長さならバイト単位で大きいもの）、再起動後も数え続ける `sequence`（ストアが使う唯一の順序）、プッシュされたタイムスタンプ（自分の時計より大きく先の時刻は上限まで戻したもの）と各バージョンを書き込んだ `changeID` を送るべきで、変更 ID を再起動後も覚えておき、書き込みは保存してからページに出し、各ページとプッシュした各変更への応答をクライアントの応答上限に収める（1 ページは最大 `limit` 件の変更、バイト数でも区切り、1 ページに少なくとも 1 件）必要があります。制限: サーバーがバックアップからの復元で失った書き込みは再アップロードされない、`sequence` を送らないサーバーには順序の保証がない（書き込みは失われないが、古いページがレコードを次に変更されるまで巻き戻すことがある）、`discardChange(for:)` の直後に保存し直したレコードはサーバーのコピーと競合として出会う、1 つのファイルにつきストアのインスタンスは 1 つ（`FileStore`、`InMemoryStorage`、`claimIdentity` を返す独自のバックエンドでは強制される）、変更のたびにファイル全体が書き込まれる、レコードの入れ子は 64 階層まで、1 ページの変更は最大 1,000 件、応答上限の 4 倍を超える単独の変更は取得を止める、プッシュへの応答が単独で応答上限を超える変更は未確定のまま残り、最後の試行の後に保留される、より前の epoch はサーバーがストアの epoch より後の epoch を報告するまで、epoch のないページはサーバーが再び epoch を報告するまで拒否され続ける、10,000 件を超える削除は忘れられる。完全な一覧は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
 
-**既知の制限。** 同じ URL の背後にある別のデプロイからの応答（ステージングや、データが別になっているリージョンへリクエストを送るロードバランサーやプロキシ、またはデータ消失より前の履歴を返すレプリカ）は、単独のページとしてしか締め出されません。新しいストアの最初の同期がそのデプロイにしか届かないとき、またはプッシュへの応答が 1 つでもそこから来たとき、レコードがエラーなしにそのデプロイのコピーのまま残ったり、編集がそれに対して判定されたり保留されたり、サーバーが受け取っていない書き込みが受理済みとみなされたりすることがあります。`resetChangeToken()` はそのデプロイのトークンが飛ばしたレコードを取り戻します。それ以外の場合は、ストアのファイルを別の場所に移して新しいストアを始めてください。詳細は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
+**既知の制限。** 同じ URL の背後にある別のデプロイからの応答（ステージングや、データが別になっているリージョンへリクエストを送るロードバランサーやプロキシ、またはデータ消失より前の履歴を返すレプリカ）は、単独のページとしてしか締め出されません。新しいストアの最初の同期がそのデプロイにしか届かないとき、またはプッシュへの応答が 1 つでもそこから来たとき、レコードがエラーなしにそのデプロイのコピーのまま残ったり、編集がそれに対して判定されたり保留されたり、サーバーが受け取っていない書き込みが受理済みとみなされたりすることがあります。データ消失より前の履歴を返すレプリカが、プッシュがサーバーに届いている間にストアのプルに応答すると、デバイス自身の受理済みの書き込みが置き換えられることがあります。`resetChangeToken()` はそのデプロイのトークンが飛ばしたレコードを取り戻します。それ以外の場合は、ストアのファイルを別の場所に移して新しいストアを始めてください。詳細は[保証と制限](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)にあります。
 
 ## デモ
 
