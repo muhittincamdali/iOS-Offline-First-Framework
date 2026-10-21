@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
+<!-- i18n-source: README.md@f9040acd1380ffde31180a3019524595d55cb2ed status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,11 +51,13 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 250 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 277 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
-  Seitengrenzen und veraltete Seiten schickt, 21 Node-Tests für den Server und eine
-  End-to-End-Testsuite in der CI, die zwei Stores über HTTP durch den Server synchronisiert.
+  Seitengrenzen und veraltete Seiten schickt, und Tests, die Seiten voller unbrauchbarer Daten,
+  sehr tief verschachtelte Datensätze und Seiten über dem Antwortlimit senden; 24 Node-Tests für
+  den Server; und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch den Server
+  synchronisiert, auch mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg.
 
 ### Was enthalten ist
 
@@ -349,8 +351,15 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   nicht übereinstimmen, schlägt die Synchronisierung fehl, statt Erfolg zu melden.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein anderer
   Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben. Ein
-  Datensatz, den die App nicht dekodieren kann, auch einer, der tiefer verschachtelt ist, als
-  `JSONDecoder` liest, wird in `quarantinedChanges()` zurückgestellt, statt den Abruf anzuhalten.
+  Datensatz, den die App nicht dekodieren kann oder der tiefer als 64 Ebenen verschachtelt ist,
+  wird in `quarantinedChanges()` zurückgestellt, statt den Abruf anzuhalten.
+- Die Antworten eines Servers kosten nur begrenzt. Ein Datensatz, der tiefer als 64 Ebenen
+  verschachtelt ist, gelangt nie in den Store, sodass das Schreiben der Datei den Stack nicht
+  überlaufen lassen kann; eine Seite voller unbrauchbarer Daten wird in Millisekunden abgewiesen,
+  statt Gigabytes zu belegen; eine Seite, die größer als das Antwortlimit ist, lässt den Abruf
+  weniger Änderungen anfordern, und eine einzelne Änderung, die allein größer als das Limit ist,
+  wird zurückgestellt; eine Übertragung wird in Anfragen aufgeteilt, die das Body-Limit des
+  Servers annimmt; eine UTF-8-Byte-Order-Mark wird gelesen.
 - Eine vorgehende oder zurückgestellte Uhr, ein Server, der jede Übertragung mit einem Konflikt
   beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
   wirken nur begrenzt: Die Referenzserver speichern einen übertragenen Zeitstempel höchstens fünf
@@ -362,12 +371,15 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
 Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
 die nur zu späteren wechselt (länger oder Byte für Byte größer), eine `sequence`, die über
 Neustarts weiterzählt, die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt,
-auf eine Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden und
-muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen: Schreibvorgänge, die ein Server
-bei einer Wiederherstellung verloren hat, werden nicht erneut hochgeladen, ein Datensatz, der
-direkt nach `discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als
-Konflikt, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben, und
-Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
+auf eine Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden,
+muss sich Änderungs-IDs über Neustarts hinweg merken und jede Seite innerhalb des Antwortlimits
+des Clients halten (höchstens `limit` Änderungen, auch nach Bytes begrenzt, mindestens eine
+Änderung pro Seite). Grenzen: Schreibvorgänge, die ein Server bei einer Wiederherstellung
+verloren hat, werden nicht erneut hochgeladen, ein Datensatz, der direkt nach
+`discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als Konflikt, eine
+Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben, Datensätze sind
+höchstens 64 Ebenen tief verschachtelt, eine Seite mit mehr als 1.000 unlesbaren Änderungen wird
+abgewiesen, und Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
 die vollständige Liste.
 
 ## Demo

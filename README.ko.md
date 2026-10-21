@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
+<!-- i18n-source: README.md@f9040acd1380ffde31180a3019524595d55cb2ed status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-ko-light.svg" alt="Offline-First Framework: 오프라인에서도 계속 동작하고 서버와 동기화되는 Swift 앱용 로컬 저장소."></picture></p>
@@ -33,7 +33,7 @@
 - **모든 백엔드** — `HTTPSyncTransport`는 문서화된 JSON 프로토콜을 사용하며, [`Examples/SyncServer`](Examples/SyncServer)의 참조 서버가 약 280줄의 JavaScript로 이를 구현합니다. 그 밖의 API도 `SyncTransport` 뒤에 둘 수 있습니다. 예를 들어 ETag를 쓰는 REST API가 그렇습니다.
 - **SwiftUI를 위해 설계** — `SyncedCollection`은 스토어의 `@Observable` 모델입니다. 자동 동기화는 기기가 온라인이 될 때와 로컬 편집 직후에 실행되고, 호출 한 번으로 백그라운드 새로 고침 작업에서도 동기화할 수 있습니다.
 - **저장된 데이터 보호** — Keychain에 보관한 키를 쓰는 AES-GCM 파일 암호화, 데이터 보호 클래스, 레코드 스키마 마이그레이션, 손상된 파일을 위한 정책을 제공합니다.
-- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 250개(모든 충돌 정책을 요청 유실, 재시작, 토큰 재설정, 겹친 동기화, 작은 페이지 한도, 오래된 페이지로 시험하는 속성 테스트 포함), 서버용 Node 테스트 21개, 그리고 CI에서 스토어 두 개를 HTTP로 서버를 거쳐 동기화하는 엔드투엔드 테스트 모음을 실행합니다.
+- **실제 서버로 테스트** — macOS와 iPhone 시뮬레이터에서 Swift Testing 테스트 277개(모든 충돌 정책을 요청 유실, 재시작, 토큰 재설정, 겹친 동기화, 작은 페이지 한도, 오래된 페이지로 시험하는 속성 테스트와, 쓸 수 없는 데이터로 채운 페이지, 아주 깊게 중첩된 레코드, 응답 한도보다 큰 페이지를 보내는 테스트 포함), 서버용 Node 테스트 24개, 그리고 CI에서 스토어를 HTTP로 서버를 거쳐 동기화하고 250 KiB 레코드 68개를 서버 재시작을 거쳐서도 다루는 엔드투엔드 테스트 모음을 실행합니다.
 
 ### 포함된 항목
 
@@ -287,10 +287,11 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 - 저장이나 삭제는 호출이 반환되기 전에 파일에 기록되고, 큐에 있는 변경은 서버가 응답할 때까지 푸시됩니다. 재시도는 변경 ID를 그대로 쓰므로 서버는 변경을 한 번만 적용합니다.
 - 오래된 사본이 서버가 받아들인 쓰기를 대체하는 일은 없습니다. 리졸버는 레코드가 이 기기와 다른 기기 양쪽에서 바뀐 경우에만 호출되고, 서버의 더 오래된 버전은 기기 자신의 쓰기가 받아들여진 직후에도, 기기가 아직 알지 못한 서버 재시작을 거친 뒤에도, `resetChangeToken()` 뒤에도 건너뜁니다.
 - 서버의 다른 epoch는 한 번의 동기화에서 두 요청, 즉 토큰을 붙인 가져오기와 처음부터의 가져오기가 모두 알려 줄 때만 인정됩니다. 그래서 오래된 캐시나 같은 URL 뒤의 다른 배포가 스토어를 되돌릴 수 없습니다. 한 페이지만 가져오는 동기화도 서버 재시작을 따라가며, 두 요청이 어긋나면 동기화는 성공을 알리지 않고 실패합니다.
-- 삭제된 레코드는 삭제된 상태로 남습니다. 데이터를 잃은 서버나 다른 서버를 만나면 스토어는 대기 중 변경을 유지한 채 모든 것을 처음부터 다시 가져옵니다. 앱이 디코딩할 수 없는 레코드는 `JSONDecoder`가 읽는 깊이보다 깊게 중첩된 것까지 포함해 가져오기를 멈추지 않고 `quarantinedChanges()`로 따로 둡니다.
+- 삭제된 레코드는 삭제된 상태로 남습니다. 데이터를 잃은 서버나 다른 서버를 만나면 스토어는 대기 중 변경을 유지한 채 모든 것을 처음부터 다시 가져옵니다. 앱이 디코딩할 수 없는 레코드나 64단계보다 깊게 중첩된 레코드는 가져오기를 멈추지 않고 `quarantinedChanges()`로 따로 둡니다.
+- 서버 응답의 비용은 제한됩니다. 64단계보다 깊게 중첩된 레코드는 스토어에 들어오지 않으므로 파일을 쓰다가 스택이 넘칠 수 없습니다. 쓸 수 없는 데이터로 채운 페이지는 기가바이트를 쓰는 대신 몇 밀리초 안에 거부됩니다. 응답 한도보다 큰 페이지는 더 적은 변경을 요청하게 하고, 혼자서 한도를 넘는 변경은 따로 둡니다. 푸시는 서버의 본문 한도에 맞는 요청으로 나뉘고, UTF-8 바이트 순서 표시도 읽습니다.
 - 앞서 가거나 뒤로 돌려진 시계, 모든 푸시에 충돌로 응답하는 서버, 전혀 응답하지 않는 서버, 쓸 수 없는 파일의 영향은 제한됩니다. 참조 서버는 푸시받은 타임스탬프를 자기 시계보다 최대 5분 앞까지만 저장하고, 기기 시계가 잠깐 틀려도 그 시각이 이후 쓰기로 이어지지 않으며, 재시도는 간격을 두다가 보류되고, 동기화는 `syncTimeout`이 지나면 끝나며, 파일을 쓸 수 없는 동안에는 동기화가 기다립니다.
 
-서버는 같은 revision을 레코드의 두 버전에 절대 주면 안 되고, 더 나중 것으로만 바뀌는 `epoch`(더 길거나, 길이가 같으면 바이트 단위로 더 큰 것), 재시작 후에도 계속 세는 `sequence`, 푸시받은 타임스탬프(자기 시계보다 훨씬 앞선 시각은 한도로 당긴 것)와 각 버전을 쓴 `changeID`를 보내야 하며, 변경 ID를 재시작 후에도 기억해야 합니다. 한계: 서버가 백업 복원으로 잃은 쓰기는 다시 업로드되지 않고, `discardChange(for:)` 직후 다시 저장한 레코드는 서버의 사본과 충돌로 만나며, 파일 하나에 스토어 인스턴스는 하나이고, 변경할 때마다 파일 전체를 쓰며, 10,000건을 넘는 삭제는 잊힙니다. 전체 목록은 [보장과 한계](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)에 있습니다.
+서버는 같은 revision을 레코드의 두 버전에 절대 주면 안 되고, 더 나중 것으로만 바뀌는 `epoch`(더 길거나, 길이가 같으면 바이트 단위로 더 큰 것), 재시작 후에도 계속 세는 `sequence`, 푸시받은 타임스탬프(자기 시계보다 훨씬 앞선 시각은 한도로 당긴 것)와 각 버전을 쓴 `changeID`를 보내야 하며, 변경 ID를 재시작 후에도 기억하고, 각 페이지를 클라이언트의 응답 한도 안에 맞춰야 합니다(최대 `limit`개 변경, 바이트로도 자르고, 페이지마다 최소 1개 변경). 한계: 서버가 백업 복원으로 잃은 쓰기는 다시 업로드되지 않고, `discardChange(for:)` 직후 다시 저장한 레코드는 서버의 사본과 충돌로 만나며, 파일 하나에 스토어 인스턴스는 하나이고, 변경할 때마다 파일 전체를 쓰며, 레코드는 최대 64단계까지 중첩되고, 읽을 수 없는 변경이 1,000개를 넘는 페이지는 거부되며, 10,000건을 넘는 삭제는 잊힙니다. 전체 목록은 [보장과 한계](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)에 있습니다.
 
 ## 데모
 
