@@ -52,8 +52,9 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
   before the restart is checked against the record's current revision.
 - Each epoch is later than the ones before: 16 hexadecimal digits of the start time in
   microseconds, or one more than the last epoch (also the one saved with `--data`) when that is
-  later. Devices refuse a page that names an earlier epoch than the one they know, as a stale
-  replica or cache sends.
+  later, so the server never reports an epoch again after a later one. Devices refuse a page
+  that names an earlier epoch than the one they know, as a stale replica or cache sends, and
+  never take back an epoch they left, also after `resetChangeToken()`.
 - A change whose `baseRevision` is not the record's current revision gets a conflict with the
   current record.
 - The answers to the last 10,000 change IDs are remembered, and saved with `--data`, so a push
@@ -72,7 +73,9 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 - A push answer brings at most one version of one record per change, 256 KiB at most, so the
   answer to one change fits in the client's response limit. When the answers of one request
   add up to more (70 conflicts on records of 250 KiB make 17.5 MiB), the client sends the
-  request again in halves, and the server answers those changes from its memory of change IDs.
+  request again in halves (16 more requests at most), and the server answers those changes from
+  its memory of change IDs. Only such a 2xx answer or a 413 halves a request; an error status,
+  of the server or of a proxy in front of it, is a failed attempt the device retries later.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
   collections, 100,000 records per collection (deleted ones included), record IDs of at most
   256 characters, timestamps that a JavaScript number holds exactly. Requests outside them get

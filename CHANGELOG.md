@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth and seventh rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh and eighth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -80,9 +80,8 @@ now state what the store promises and what it needs from the server.
   now have an order (a longer one is later; of two as long, the greater byte by byte): a page
   of another epoch than the store's counts only when two requests of one sync report that
   epoch, so one page from another deployment behind the same URL or a stale replica does not
-  move the store. An earlier epoch that both requests report in eight syncs in a row is taken,
-  and after `resetChangeToken()` it is taken in the next sync that confirms it, so a wrong
-  answer cannot lock the store out of the real server. What a push answer tells about a record (an accepted
+  move the store. An earlier epoch the store never held that both requests report in eight
+  syncs in a row is taken, so a server whose epochs do not grow is still followed. What a push answer tells about a record (an accepted
   write, or the version a conflict answer brought) moves into a later epoch until a pull
   brings that version: the push may have been answered after a restart the store had not
   seen, and a page of the new epoch from before it no longer rolls the write back or makes the
@@ -135,8 +134,8 @@ now state what the store promises and what it needs from the server.
   change that is larger than the limit, moving past it.
 - A few large records made a push larger than the reference server's 1 MiB body limit, so every
   change of the batch failed with status 413 until it was parked. The transport splits a push
-  into requests of at most `maximumRequestSize`, halves a request the server refuses with 413,
-  and rejects a single change the server refuses so.
+  into requests of at most `maximumRequestSize` and halves a request the server refuses with
+  413; a single change the server refuses so stays in doubt and is retried, then parked.
 - After one failed write of its data file (a full disk, a missing permission), the reference
   server never wrote the file again, and pages showed a push whose write had failed: a device
   that pulled it took its own write for applied, and a restart lost the write on the server
@@ -156,9 +155,33 @@ now state what the store promises and what it needs from the server.
   push failed with `responseTooLarge`, the edits were parked, `retryFailedChanges()` met the
   same answer, and the device never got the other device's versions while the server never
   got its edits. The transport now sends a request whose answer is too long again as two
-  halves, which the server answers from its memory of change IDs, and parks a single change
-  whose answer alone is longer than the limit with `HTTPSyncTransport.answerTooLarge`, so the
-  sync goes on.
+  halves, which the server answers from its memory of change IDs; a single change whose
+  answer alone is longer than the limit stays in doubt and is retried with backoff, and the
+  rest of the push and the sync go on.
+- A 503 or 504 of an overloaded proxy that announced a body of 17 MiB, or a 502 error page that
+  streamed without end, was taken for a push answer too long to read: the transport sent the
+  request again in halves down to single changes, 2n - 1 requests to a server that was already
+  failing, read up to 16 MiB of each error page, and parked every change of the sync as
+  rejected. Of an answer outside 2xx the transport now reads the first 4 KiB and throws
+  `unexpectedStatus`: one failed attempt with backoff. Halving adds at most 16 requests to a
+  push, and only 413 or a 2xx answer longer than the limit halves a request.
+- A change whose answer nobody read (a 504 or a long 200 from a proxy after the server had
+  applied the push, or a single conflict answer longer than the limit) was rejected as not
+  applied, which dropped its in-doubt mark. Another device's later edit then met it as a
+  conflict, and with `.clientWins` `retryFailedChanges()` put the old edit back over that edit
+  on the server and every device. Only an answer that was read settles a change now: such a
+  change stays in doubt, keeps the newer version a pull brings, and learns its fate from its
+  next push under the same change ID.
+- After `resetChangeToken()`, a lagging replica or a shared cache that answered both requests
+  of the epoch check with the epoch the store had left at a server restart was taken at once:
+  every record went back to the replica's copy, and a pending edit the server never saw met
+  the device's own older write in the resolver, so `.serverWins` dropped it on the device and
+  the server. Epochs now go one way: the store retires an epoch it leaves for a later one,
+  keeps the last 32 in its file through resets and refuses them in every sync.
+- A replica that answered eight syncs in a row with an epoch the store never held decided
+  pending edits from its stale pages. A change made on an earlier server history now meets the
+  new one through its push's answer only; records without a pending change still follow the
+  new history until the server's own later epoch answers again.
 
 ### Added
 
@@ -173,7 +196,8 @@ now state what the store promises and what it needs from the server.
   `PullResponse.quarantinedCount`, and the `pageSize` and `maximumRequestSize` parameters of
   `HTTPSyncTransport`.
 - `OfflineStore.maximumChangesPerPage` (1,000).
-- `StorageBackend.claimIdentity` (default `nil`) and `HTTPSyncTransport.answerTooLarge`.
+- `StorageBackend.claimIdentity` (default `nil`), `HTTPSyncTransport.errorBodyLimit` (4 KiB)
+  and `HTTPSyncTransport.maximumSplitRequests` (16).
 
 ### Changed
 
@@ -202,8 +226,17 @@ now state what the store promises and what it needs from the server.
 - `HTTPSyncTransport` sends `limit` with every pull and pushes in requests of at most 1 MiB.
   Servers must keep every page within the client's response limit: at most `limit` changes, cut
   by bytes, at least one change per page. The reference server cuts pages at 8 MiB.
-- The answer to a single pushed change must fit in the client's response limit; a longer one
-  parks the change. A push answer that is too long as a whole no longer fails the push.
+- The answer to a single pushed change must fit in the client's response limit; with a longer
+  one the change stays in doubt and is retried, then parked. A push answer that is too long as
+  a whole no longer fails the push.
+- `HTTPSyncTransport` throws `Failure.unexpectedStatus` for every status outside 2xx, whatever
+  length the answer announces, with at most its first 4 KiB as `body` (500 bytes before), and
+  `Failure.responseTooLarge` for 2xx answers only. Only a 2xx answer that was read settles a
+  pushed change.
+- `resetChangeToken()` forgets the token only; it no longer takes an earlier epoch at once. A
+  store never takes back an epoch it left for a later one, so servers must never report an
+  epoch again once they reported a later one. A store that followed another deployment behind
+  the same URL returns to the first server once that server reports a new epoch.
 - A page may hold at most the `limit` its pull asked for and, from any transport, 1,000 changes;
   `InMemorySyncServer.pageSize` is at most 1,000. A page beyond `limit` fails with a
   `DecodingError` instead of `HTTPSyncTransport.Failure.responseTooLarge`, and a single change

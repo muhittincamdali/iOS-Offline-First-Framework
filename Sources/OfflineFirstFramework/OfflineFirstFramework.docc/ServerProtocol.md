@@ -48,18 +48,20 @@ The answer has one outcome per change ID. A change without an outcome is retried
 The transport sends a push in requests of at most ``HTTPSyncTransport/maximumRequestSize``
 bytes (1 MiB by default), one after the other, and reads in each answer only the outcomes of
 that request's changes. Answer a request body that is larger than you accept with status 413:
-the transport sends it again as two halves, and a single change answered with 413 is rejected
-and parked, since it can never succeed. When a later request fails, the outcomes of the earlier
-ones still count.
+the transport sends it again as two halves. When a later request fails, the outcomes of the
+earlier ones still count.
 
 An answer must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by default). A longer
 one, such as conflicts that each bring a large version of their record, makes the transport
 send the request again as two halves; answer a change ID you already applied with the outcome
-you gave it, as the reference server does from its memory of the last 10,000 change IDs. **The
-answer to a single change must not be longer than ``HTTPSyncTransport/maximumResponseSize``**:
-the transport parks such a change with ``HTTPSyncTransport/answerTooLarge`` and the sync goes
-on without it. A conflict or a rejection brings at most one version of one record, so records
-well below the limit keep every answer within it.
+you gave it, as the reference server does from its memory of the last 10,000 change IDs.
+Halving adds at most ``HTTPSyncTransport/maximumSplitRequests`` (16) requests to a push, and
+only status 413 or a 2xx answer longer than the limit halves a request. **The answer to a single
+change must not be longer than ``HTTPSyncTransport/maximumResponseSize``**: only an answer the
+transport read settles a change, so such a change, like a single change answered with 413,
+gets no outcome. It stays in doubt, is retried with backoff and parked after the retry policy's
+last attempt, and the rest of the push goes on. A conflict or a rejection brings at most one
+version of one record, so records well below the limit keep every answer within it.
 
 ```json
 {
@@ -140,11 +142,16 @@ later epoch on every start, 16 hexadecimal digits of the time in microseconds, a
 front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). The store believes another epoch
 than its own only when two requests of one sync report it: the pull with its token and the
 pull from the beginning, or, without a token, the pull from the beginning and the pull after
-that page's token. A later epoch then starts a new history; an earlier one, as a stale replica
-or cache sends, is refused until eight syncs in a row confirmed it, or taken at once after
-``OfflineStore/resetChangeToken()``. When the two requests disagree, the sync fails without a
-change to the store. So serve the pull from the beginning (`GET <base>/changes` without
-`since`) from a cache only for a short time: every device asks for the same URL.
+that page's token. A later epoch then starts a new history. **Never report an epoch again
+once you reported a later one**: the store retires an epoch it left for a later one, keeps the
+last 32 of them, and refuses a page that names one in every sync, as it comes from a stale
+replica or cache. An earlier epoch the store never held is refused until eight syncs in a row
+confirmed it, for a server whose epochs do not grow. ``OfflineStore/resetChangeToken()`` forgets
+the token only: the next sync pulls from the beginning, and the retired epochs stay refused.
+When the two requests disagree, the sync fails without a change to the store. So serve the pull
+from the beginning (`GET <base>/changes` without `since`) from a cache only for a short time:
+every device asks for the same URL, and right after a reset both requests of the check are
+such URLs.
 
 A change the app cannot decode, for example a field of another type, is set aside in
 ``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. The
@@ -158,8 +165,11 @@ change unanswered.
 ## Errors and limits
 
 Any status outside 200–299 counts as a failed attempt and the store retries with its
-``RetryPolicy``. The transport reads at most ``HTTPSyncTransport/maximumResponseSize`` bytes of
-an answer, and four times as many to set a single change aside.
+``RetryPolicy``; it settles none of the request's changes. The transport reads at most the
+first ``HTTPSyncTransport/errorBodyLimit`` (4 KiB) of such an answer, whatever length it
+announces, and never halves a request after it, except after 413. Of a 2xx answer it reads at
+most ``HTTPSyncTransport/maximumResponseSize`` bytes, and four times as many to set a single
+change aside.
 
 Answer a push, and show its writes in pages, only once they are stored durably. A device that
 pulls a write the server then loses, in a crash or a restart, takes it for applied (its own

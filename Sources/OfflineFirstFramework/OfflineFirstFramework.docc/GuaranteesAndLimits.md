@@ -14,12 +14,17 @@ pages of two, three or a hundred changes and one to a hundred pages per sync, fo
 wins, server wins, client wins and a merge. It
 checks the end state, that no accepted write is applied again after a later one, that no device
 goes back to an older server version of a record, and that no resolver is asked about a
-device's own write. Further tests send the HTTP transport pages of junk, deeply nested records,
+device's own write. A second property test runs one to three operations of three devices at
+once, with resets, server restarts between a push and its pull, a lagging replica of earlier
+epochs and storage that dies at random writes, against a server written apart from the store,
+and checks the same. Further tests send the HTTP transport pages of junk, deeply nested records,
 pages larger than its limit and pages with more changes than it asked for, in debug and release
 builds, stream pages that never end over a real socket, measure the memory a 16 MiB page costs,
 and run 68 records of 250 KiB against the reference server, also across its restart, 70
-conflict answers of 250 KiB that together exceed the response limit, and a write whose save
-failed across a restart of the reference server.
+conflict answers of 250 KiB that together exceed the response limit, a write whose save
+failed across a restart of the reference server, a push the server applied behind a proxy that
+answers 504 or a 200 too long to read, and a replica that serves pages from before a restart
+after ``OfflineStore/resetChangeToken()``.
 
 ## Guarantees
 
@@ -28,8 +33,10 @@ failed across a restart of the reference server.
   they throw and the store is unchanged.
 - **A queued change is pushed until the server answers it.** Pending changes survive restarts.
   A retry of the same version keeps its change ID, so a server that remembers change IDs
-  applies it once. A change whose answer was lost is in doubt: no pull resolves it again until
-  its next push tells whether the server applied it, or a pull brings that very change.
+  applies it once. Only an answer the transport read settles a change: after a lost answer,
+  an error status or an answer too long to read, the change is in doubt, and no pull resolves
+  it again until its next push tells whether the server applied it, or a pull brings that very
+  change.
 - **A stale copy never replaces an acknowledged write.** A push names the revision it is based
   on, and the server applies it only while that revision is current. The resolver is asked only
   when a record changed on the device and, by another device, on the server: a version the
@@ -49,7 +56,9 @@ failed across a restart of the reference server.
   ``PullResponse/epoch``, or a transport with another ``SyncTransport/serverIdentity``, makes the
   store pull everything again from the beginning, and the server's versions replace the ones of
   the earlier history, except those a push answer brought as described above (never from
-  another server). Pending changes stay and are pushed against the server's current versions.
+  another server). Pending changes stay and are pushed against the server's current versions:
+  a change made on the earlier history meets the new one through its push's answer, never
+  through a page, so a page from a stale source cannot decide it.
 - **Another epoch counts only when two requests report it.** A page that names another epoch
   than the store's is used only when a second request of the same step reports that epoch too:
   the pull from the beginning after the pull with the token, or, without a token, the pull
@@ -57,10 +66,16 @@ failed across a restart of the reference server.
   replica or a stale cache therefore does not move the store or roll it back, and since both
   requests belong to one step, a sync that fetches a single page
   (``OfflineStore/Configuration/maximumPullPages``) still follows a restart.
+- **Epochs go one way.** An epoch the store left for a later one is never taken again: the store
+  keeps the last 32 it left in its file, ``OfflineStore/resetChangeToken()`` keeps them, and a
+  stale replica or a shared cache that answers both requests with one is refused in every
+  sync. After a reset both requests go to URLs that are the same for every device, so a cache
+  answers them easily.
 - **A refused epoch does not stop the store for good.** When the server keeps answering both
-  requests with an earlier epoch than the store's, eight syncs in a row, the store takes it as
-  the server's history; after ``OfflineStore/resetChangeToken()`` the next sync in which both
-  requests report it takes it.
+  requests with an earlier epoch the store never held, eight syncs in a row, the store takes it
+  as the server's history, as a server whose epochs do not grow needs. Taking it retires
+  nothing, so when a stale source answered that long, the server's own later epoch brings the
+  store back.
 - **A pull either moves forward or fails visibly.** A page is checked before it is stored: a
   token that does not move or goes round in a circle fails the sync, and the token never moves
   past a page that was not stored. When the two requests that check an epoch disagree (a cache
@@ -81,17 +96,22 @@ failed across a restart of the reference server.
   cancels the download as soon as the change after the limit starts, and the store refuses a
   longer page before it stores any of it, so a 16 MiB page of junk or of half a million small
   valid changes costs milliseconds and kilobytes, not seconds and gigabytes. A page lists at
-  most 100 changes it sets aside. An answer is read up to
+  most 100 changes it sets aside. A 2xx answer is read up to
   ``HTTPSyncTransport/maximumResponseSize`` and cancelled before it is read when it announces
-  more. A page larger than the limit makes the pull ask for half as many changes, down to one,
+  more; of an answer with any other status only the first ``HTTPSyncTransport/errorBodyLimit``
+  (4 KiB) is read, whatever length it announces, so a 502 page that never ends or a 503 that
+  announces 17 MiB costs one request and one failed attempt. A page larger than the limit makes
+  the pull ask for half as many changes, down to one,
   and a single change larger than the limit is set aside while the pull moves past it, reading
   four times the limit at most, so no first page can lock out a device that pulls from the
   beginning. A push is sent in requests of at most ``HTTPSyncTransport/maximumRequestSize``,
-  halved when the server answers 413 or with more than the response limit, as 70 conflicts
-  that each bring a version of 250 KiB do; the server answers a change it already applied from
-  its memory of change IDs. A single change whose answer alone is longer than the limit is
-  parked with ``HTTPSyncTransport/answerTooLarge`` and the sync goes on; a push of n changes
-  takes at most 2n − 1 requests. A body may start with a UTF-8 byte order mark.
+  halved when the server answers 413 or with a 2xx answer longer than the response limit, as
+  70 conflicts that each bring a version of 250 KiB do, and never after another status; the
+  server answers a change it already applied from its memory of change IDs. Halving adds at
+  most ``HTTPSyncTransport/maximumSplitRequests`` (16) requests to a push. A request that stays
+  too large, a single change or one past that bound, settles none of its changes: they stay in
+  doubt, wait for their retry date, and the rest of the push goes on. A body may start with a
+  UTF-8 byte order mark.
 - **A wrong clock has a bounded effect.** The reference servers move a pushed timestamp more
   than five minutes ahead of their clock back to that limit and send back the change ID that
   wrote each version (``RemoteChange/changeID``), by which the device recognises its own write.
@@ -122,8 +142,9 @@ failed across a restart of the reference server.
   counter.
 - Report an ``PullResponse/epoch`` that changes whenever its history may have changed, to a
   later one: longer, or as long and greater byte by byte (a counter, or the start time in
-  fixed-width digits, as the reference servers do), and serve the pull from the beginning from
-  a shared cache for a short time at most. Report a ``RemoteChange/sequence`` that grows with
+  fixed-width digits, as the reference servers do). Never report an epoch again once you
+  reported a later one, and serve the pull from the beginning from a shared cache for a short
+  time at most. Report a ``RemoteChange/sequence`` that grows with
   every write, also across a restart that keeps the data. Without a sequence the store orders
   versions by their timestamps, which matches the server's order only while the devices
   resolve conflicts by last write wins or a merge.
@@ -145,7 +166,8 @@ failed across a restart of the reference server.
   change in each, as the reference server does with 8 MiB. Answer a push body larger than you
   accept with status 413, and keep the answer to a single change within the response limit:
   a conflict or rejection brings at most one version of one record, so keeping records well
-  below the limit is enough (the reference server allows 256 KiB).
+  below the limit is enough (the reference server allows 256 KiB). Only a 2xx answer settles a
+  change; any other status, also from a gateway, counts as a failed attempt.
 - In a custom ``SyncTransport``, stop when the task is cancelled, so the deadline and
   cancellation can end a request.
 
@@ -193,12 +215,22 @@ failed across a restart of the reference server.
   broken, and a single change larger than four times the response limit fail every sync,
   without a change to the store. Finding such a change costs up to four times the response
   limit per sync; raise ``HTTPSyncTransport/maximumResponseSize`` for records that large.
-- **A change whose push answer alone exceeds the response limit is parked.** Its answer is
-  not read, so the change waits in ``OfflineStore/failedChanges()`` with
-  ``HTTPSyncTransport/answerTooLarge``; ``OfflineStore/retryFailedChanges()`` meets the same
-  answer until the server's version of the record is smaller or
-  ``HTTPSyncTransport/maximumResponseSize`` is raised, and ``OfflineStore/discardChange(for:)``
-  drops the change.
+- **A change whose push answer alone exceeds the response limit stays in doubt.** Its answer
+  is not read, so the change is retried as the ``RetryPolicy`` says and then waits in
+  ``OfflineStore/failedChanges()``, still in doubt: a pull keeps the server's newer version of
+  the record back for it. ``OfflineStore/retryFailedChanges()`` meets the same answer until the
+  server's version of the record is smaller or ``HTTPSyncTransport/maximumResponseSize`` is
+  raised, and ``OfflineStore/discardChange(for:)`` drops the change. The same holds for a single
+  change the server refuses with status 413.
+- **An epoch the store left stays refused.** A store that took a later epoch from another
+  deployment behind the same URL refuses the first server's epoch for good, also after
+  ``OfflineStore/resetChangeToken()``; it follows that server again once it reports a new epoch.
+- **A replica that sticks to a device for eight syncs can roll records back for a while.** When
+  a stale source answers both requests of eight syncs in a row with an earlier epoch the store
+  never held, the store takes that history: records without a pending change show the stale
+  versions until the server's own later epoch answers again. Pending changes wait for their
+  push, so a parked change of the earlier history meets the server's version only once it is
+  retried.
 - **A server without sequences and timestamps cannot be checked for order.** The store then
   takes every server version as the newest, so a stale page can roll a record back until the
   next change of it. The same holds without sequences for a version whose timestamp is missing

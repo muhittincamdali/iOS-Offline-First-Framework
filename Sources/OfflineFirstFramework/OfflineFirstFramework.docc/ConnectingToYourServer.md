@@ -24,14 +24,14 @@ let store = try OfflineStore<Todo>(name: "todos", transport: transport)
 ```
 
 The `headers` closure runs before every request, so it can refresh an expired token. A status
-outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` and the store
-retries the changes later. Responses longer than
+outside 200–299 throws ``HTTPSyncTransport/Failure/unexpectedStatus(code:body:)`` with the first
+4 KiB of the answer, and the store retries the changes later. 2xx responses longer than
 ``HTTPSyncTransport/maximumResponseSize`` are not read: a pull asks for
 ``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer, and refuses a page
 with more changes than it asked for. A push is sent in requests of at most
 ``HTTPSyncTransport/maximumRequestSize``, and in halves while an answer is longer than the
-response limit; a change whose answer alone is longer is parked with
-``HTTPSyncTransport/answerTooLarge``.
+response limit or the server answers 413, by at most 16 more requests; a change whose answer
+alone is longer stays in doubt and is retried, since only an answer that was read settles it.
 
 ## Write your own transport
 
@@ -61,8 +61,9 @@ The rules that keep sync correct:
   also across a restart that keeps the data, so the store recognises older versions that
   arrive late without trusting device clocks, and ``PullResponse/epoch``, which changes to a
   later one (longer, or as long and greater byte by byte) when the server restarted, lost or
-  replaced its data, so the store pulls everything again; the store refuses a page with an
-  earlier epoch than its own, as a stale replica or cache would send. Give the transport a
+  replaced its data, so the store pulls everything again, and never goes back to an epoch it
+  reported before a later one; the store refuses a page with an earlier epoch than its own, as
+  a stale replica or cache would send, and never takes back an epoch it left. Give the transport a
   ``SyncTransport/serverIdentity`` (the HTTP transport uses its URL), so a store opened with
   another server does not send it the old server's token.
 - **Failures.** Throw for anything worth retrying (no connection, timeouts, 5xx). Leave a

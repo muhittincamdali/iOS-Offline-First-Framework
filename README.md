@@ -46,14 +46,16 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 300 Swift Testing tests on macOS and an iPhone simulator,
-  among them a property test that runs every conflict policy through lost requests, restarts,
-  token resets, overlapping syncs, small page limits and stale pages, and tests that send pages of
-  junk, deeply nested records, pages larger than the response limit and pages with more changes
-  than asked for, also streamed endlessly over a socket; 28 Node tests for the server; and an
-  end-to-end suite in CI that syncs stores through the server over HTTP, also with 68 records of
-  250 KiB across a server restart, with 70 conflict answers of 250 KiB that together exceed the
-  response limit, and with a write whose save failed before a restart.
+- **Tested against a real server** — 311 Swift Testing tests on macOS and an iPhone simulator,
+  among them two property tests that run every conflict policy through lost requests, restarts,
+  token resets, overlapping syncs, small page limits, stale pages, operations at once and crashes,
+  and tests that send pages of junk, deeply nested records, pages larger than the response limit
+  and pages with more changes than asked for, also streamed endlessly over a socket; 28 Node tests
+  for the server; and an end-to-end suite in CI that syncs stores through the server over HTTP,
+  also with 68 records of 250 KiB across a server restart, with 70 conflict answers of 250 KiB
+  that together exceed the response limit, with a write whose save failed before a restart, with a
+  push the server applied behind a proxy that answers 504, and with a replica that serves pages
+  from before a restart after a token reset.
 
 ### What's included
 
@@ -330,7 +332,9 @@ app and server restarts and stale pages, as long as the server follows the
 [protocol](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md):
 
 - A save or delete is in the file before it returns, and a queued change is pushed until the
-  server answers it. A retry keeps the change ID, so the server applies it once.
+  server answers it. A retry keeps the change ID, so the server applies it once. Only an answer
+  that was read settles a change: after an error status, a lost connection or an answer too
+  long to read, the change stays in doubt until its next push.
 - A stale copy never replaces a write the server accepted: the resolver is asked only when a
   record changed on the device and on another device, and an older server version is skipped,
   also right after the device's own write was accepted, even across a server restart the device
@@ -339,37 +343,45 @@ app and server restarts and stale pages, as long as the server follows the
   token and the pull from the beginning, so a stale cache or another deployment behind the same
   URL cannot roll the store back. A sync that fetches a single page still follows a server
   restart, and when the two requests disagree the sync fails instead of reporting success.
+  Epochs go one way: an epoch the store left for a later one is never taken again, also after
+  `resetChangeToken()`, so a stale replica or cache that answers both requests cannot take the
+  store back either.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
-  pull everything again and keep its pending changes. A record the app cannot decode, or one
-  nested deeper than 64 levels, is set aside in `quarantinedChanges()` instead of stopping the
-  pull.
-- A server's answers have a bounded cost. A record nested deeper than 64 levels never enters
-  the store, so writing the file cannot overflow the stack; a page of junk, or of more changes
-  than the pull asked for (1,000 at most), is refused within milliseconds instead of taking
-  gigabytes, and its download is cancelled; a page larger than the response limit makes the
-  pull ask for fewer changes, and a single change larger than the limit, up to four times it, is
-  set aside; a push is split into requests the server's body limit takes and sent again in
-  halves while its answer is longer than the response limit, and a change whose answer alone
-  is longer is parked; a UTF-8 byte order mark is read.
+  pull everything again and keep its pending changes, which meet the new history through their
+  push's answer, not through a page. A record the app cannot decode, or one nested deeper than 64
+  levels, is set aside in `quarantinedChanges()` instead of stopping the pull.
+- A server's answers have a bounded cost. A record nested deeper than 64 levels never enters the
+  store, so writing the file cannot overflow the stack; a page of junk, or of more changes than
+  the pull asked for (1,000 at most), is refused within milliseconds instead of taking gigabytes,
+  and its download is cancelled; a page larger than the response limit makes the pull ask for
+  fewer changes, and a single change larger than the limit, up to four times it, is set aside; a
+  push is split into requests the server's body limit takes and sent again in halves, 16 more
+  requests at most, while the server answers 413 or a 2xx answer is longer than the response
+  limit, and a change whose answer alone is longer stays in doubt; of an error status only the
+  first 4 KiB is read, so a gateway in trouble costs one failed attempt; a UTF-8 byte order mark
+  is read.
 - A clock that runs ahead or was set back, a server that answers every push with a conflict, a
   server that never answers and a file that cannot be written have a bounded effect: the
   reference servers keep a pushed timestamp at most five minutes past their own clock, a moment
   of a wrong device clock does not stamp later writes, retries back off and are parked, a sync
   ends after `syncTimeout`, and syncs wait while the file cannot be written.
 
-The server must never give the same revision to two versions of a record, should send an
-`epoch` that only moves to later ones (longer, or greater byte by byte), a `sequence` that keeps
-counting across restarts, the pushed timestamps (a wall time far ahead of its clock moved back to
-a limit) and the `changeID` that wrote each version, and must remember change IDs across
-restarts, show a write in pages only once it is stored, and keep every page and the answer to
-each pushed change within the client's response limit (a page holds at most `limit` changes,
+The server must never give the same revision to two versions of a record, should send an `epoch`
+that only moves to later ones (longer, or greater byte by byte) and never comes back, a `sequence`
+that keeps counting across restarts, the pushed timestamps (a wall time far ahead of its clock
+moved back to a limit) and the `changeID` that wrote each version, and must remember change IDs
+across restarts, show a write in pages only once it is stored, and keep every page and the answer
+to each pushed change within the client's response limit (a page holds at most `limit` changes,
 cut by bytes, at least one change per page). Limits: writes a server lost in a restore are not
-uploaded again, a record saved again right after `discardChange(for:)` meets the server's copy
-as a conflict, one store instance per file (enforced for `FileStore`, `InMemoryStorage` and
-custom backends that report a `claimIdentity`), the whole file is written on every change,
-records nest at most 64 levels, a page holds at most 1,000 changes, a single change larger than
-four times the response limit stops the pull, a change whose push answer alone is larger than
-the response limit is parked, and deletions beyond 10,000 are forgotten.
+uploaded again, a record saved again right after `discardChange(for:)` meets the server's copy as
+a conflict, one store instance per file (enforced for `FileStore`, `InMemoryStorage` and custom
+backends that report a `claimIdentity`), the whole file is written on every change, records nest
+at most 64 levels, a page holds at most 1,000 changes, a single change larger than four times the
+response limit stops the pull, a change whose push answer alone is larger than the response limit
+stays in doubt and is parked after its last attempt, an epoch the store left stays refused until
+the server reports a new one, a replica that answers eight syncs in a row with an epoch the store
+never held shows its stale records until the server answers again, and deletions beyond 10,000 are
+forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 
