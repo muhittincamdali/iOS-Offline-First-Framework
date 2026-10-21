@@ -116,7 +116,9 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     var serverTimestamp: HLCTimestamp? = nil
     /// The newest server version a pull brought while the pending change was in doubt
     /// (``PendingWrite/isInDoubt``). It is newer than that change, so it replaces the record
-    /// once the next push shows the change was applied; a conflict answer makes it moot.
+    /// once the next push shows the change was applied; a conflict answer makes it moot. For a
+    /// change of an earlier server history that is not in doubt, the version of the new history
+    /// a pull brought, kept until the change is sent.
     var deferredRemote: RemoteChange<Record>? = nil
 }
 

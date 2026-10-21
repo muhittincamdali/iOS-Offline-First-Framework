@@ -100,7 +100,8 @@ extension OfflineStore {
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
     /// another server. The token goes, so the next pull starts from the beginning. Entries keep
     /// their revisions (a pending change still names its base) but belong to the old history:
-    /// the server's current versions replace them whatever their timestamps say.
+    /// the server's current versions replace the ones without a pending change whatever their
+    /// timestamps say, and a pending change learns where it stands from its push's answer.
     ///
     /// `isLaterEpoch` is true for a later epoch of the same server. It retires the store's
     /// previous epoch. An earlier epoch, taken after ``maximumEpochRefusals`` syncs, retires

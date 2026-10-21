@@ -58,6 +58,10 @@ extension OfflineStore {
                 if entry.revision == nil { entry.wasSent = true }
                 if entry.pending?.changeID == change.id, entry.pending?.isInDoubt == false {
                     entry.pending?.isInDoubt = true
+                    // A version a pull kept back before the change went out says nothing its
+                    // answer will not say better: an accepted push was applied after it, and a
+                    // conflict answer brings the server's current version.
+                    entry.deferredRemote = nil
                     firstSent.insert(change.id)
                 }
                 state.entries[change.recordID] = entry

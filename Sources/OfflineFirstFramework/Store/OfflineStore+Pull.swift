@@ -214,7 +214,13 @@ extension OfflineStore {
         // fate under the same change ID; resolving it here could put it back over this version.
         // The version is kept, since the token moves past it: if the push shows the change was
         // applied, this newer version replaces it.
-        if pending.isInDoubt {
+        //
+        // A change made on an earlier server history waits for its push too: the server's
+        // conflict answer says what it holds now. The store believes a new history on two
+        // answers of one sync, or an earlier epoch after eight syncs in a row, and a replica
+        // that sticks to the device passes both; its version would make the resolver weigh the
+        // edit against a stale copy, also the device's own older write.
+        if pending.isInDoubt || entry.history != state.history {
             if let deferred = entry.deferredRemote, deferred.revision == change.revision || isOlder(change, than: deferred, in: state) {
                 return
             }
