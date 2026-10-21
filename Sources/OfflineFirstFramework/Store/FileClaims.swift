@@ -7,7 +7,9 @@ import os
 /// opened again while the first one is still in use) would each write their own state, and the
 /// last writer would silently drop the other's saved records. Every write of a file therefore
 /// moves the file's generation on, and a store writes only while the file is still at the
-/// generation it read or last wrote itself. Another process (an app extension) is not covered.
+/// generation it read or last wrote itself. Files are told apart by the backend's
+/// ``StorageBackend/claimIdentity`` and the file name; a backend without an identity (a custom
+/// one that does not report it) and another process (an app extension) are not covered.
 final class FileClaims: Sendable {
     static let shared = FileClaims()
 
@@ -18,16 +20,11 @@ final class FileClaims: Sendable {
 
     private let claims = OSAllocatedUnfairLock<[String: Claim]>(initialState: [:])
 
-    /// The key of the file `name` in `storage`, or `nil` for a backend whose files cannot be
-    /// told apart (a custom one).
+    /// The key of the file `name` in `storage`, or `nil` for a backend without a
+    /// ``StorageBackend/claimIdentity``. Names hold no NUL, so the key names one identity and
+    /// one name whatever the identity holds.
     static func key(for storage: any StorageBackend, name: String) -> String? {
-        if let files = storage as? FileStore, let url = try? files.url(for: name) {
-            return "file:" + url.standardizedFileURL.path(percentEncoded: false)
-        }
-        if let memory = storage as? InMemoryStorage {
-            return "memory:\(ObjectIdentifier(memory)):\(name)"
-        }
-        return nil
+        storage.claimIdentity.map { "\($0)\u{0}\(name)" }
     }
 
     /// The file's current generation.

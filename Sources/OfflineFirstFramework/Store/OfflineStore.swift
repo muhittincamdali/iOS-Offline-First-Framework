@@ -59,7 +59,8 @@ public actor OfflineStore<Record: SyncableRecord> {
     /// Grows whenever the token is reset outside a pull, so a pull that was on its way at that
     /// moment does not store its page and token over the reset.
     var tokenGeneration: UInt64 = 0
-    /// Identifies the file among the stores of this process; see ``FileClaims``.
+    /// Identifies the file among the stores of this process, or `nil` for a backend without a
+    /// ``StorageBackend/claimIdentity``; see ``FileClaims``.
     let fileKey: String?
     /// The file's generation when this store last read or wrote it.
     var fileGeneration: UInt64
@@ -75,9 +76,11 @@ public actor OfflineStore<Record: SyncableRecord> {
     ///
     /// - Parameters:
     ///   - name: 1 to 249 letters, digits, `.`, `_` or `-`, not starting with a dot. Each store
-    ///     needs its own name, and one file one instance at a time: a second instance on the
-    ///     same file in this process cannot write after the first one did
-    ///     (``OfflineFirstError/storeChangedElsewhere(name:)``).
+    ///     needs its own name, and one file one instance at a time. With the built-in backends,
+    ///     and with a custom one that reports a ``StorageBackend/claimIdentity``, a second
+    ///     instance on the same file in this process cannot write after the first one did
+    ///     (``OfflineFirstError/storeChangedElsewhere(name:)``). A custom backend without an
+    ///     identity is not protected: the instance that writes last drops the other's records.
     ///   - storage: Where the file lives. `nil` uses `Application Support/OfflineFirst`.
     ///   - transport: The connection to your server, or `nil` for a store that only keeps data
     ///     on the device (``sync()`` then does nothing).

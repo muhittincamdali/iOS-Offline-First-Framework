@@ -50,7 +50,8 @@ public enum OfflineFirstError: Error, Equatable, Sendable {
 
     /// Another ``OfflineStore`` instance in this process wrote the store's file after this one
     /// read it. The write is refused, because it would drop the other instance's changes; use
-    /// one instance per file, or open the store again to see the current file.
+    /// one instance per file, or open the store again to see the current file. Thrown for the
+    /// built-in backends and for backends that report a ``StorageBackend/claimIdentity``.
     case storeChangedElsewhere(name: String)
 
     /// The record nests objects and arrays deeper than ``OfflineStore/maximumRecordDepth``

@@ -68,6 +68,13 @@ public struct FileStore: StorageBackend {
         return try FileStore(directory: base.appending(path: subdirectory, directoryHint: .isDirectory), protection: protection)
     }
 
+    /// The ``directory`` with symbolic links resolved: file stores for one directory, also when
+    /// one of them reaches it through a link or as `dir/.`, share their files.
+    public var claimIdentity: String? {
+        let path = directory.resolvingSymlinksInPath().standardizedFileURL.path(percentEncoded: false)
+        return "file:" + (path.hasSuffix("/") ? path : path + "/")
+    }
+
     /// The URL of the file for `name`.
     public func url(for name: String) throws -> URL {
         try StorageName.validate(name)
