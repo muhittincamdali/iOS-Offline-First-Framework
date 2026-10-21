@@ -51,7 +51,7 @@ func junkPage(repeating element: String, size: Int) -> Data {
 /// 16 MiB of elements that are not changes: millions of entries, gigabytes of memory and seconds
 /// of work, on every sync, since the page never moves the token. iOS ends an app that uses that
 /// much memory, so every launch would end the same way.
-@Suite("HTTP transport: what a page may cost", .serialized)
+@Suite("HTTP transport: what a page may cost", .serialized, .heapExclusive)
 struct PageBudgetTests {
     private static let pageSize = 16 * 1024 * 1024 - 64
 

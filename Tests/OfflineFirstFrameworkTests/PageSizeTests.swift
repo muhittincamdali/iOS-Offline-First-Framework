@@ -8,7 +8,7 @@ import Testing
 /// new device, after resetChangeToken(), after every server restart) failed on that page for
 /// good. The transport asks for fewer changes while the page is too large, and sets aside a
 /// change that is too large on its own.
-@Suite("HTTP transport: pages larger than the response limit")
+@Suite("HTTP transport: pages larger than the response limit", .heapExclusive)
 struct PageSizeTests {
     /// Serves `records` (ID and text) in order, honouring `since` (an index) and `limit`, or
     /// sending every record when `ignoresLimit`. Records the `limit` of every request.
