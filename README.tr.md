@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@f9040acd1380ffde31180a3019524595d55cb2ed status=reviewed -->
+<!-- i18n-source: README.md@c97932c6fcb187fccf9243f0065f064a9acdadad status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,13 +50,15 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 277 Swift Testing
-  testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 293 Swift
+  Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
   sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları ve bayat sayfalarla sınayan bir
-  özellik testi ile anlamsız verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar ve yanıt
-  sınırından büyük sayfalar gönderen testler), sunucu için 24 Node testi ve CI'da depoları sunucu
-  üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca da
-  taşıyan uçtan uca bir test paketi.
+  özellik testi ile anlamsız verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar, yanıt
+  sınırından büyük sayfalar ve istenenden fazla değişiklik içeren sayfalar gönderen, bunları bir
+  soket üzerinden sonsuz akışla da gönderen testler), sunucu için 28 Node testi ve CI'da depoları
+  sunucu üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca
+  da taşıyan ve sunucunun diske kaydedemediği bir yazmayı bir yeniden başlatmadan sonra da sınayan
+  uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -352,29 +354,32 @@ tutar:
   kayıt ya da 64 seviyeden daha derin iç içe geçmiş bir kayıt, çekmeyi durdurmak yerine
   `quarantinedChanges()` içine ayrılır.
 - Sunucu yanıtlarının maliyeti sınırlıdır. 64 seviyeden daha derin iç içe geçmiş bir kayıt depoya
-  hiç girmez, bu yüzden dosyayı yazmak yığını (stack) taşıramaz; anlamsız verilerle dolu bir
-  sayfa gigabaytlarca bellek harcamak yerine milisaniyeler içinde reddedilir; yanıt sınırından
+  hiç girmez, bu yüzden dosyayı yazmak yığını (stack) taşıramaz; anlamsız verilerle dolu ya da
+  çekmenin istediğinden fazla değişiklik içeren (en fazla 1.000) bir sayfa gigabaytlarca bellek
+  harcamak yerine milisaniyeler içinde reddedilir ve indirmesi iptal edilir; yanıt sınırından
   büyük bir sayfa, çekmenin daha az değişiklik istemesine yol açar ve tek başına sınırı aşan bir
-  değişiklik ayrılır; bir gönderim, sunucunun gövde sınırına sığan isteklere bölünür; UTF-8 bayt
-  sırası işareti okunur.
+  değişiklik, sınırın dört katına kadar, ayrılır; bir gönderim, sunucunun gövde sınırına sığan
+  isteklere bölünür; UTF-8 bayt sırası işareti okunur.
 - İleri giden ya da geri alınmış bir saat, her gönderime çakışmayla yanıt veren bir sunucu, hiç
   yanıt vermeyen bir sunucu ve yazılamayan bir dosya sınırlı etki yapar: referans sunucular
   gönderilen bir zaman damgasını kendi saatlerinin en fazla beş dakika ötesinde tutar, cihaz
   saatinin bir anlık yanlışlığı sonraki yazmalara taşınmaz, yeniden denemeler bekletilir ve park
   edilir, bir eşitleme `syncTimeout` sonunda biter ve dosya yazılamadığı sürece eşitlemeler bekler.
 
-Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; yalnızca daha geç olanlara ilerleyen
-bir `epoch` (daha uzun ya da bayt bayt daha büyük), yeniden başlatmalarda saymayı sürdüren bir
-`sequence`, gönderilen zaman damgalarını (saatinin çok ilerisindeki bir zaman bir sınıra çekilmiş
-olarak) ve her sürümü yazan `changeID`'yi göndermeli, değişiklik kimliklerini yeniden
-başlatmalar boyunca hatırlamalı ve her sayfayı istemcinin yanıt sınırı içinde tutmalıdır (en
-fazla `limit` değişiklik, bayt olarak da kesilmiş, sayfa başına en az bir değişiklik). Sınırlar:
-sunucunun bir geri yüklemede kaybettiği yazmalar yeniden yüklenmez, `discardChange(for:)`
-çağrısının hemen ardından yeniden kaydedilen bir kayıt sunucunun kopyasıyla çakışma olarak
-karşılaşır, dosya başına tek bir depo örneği kullanılır, her değişiklikte dosyanın tamamı yazılır,
-kayıtlar en fazla 64 seviye iç içe geçebilir, okunamayan değişikliği 1.000'den fazla olan bir
-sayfa reddedilir ve 10.000'i aşan silmeler unutulur.
-Tam liste [Güvenceler ve sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) makalesindedir.
+Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; yalnızca daha geç olanlara
+ilerleyen bir `epoch` (daha uzun ya da bayt bayt daha büyük), yeniden başlatmalarda saymayı
+sürdüren bir `sequence`, gönderilen zaman damgalarını (saatinin çok ilerisindeki bir zaman bir
+sınıra çekilmiş olarak) ve her sürümü yazan `changeID`'yi göndermeli, değişiklik kimliklerini
+yeniden başlatmalar boyunca hatırlamalı, bir yazmayı ancak kaydedildikten sonra sayfalarda
+göstermeli ve her sayfayı istemcinin yanıt sınırı içinde tutmalıdır (en fazla `limit` değişiklik,
+bayt olarak da kesilmiş, sayfa başına en az bir değişiklik). Sınırlar: sunucunun bir geri
+yüklemede kaybettiği yazmalar yeniden yüklenmez, `discardChange(for:)` çağrısının hemen ardından
+yeniden kaydedilen bir kayıt sunucunun kopyasıyla çakışma olarak karşılaşır, dosya başına tek bir
+depo örneği kullanılır, her değişiklikte dosyanın tamamı yazılır, kayıtlar en fazla 64 seviye iç
+içe geçebilir, bir sayfa en fazla 1.000 değişiklik içerir, yanıt sınırının dört katından büyük tek
+bir değişiklik çekmeyi durdurur ve 10.000'i aşan silmeler unutulur. Tam liste [Güvenceler ve
+sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
+makalesindedir.
 
 ## Demo
 
@@ -473,6 +478,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Yol haritası

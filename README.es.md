@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@f9040acd1380ffde31180a3019524595d55cb2ed status=reviewed -->
+<!-- i18n-source: README.md@c97932c6fcb187fccf9243f0065f064a9acdadad status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,14 +51,15 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 277 pruebas de Swift Testing en macOS y en un simulador de
-  iPhone, entre ellas una prueba de propiedades que somete cada política de conflictos a solicitudes
-  perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas, límites de páginas
-  pequeños y páginas obsoletas, y pruebas que envían páginas de datos inservibles, registros
-  anidados a gran profundidad y páginas mayores que el límite de respuesta; 24 pruebas de Node
-  para el servidor; y un conjunto de pruebas de extremo a extremo en CI que sincroniza almacenes a
-  través del servidor por HTTP, también con 68 registros de 250 KiB a través de un reinicio del
-  servidor.
+- **Probado contra un servidor real** — 293 pruebas de Swift Testing en macOS y en un simulador de
+  iPhone, entre ellas una prueba de propiedades que somete cada política de conflictos a
+  solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
+  límites de páginas pequeños y páginas obsoletas, y pruebas que envían páginas de datos
+  inservibles, registros anidados a gran profundidad, páginas mayores que el límite de respuesta y
+  páginas con más cambios de los pedidos, también transmitidas sin fin por un socket; 28 pruebas
+  de Node para el servidor; y un conjunto de pruebas de extremo a extremo en CI que sincroniza
+  almacenes a través del servidor por HTTP, también con 68 registros de 250 KiB a través de un
+  reinicio del servidor y con una escritura cuyo guardado falló antes de un reinicio.
 
 ### Qué incluye
 
@@ -355,10 +356,11 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   `quarantinedChanges()` en lugar de detener la descarga.
 - Las respuestas de un servidor tienen un coste acotado. Un registro anidado a más de 64 niveles
   nunca entra en el almacén, así que escribir el archivo no puede desbordar la pila; una página de
-  datos inservibles se rechaza en milisegundos en lugar de ocupar gigabytes; una página mayor que
-  el límite de respuesta hace que la descarga pida menos cambios, y un único cambio que por sí
-  solo supera el límite se aparta; un envío se divide en solicitudes que el límite de cuerpo del
-  servidor acepta; se lee una marca de orden de bytes UTF-8.
+  datos inservibles, o con más cambios de los que pidió la descarga (1.000 como mucho), se rechaza
+  en milisegundos en lugar de ocupar gigabytes, y su descarga se cancela; una página mayor que el
+  límite de respuesta hace que la descarga pida menos cambios, y un único cambio que por sí solo
+  supera el límite, hasta cuatro veces este, se aparta; un envío se divide en solicitudes que el
+  límite de cuerpo del servidor acepta; se lee una marca de orden de bytes UTF-8.
 - Un reloj adelantado o retrasado a mano, un servidor que responde cada envío con un conflicto, un
   servidor que nunca responde y un archivo que no se puede escribir tienen un efecto acotado: los
   servidores de referencia guardan una marca de tiempo recibida como mucho cinco minutos por
@@ -370,13 +372,17 @@ El servidor nunca debe dar la misma revisión a dos versiones de un registro, de
 `epoch` que solo avance a otros posteriores (más largos, o mayores byte a byte), un `sequence` que
 siga contando tras los reinicios, las marcas de tiempo recibidas (con una hora muy por delante de
 su reloj llevada a un límite) y el `changeID` que escribió cada versión, y debe recordar los IDs
-de cambio a través de los reinicios y mantener cada página dentro del límite de respuesta del
-cliente (como mucho `limit` cambios, cortada también por bytes, al menos un cambio por página).
-Límites: las escrituras que un servidor perdió en una restauración no se vuelven a subir, un
-registro guardado de nuevo justo después de `discardChange(for:)` encuentra la copia del
-servidor como un conflicto, una sola instancia del almacén por archivo, el archivo entero se
-escribe en cada cambio, los registros se anidan como mucho 64 niveles, una página con más de
-1.000 cambios ilegibles se rechaza y los borrados más allá de 10.000 se olvidan. [Garantías y límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la lista completa.
+de cambio a través de los reinicios, mostrar una escritura en las páginas solo cuando esté
+guardada y mantener cada página dentro del límite de respuesta del cliente (como mucho `limit`
+cambios, cortada también por bytes, al menos un cambio por página). Límites: las escrituras que un
+servidor perdió en una restauración no se vuelven a subir, un registro guardado de nuevo justo
+después de `discardChange(for:)` encuentra la copia del servidor como un conflicto, una sola
+instancia del almacén por archivo, el archivo entero se escribe en cada cambio, los registros se
+anidan como mucho 64 niveles, una página contiene como mucho 1.000 cambios, un único cambio mayor
+que cuatro veces el límite de respuesta detiene la descarga y los borrados más allá de 10.000 se
+olvidan. [Garantías y
+límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la
+lista completa.
 
 ## Demo
 
@@ -474,6 +480,7 @@ xcodebuild test -scheme OfflineFirstFramework \
 (cd Examples/SyncServer && npm test)                # reference server
 node Examples/SyncServer/server.mjs &               # end to end, against the server
 OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd
+OFFLINE_FIRST_NODE=$(command -v node) swift test --filter ServerSaveTests  # a failed save, a restart
 ```
 
 ## Hoja de ruta
