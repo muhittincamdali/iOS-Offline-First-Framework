@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@6e72ff5e6ef94a96506e050f9bd8e143e0f19840 status=reviewed -->
+<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,21 +50,21 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 342 Swift
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 350 Swift
   Testing testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
   sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları, bayat sayfalar, aynı anda
   çalışan işlemler ve çökmelerle, `sequence` göndermeyen bir sunucuya karşı da sınayan iki özellik
   testi, bir cihaza art arda birçok eşitlemede yanıt veren bir replikayı, cihazın kendi daha eski
-  bir yazmasını geri getiren bayat bir sayfayı, bir eşitlemenin her yazımındaki bir çökmeyi ve
-  ileri sıçrayan cihaz saatlerini deneyen senaryo testleri ile anlamsız verilerle dolu sayfalar,
-  çok derin iç içe geçmiş kayıtlar, yanıt sınırından büyük sayfalar ve istenenden fazla değişiklik
-  içeren sayfalar gönderen, bunları bir soket üzerinden sonsuz akışla da gönderen testler), sunucu
-  için 28 Node testi ve CI'da depoları sunucu üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı
-  bir sunucu yeniden başlatması boyunca da taşıyan, toplamı yanıt sınırını aşan 250 KiB'lık 70
-  çakışma yanıtını işleyen, sunucunun diske kaydedemediği bir yazmayı bir yeniden başlatmadan
-  sonra da sınayan, sunucunun 504 yanıtı veren bir proxy arkasında uyguladığı bir gönderimi ve bir
-  token sıfırlamasından sonra yeniden başlatma öncesinin sayfalarını sunan bir replikayı da
-  deneyen uçtan uca bir test paketi.
+  bir yazmasını geri getiren ya da kabul edilmiş bir gönderimle karşılaşan bayat bir sayfayı, bir
+  eşitlemenin her yazımındaki bir çökmeyi ve ileri sıçrayan cihaz saatlerini deneyen senaryo
+  testleri ile anlamsız verilerle dolu sayfalar, çok derin iç içe geçmiş kayıtlar, yanıt
+  sınırından büyük sayfalar ve istenenden fazla değişiklik içeren sayfalar gönderen, bunları bir
+  soket üzerinden sonsuz akışla da gönderen testler), sunucu için 28 Node testi ve CI'da depoları
+  sunucu üzerinden HTTP ile eşitleyen, 250 KiB'lık 68 kaydı bir sunucu yeniden başlatması boyunca
+  da taşıyan, toplamı yanıt sınırını aşan 250 KiB'lık 70 çakışma yanıtını işleyen, sunucunun diske
+  kaydedemediği bir yazmayı bir yeniden başlatmadan sonra da sınayan, sunucunun 504 yanıtı veren
+  bir proxy arkasında uyguladığı bir gönderimi ve bir token sıfırlamasından sonra yeniden başlatma
+  öncesinin sayfalarını sunan bir replikayı da deneyen uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -356,18 +356,21 @@ tutar:
   kullanıcı onun üzerinde düzenleme yapmış olsa ya da bir sayfa, yanıtı kaybolmuş bir sürümden
   önce cihazın daha eski bir yazmasını listelese bile asla çakışma sayılmaz. `sequence` olmadan
   bir çekme, sayfa cihazın kendi daha eski bir yazmasını getirdiğinde de bekleyen bir değişikliği
-  gönderimine bırakır ve kararı gönderimin yanıtı verir: bu arada bir çekmenin geri tuttuğu bir
-  sürüm, yanıtın yerini yalnızca sunucunun `sequence` değeri onun daha yeni olduğunu gösterdiğinde
-  alır; hiçbir şey bunu göstermediğinde değişiklik taze bir yanıt için bir kez daha gönderilir.
-- Başka bir sunucu epoch'u ancak tek bir eşitlemedeki iki istek, yani token ile çekme ve baştan
-  çekme, onu birlikte bildirdiğinde sayılır; böylece bayat bir önbellek ya da aynı URL'nin
-  arkasındaki başka bir dağıtım depoyu geri saramaz. Sunucu bir epoch bildirdikten sonra epoch'suz
-  bir sayfa da asla alınmaz. Tek sayfa çeken bir eşitleme de sunucunun yeniden başlatılmasını
-  izler ve iki istek uyuşmadığında eşitleme başarı bildirmek yerine hata verir. Epoch'lar tek
-  yönde ilerler: deponunkinden önceki bir epoch, ister deponun geride bıraktığı ister hiç
-  tutmadığı bir epoch olsun, `resetChangeToken()` sonrasında da asla alınmaz; böylece iki isteği
-  de art arda kaç eşitlemede yanıtlarsa yanıtlasın, bayat bir replika ya da önbellek de depoyu
-  geri saramaz.
+  gönderimine bırakır ve kararı, kabul olsun olmasın, gönderimin yanıtı verir: bu arada bir
+  çekmenin geri tuttuğu bir sürüm, yanıtın yerini yalnızca sunucunun `sequence` değeri onun daha
+  yeni olduğunu gösterdiğinde alır. Hiçbir şey bunu göstermediğinde bir çakışma değişikliği taze
+  bir yanıt için bir kez daha gönderir; başka her yanıt geçerli kalır ve bir sonraki eşitleme
+  baştan çeker.
+- Başka bir sunucu epoch'u da, kayıtları olan bir deponun duyduğu ilk epoch da ancak tek bir
+  eşitlemedeki iki istek, yani token ile çekme ve baştan çekme, onu birlikte bildirdiğinde
+  sayılır; böylece bayat bir önbellek ya da aynı URL'nin arkasındaki başka bir dağıtım depoyu geri
+  saramaz ve epoch'suz bir sunucudan koparamaz. İki istek bir epoch bildirdikten sonra
+  epoch'suz bir sayfa da asla alınmaz. Tek sayfa çeken bir eşitleme de sunucunun yeniden
+  başlatılmasını izler ve iki istek uyuşmadığında eşitleme başarı bildirmek yerine hata verir.
+  Epoch'lar tek yönde ilerler: deponunkinden önceki bir epoch, ister deponun geride bıraktığı
+  ister hiç tutmadığı bir epoch olsun, `resetChangeToken()` sonrasında da asla alınmaz; böylece
+  iki isteği de art arda kaç eşitlemede yanıtlarsa yanıtlasın, bayat bir replika ya da önbellek de
+  depoyu geri saramaz.
 - Silinen kayıtlar silinmiş kalır. Verisini kaybetmiş bir sunucu ya da başka bir sunucu, deponun
   her şeyi baştan çekmesine yol açar ve bekleyen değişiklikler korunur; bunlar yeni geçmişle bir
   sayfa üzerinden değil, kendi gönderimlerinin yanıtıyla karşılaşır. Uygulamanın çözemediği bir

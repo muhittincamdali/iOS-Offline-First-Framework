@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@6e72ff5e6ef94a96506e050f9bd8e143e0f19840 status=reviewed -->
+<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,22 +51,22 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 342 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 350 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas dos pruebas de propiedades que someten cada política de conflictos a
   solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
   límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, también contra
   un servidor sin secuencias, pruebas de escenarios con una réplica que responde a un dispositivo
   durante muchas sincronizaciones, con una página obsoleta que trae de vuelta una escritura propia
-  más antigua, con una caída en cada escritura de una sincronización y con relojes de dispositivo
-  que saltan hacia adelante, y pruebas que envían páginas de datos inservibles, registros anidados
-  a gran profundidad, páginas mayores que el límite de respuesta y páginas con más cambios de los
-  pedidos, también transmitidas sin fin por un socket; 28 pruebas de Node para el servidor; y un
-  conjunto de pruebas de extremo a extremo en CI que sincroniza almacenes a través del servidor
-  por HTTP, también con 68 registros de 250 KiB a través de un reinicio del servidor, con 70
-  respuestas de conflicto de 250 KiB que juntas superan el límite de respuesta, con una escritura
-  cuyo guardado falló antes de un reinicio, con un envío que el servidor aplicó detrás de un proxy
-  que responde 504 y con una réplica que sirve páginas de antes de un reinicio tras restablecer el
-  token.
+  más antigua o se encuentra con un envío aceptado, con una caída en cada escritura de una
+  sincronización y con relojes de dispositivo que saltan hacia adelante, y pruebas que envían
+  páginas de datos inservibles, registros anidados a gran profundidad, páginas mayores que el
+  límite de respuesta y páginas con más cambios de los pedidos, también transmitidas sin fin por
+  un socket; 28 pruebas de Node para el servidor; y un conjunto de pruebas de extremo a extremo en
+  CI que sincroniza almacenes a través del servidor por HTTP, también con 68 registros de 250 KiB
+  a través de un reinicio del servidor, con 70 respuestas de conflicto de 250 KiB que juntas
+  superan el límite de respuesta, con una escritura cuyo guardado falló antes de un reinicio, con
+  un envío que el servidor aplicó detrás de un proxy que responde 504 y con una réplica que sirve
+  páginas de antes de un reinicio tras restablecer el token.
 
 ### Qué incluye
 
@@ -358,19 +358,22 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   registro y el usuario editó sobre ella, o una página lista una escritura propia más antigua
   antes de una versión cuya respuesta se perdió. Sin secuencias, una descarga deja un cambio
   pendiente a su envío, también cuando la página trae una escritura más antigua del propio
-  dispositivo, y decide la respuesta del envío: una versión que una descarga retuvo entretanto
-  solo ocupa su lugar cuando el `sequence` del servidor muestra que es más nueva, y cuando nada lo
-  indica, el cambio sale una vez más para obtener una respuesta nueva.
-- Otro epoch del servidor solo cuenta cuando lo informan dos solicitudes de la misma
-  sincronización, la descarga con el token y la descarga desde el principio, así que una caché
-  obsoleta u otro despliegue detrás de la misma URL no puede hacer retroceder el almacén. Una
-  página sin epoch, una vez que el servidor informó uno, tampoco se toma nunca. Una sincronización
-  que descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos
-  solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs
-  van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo,
-  nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
-  responde ambas solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer
-  retroceder el almacén.
+  dispositivo, y decide la respuesta del envío, aceptada o no: una versión que una descarga retuvo
+  entretanto solo ocupa su lugar cuando el `sequence` del servidor muestra que es más nueva.
+  Cuando nada lo indica, un conflicto hace que el cambio salga una vez más para obtener una
+  respuesta nueva, y cualquier otra respuesta se mantiene mientras la siguiente sincronización
+  descarga desde el principio.
+- Otro epoch del servidor, y el primero del que se entera un almacén con registros, solo cuenta
+  cuando lo informan dos solicitudes de la misma sincronización, la descarga con el token y la
+  descarga desde el principio, así que una caché obsoleta u otro despliegue detrás de la misma URL
+  no puede hacer retroceder el almacén ni dejarlo fuera de un servidor sin epochs. Una página sin
+  epoch, una vez que dos solicitudes informaron uno, tampoco se toma nunca. Una sincronización que
+  descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos solicitudes
+  no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs van en un solo
+  sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo, nunca se toma,
+  tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que responde ambas
+  solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer retroceder el
+  almacén.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
   que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes, que se encuentran
   con la nueva historia a través de la respuesta a su envío, no de una página. Un registro que la

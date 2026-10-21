@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@6e72ff5e6ef94a96506e050f9bd8e143e0f19840 status=reviewed -->
+<!-- i18n-source: README.md@1822dd1cede2ddb1e685b1ff9c27e7b5d7d5f0c5 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,22 +51,22 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 342 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 350 testes de Swift Testing no macOS e em um simulador de
   iPhone, entre eles dois testes de propriedades que submetem cada política de conflito a
   solicitações perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de
   páginas pequenos, páginas desatualizadas, operações simultâneas e falhas, também contra um
   servidor sem sequências, testes de cenários com uma réplica que responde a um dispositivo
   durante muitas sincronizações, com uma página desatualizada que traz de volta uma gravação mais
-  antiga do próprio dispositivo, com uma falha em cada gravação de uma sincronização e com
-  relógios de dispositivo que saltam para a frente, e testes que enviam páginas de dados inúteis,
-  registros aninhados muito fundo, páginas maiores que o limite de resposta e páginas com mais
-  alterações do que o pedido, também transmitidas sem fim por um socket; 28 testes de Node para o
-  servidor; e uma suíte de testes de ponta a ponta na CI que sincroniza stores por meio do
-  servidor via HTTP, também com 68 registros de 250 KiB através de um reinício do servidor, com 70
-  respostas de conflito de 250 KiB que juntas passam do limite de resposta, com uma gravação cujo
-  salvamento falhou antes de um reinício, com um envio que o servidor aplicou atrás de um proxy
-  que responde 504 e com uma réplica que serve páginas de antes de um reinício depois de redefinir
-  o token.
+  antiga do próprio dispositivo ou encontra um envio aceito, com uma falha em cada gravação de uma
+  sincronização e com relógios de dispositivo que saltam para a frente, e testes que enviam
+  páginas de dados inúteis, registros aninhados muito fundo, páginas maiores que o limite de
+  resposta e páginas com mais alterações do que o pedido, também transmitidas sem fim por um
+  socket; 28 testes de Node para o servidor; e uma suíte de testes de ponta a ponta na CI que
+  sincroniza stores por meio do servidor via HTTP, também com 68 registros de 250 KiB através de
+  um reinício do servidor, com 70 respostas de conflito de 250 KiB que juntas passam do limite de
+  resposta, com uma gravação cujo salvamento falhou antes de um reinício, com um envio que o
+  servidor aplicou atrás de um proxy que responde 504 e com uma réplica que serve páginas de antes
+  de um reinício depois de redefinir o token.
 
 ### O que está incluído
 
@@ -358,17 +358,20 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
   usuário editou em cima dela, ou uma página lista uma gravação mais antiga do próprio dispositivo
   antes de uma versão cuja resposta se perdeu. Sem sequências, uma leitura deixa uma alteração
   pendente para o seu envio, também quando a página traz uma gravação mais antiga do próprio
-  dispositivo, e quem decide é a resposta do envio: uma versão que uma leitura reteve nesse
-  meio-tempo só toma o seu lugar quando o `sequence` do servidor mostra que ela é mais nova, e
-  quando nada mostra isso, a alteração sai mais uma vez para obter uma resposta nova.
-- Outro epoch do servidor só conta quando duas solicitações da mesma sincronização o informam, a
-  leitura com o token e a leitura desde o início, então um cache desatualizado ou outra
-  implantação atrás da mesma URL não consegue fazer o store voltar atrás. Uma página sem epoch,
-  depois que o servidor informou um, também nunca é aceita. Uma sincronização que lê uma única
-  página ainda acompanha um reinício do servidor, e quando as duas solicitações não concordam a
-  sincronização falha em vez de informar sucesso. Os epochs seguem um único sentido: um epoch
-  anterior ao do store, um que ele deixou ou um que nunca teve, nunca é aceito, nem depois de
-  `resetChangeToken()`, então uma réplica ou um cache desatualizado que responde às duas
+  dispositivo, e quem decide é a resposta do envio, aceita ou não: uma versão que uma leitura
+  reteve nesse meio-tempo só toma o seu lugar quando o `sequence` do servidor mostra que ela é
+  mais nova. Quando nada mostra isso, um conflito faz a alteração sair mais uma vez para obter uma
+  resposta nova, e qualquer outra resposta vale enquanto a próxima sincronização lê tudo desde o
+  início.
+- Outro epoch do servidor, e o primeiro de que fica sabendo um store com registros, só conta
+  quando duas solicitações da mesma sincronização o informam, a leitura com o token e a leitura
+  desde o início, então um cache desatualizado ou outra implantação atrás da mesma URL não
+  consegue fazer o store voltar atrás nem deixá-lo fora de um servidor sem epochs. Uma página sem
+  epoch, depois que duas solicitações informaram um, também nunca é aceita. Uma sincronização que
+  lê uma única página ainda acompanha um reinício do servidor, e quando as duas solicitações não
+  concordam a sincronização falha em vez de informar sucesso. Os epochs seguem um único sentido:
+  um epoch anterior ao do store, um que ele deixou ou um que nunca teve, nunca é aceito, nem
+  depois de `resetChangeToken()`, então uma réplica ou um cache desatualizado que responde às duas
   solicitações, por quantas sincronizações seguidas for, também não consegue fazer o store voltar
   atrás.
 - Registros excluídos continuam excluídos. Um servidor que perdeu seus dados, ou outro servidor,
