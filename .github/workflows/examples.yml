@@ -130,5 +130,5 @@ jobs:
         run: |
           set -o pipefail
           swift test -c release -Xswiftc -enable-testing \
-            --filter "RecordDepthTests|PageBudgetTests|PageLimitTests|PageSizeTests|PushSizeTests|ByteOrderMarkTests|DeepNestingTests" 2>&1 | tee "$RUNNER_TEMP/release.log"
+            --filter "RecordDepthTests|PageBudgetTests|PageLimitTests|PageSizeTests|PushSizeTests|ByteOrderMarkTests|DeepNestingTests|ResponseReaderTests|StreamingServerTests" 2>&1 | tee "$RUNNER_TEMP/release.log"
           grep -q "Test run with .* passed" "$RUNNER_TEMP/release.log"

@@ -58,7 +58,7 @@ extension HTTPSyncTransport {
     }
 
     /// The page of one change that is larger than the transport reads, from the outline of the
-    /// page (``PageOutline``): the change is set aside with its record ID and revision, and the
+    /// page (``PageScanner``): the change is set aside with its record ID and revision, and the
     /// page's token moves past it. An outline with more changes comes from a server that ignored
     /// `limit=1`; one without a change, from a page that is too large for another reason.
     static func oversizedPage(from outline: Data, limit: Int) throws -> PullResponse<Record> {

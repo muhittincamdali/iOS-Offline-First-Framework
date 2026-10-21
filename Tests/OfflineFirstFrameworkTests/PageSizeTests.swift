@@ -84,10 +84,9 @@ struct PageSizeTests {
 
     @Test func theOutlineKeepsAChangesOwnFieldsAndLeavesOutWhatItHolds() throws {
         let page = #"{"changes":[{"recordID":"a","record":{"id":"a","text":"}]\"{[","list":[[1],{"x":[]}]},"revision":"9","timestamp":{"wallTime":1}}],"token":"t\"}","hasMore":true}"#
-        var outline = PageOutline()
-        var kept = Data()
-        for byte in page.utf8 { outline.append(byte, to: &kept) }
-        #expect(String(decoding: kept, as: UTF8.self)
+        var reader = try ResponseReader(expectedLength: -1, maximumResponseSize: 1 << 20, changeLimit: 1, outlining: true)
+        for byte in page.utf8 { try reader.read(byte) }
+        #expect(String(decoding: reader.body, as: UTF8.self)
             == #"{"changes":[{"recordID":"a","record":null,"revision":"9","timestamp":null}],"token":"t\"}","hasMore":true}"#)
     }
 }

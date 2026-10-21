@@ -20,11 +20,13 @@ import Foundation
 ///
 /// Any answer outside 200–299 throws ``Failure/unexpectedStatus(code:body:)``, so the store
 /// retries the changes with its ``RetryPolicy``. Responses are read up to
-/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded. A push is
-/// split into requests of at most ``maximumRequestSize`` bytes. A pull asks
-/// for ``pageSize`` changes and, while the page is larger than that, for half as many; a single
-/// change that is larger on its own is set aside in ``OfflineStore/quarantinedChanges()`` and
-/// the pull moves past it. A page with more changes than the pull asked for is refused.
+/// ``maximumResponseSize`` bytes; a larger one is cancelled instead of being loaded, at once
+/// when it announces its length. A push is split into requests of at most
+/// ``maximumRequestSize`` bytes. A pull asks for ``pageSize`` changes and, while the page is
+/// larger than that, for half as many; a single change that is larger on its own, up to four
+/// times ``maximumResponseSize``, is set aside in ``OfflineStore/quarantinedChanges()`` and the
+/// pull moves past it. A page with more changes than the pull asked for is cancelled as soon as
+/// the change after the limit starts, and refused.
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
@@ -60,7 +62,9 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// The session that sends the requests.
     public let session: URLSession
 
-    /// The longest response, in bytes, that is read. Default: 16 MiB.
+    /// The longest response, in bytes, that is read. Default: 16 MiB. To set aside a single change
+    /// that is larger, the pull reads its page without what the change holds, up to four times
+    /// this size.
     public let maximumResponseSize: Int
 
     /// The longest push request body, in bytes. A push of more changes is sent in several
@@ -179,20 +183,22 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Pulls the page after `token`. A page must fit in ``maximumResponseSize``; while it does
     /// not, the pull asks for half as many changes, down to one. A change that is larger than
     /// the limit on its own is read as it streams in without what it holds, set aside, and the
-    /// page's token moves past it, so one large record cannot stop every later pull. A page
-    /// with more changes than the request's `limit`, readable or not, is refused with a
-    /// `DecodingError`, so a server that ignores `limit` fails the pull without a change to the
-    /// store.
+    /// page's token moves past it, so one large record cannot stop every later pull; that read
+    /// stops after four times ``maximumResponseSize`` with ``Failure/responseTooLarge(limit:)``,
+    /// and before it starts when the page announces more. A page with more changes than the
+    /// request's `limit`, readable or not, is cancelled when the change after the limit starts
+    /// and refused with a `DecodingError`, so a server that ignores `limit` fails the pull after
+    /// one request, without a change to the store.
     public func pull(since token: String?) async throws -> PullResponse<Record> {
         var limit = pageSize
         while true {
             let request = try await makeRequest(url: changesURL(after: token, limit: limit))
             do {
-                return try Self.page(from: try await send(request), limit: limit)
+                return try Self.page(from: try await send(request, page: limit), limit: limit)
             } catch Failure.responseTooLarge(limit: _) where limit > 1 {
                 limit /= 2
             } catch Failure.responseTooLarge(limit: _) {
-                return try Self.oversizedPage(from: try await send(request, outlining: true), limit: maximumResponseSize)
+                return try Self.oversizedPage(from: try await send(request, page: 1, outlining: true), limit: maximumResponseSize)
             }
         }
     }
@@ -223,11 +229,12 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         return request
     }
 
-    /// Sends `request` and returns the body of a 2xx answer, reading at most
-    /// ``maximumResponseSize`` bytes; `outlining` keeps only the ``PageOutline`` of the body.
-    private func send(_ request: URLRequest, outlining: Bool = false) async throws -> Data {
+    /// Sends `request` and returns the body of a 2xx answer, read by a ``ResponseReader``: at
+    /// most ``maximumResponseSize`` bytes, for a page of at most `page` changes, and with
+    /// `outlining` only the outline of the page.
+    private func send(_ request: URLRequest, page changeLimit: Int? = nil, outlining: Bool = false) async throws -> Data {
         do {
-            return try await receive(request, outlining: outlining)
+            return try await receive(request, page: changeLimit, outlining: outlining)
         } catch let error as URLError where error.code == .cancelled && Task.isCancelled {
             // URLSession reports a cancelled task as URLError(.cancelled). The store treats
             // CancellationError as "stopped", not as a failed attempt.
@@ -235,30 +242,27 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
         }
     }
 
-    private func receive(_ request: URLRequest, outlining: Bool) async throws -> Data {
+    /// The body of the answer to `request`. The answer is read as a page only when its status
+    /// is 2xx; the download is cancelled as soon as the reader stops.
+    private func receive(_ request: URLRequest, page changeLimit: Int?, outlining: Bool) async throws -> Data {
         let (bytes, response) = try await session.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw Failure.notHTTP }
-        if !outlining, response.expectedContentLength > Int64(maximumResponseSize) {
+        let succeeded = (200..<300).contains(http.statusCode)
+        do {
+            var reader = try ResponseReader(expectedLength: response.expectedContentLength, maximumResponseSize: maximumResponseSize,
+                                            changeLimit: succeeded ? changeLimit : nil, outlining: outlining)
+            for try await byte in bytes { try reader.read(byte) }
+            guard succeeded else {
+                throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: reader.body.prefix(500), as: UTF8.self))
+            }
+            return reader.body
+        } catch let stop as ResponseReader.Stop {
             bytes.task.cancel()
-            throw Failure.responseTooLarge(limit: maximumResponseSize)
-        }
-        var body = Data()
-        var outline = PageOutline()
-        for try await byte in bytes {
-            if outlining {
-                outline.append(byte, to: &body)
-            } else {
-                body.append(byte)
-            }
-            guard body.count <= maximumResponseSize else {
-                bytes.task.cancel()
-                throw Failure.responseTooLarge(limit: maximumResponseSize)
+            switch stop {
+            case .tooLarge: throw Failure.responseTooLarge(limit: maximumResponseSize)
+            case .tooManyChanges: throw Self.tooManyChanges(changeLimit ?? 0)
             }
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Failure.unexpectedStatus(code: http.statusCode, body: String(decoding: body.prefix(500), as: UTF8.self))
-        }
-        return body
     }
 
     // MARK: - Wire format
