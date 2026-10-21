@@ -46,18 +46,18 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 331 Swift Testing tests on macOS and an iPhone simulator, among
+- **Tested against a real server** — 342 Swift Testing tests on macOS and an iPhone simulator, among
   them two property tests that run every conflict policy through lost requests, restarts, token
   resets, overlapping syncs, small page limits, stale pages, operations at once and crashes, also
   against a server without sequences, scenario tests of a replica that answers a device for many
-  syncs, of a crash at every write of a sync and of device clocks that jump ahead, and tests that
-  send pages of junk, deeply nested records, pages larger than the response limit and pages with
-  more changes than asked for, also streamed endlessly over a socket; 28 Node tests for the server;
-  and an end-to-end suite in CI that syncs stores through the server over HTTP, also with 68 records
-  of 250 KiB across a server restart, with 70 conflict answers of 250 KiB that together exceed the
-  response limit, with a write whose save failed before a restart, with a push the server applied
-  behind a proxy that answers 504, and with a replica that serves pages from before a restart after
-  a token reset.
+  syncs, of a stale page that brings back an older own write, of a crash at every write of a sync
+  and of device clocks that jump ahead, and tests that send pages of junk, deeply nested records,
+  pages larger than the response limit and pages with more changes than asked for, also streamed
+  endlessly over a socket; 28 Node tests for the server; and an end-to-end suite in CI that syncs
+  stores through the server over HTTP, also with 68 records of 250 KiB across a server restart, with
+  70 conflict answers of 250 KiB that together exceed the response limit, with a write whose save
+  failed before a restart, with a push the server applied behind a proxy that answers 504, and with
+  a replica that serves pages from before a restart after a token reset.
 
 ### What's included
 
@@ -337,21 +337,24 @@ app and server restarts and stale pages, as long as the server follows the
   server answers it. A retry keeps the change ID, so the server applies it once. Only an answer
   that was read settles a change: after an error status, a lost connection or an answer too
   long to read, the change stays in doubt until its next push.
-- A stale copy never replaces a write the server accepted: the resolver is asked only when a
-  record changed on the device and on another device, and an older server version is skipped by
-  the server's `sequence`, also right after the device's own write was accepted, even across a
-  server restart the device has not seen yet, and after `resetChangeToken()`. A version the
-  device wrote itself is never a conflict, also when a stale page took the record back and the
-  user edited on top of it, or a page lists an older own write before a version whose answer was
-  lost. Without sequences a pull leaves a pending change to its push, whose conflict answer
-  names the server's current version.
-- Another server epoch counts only when two requests of one sync report it, the pull with the
-  token and the pull from the beginning, so a stale cache or another deployment behind the same
-  URL cannot roll the store back. A sync that fetches a single page still follows a server
-  restart, and when the two requests disagree the sync fails instead of reporting success.
-  Epochs go one way: an earlier epoch than the store's, one it left or one it never held, is
-  never taken, also after `resetChangeToken()`, so a stale replica or cache that answers both
-  requests, however many syncs in a row, cannot take the store back either.
+- A stale copy never replaces a write the server accepted: the resolver is asked only when a record
+  changed on the device and on another device, and an older server version is skipped by the
+  server's `sequence`, also right after the device's own write was accepted, even across a server
+  restart the device has not seen yet, and after `resetChangeToken()`. A version the device wrote
+  itself is never a conflict, also when a stale page took the record back and the user edited on top
+  of it, or a page lists an older own write before a version whose answer was lost. Without
+  sequences a pull leaves a pending change to its push, also when the page brings an older write of
+  the device itself, and the push's answer decides: a version a pull kept back meanwhile takes its
+  place only when the server's `sequence` shows it is newer, and when nothing tells, the change goes
+  out once more for a fresh answer.
+- Another server epoch counts only when two requests of one sync report it, the pull with the token
+  and the pull from the beginning, so a stale cache or another deployment behind the same URL cannot
+  roll the store back. A page without an epoch, once the server reported one, is never taken either.
+  A sync that fetches a single page still follows a server restart, and when the two requests
+  disagree the sync fails instead of reporting success. Epochs go one way: an earlier epoch than the
+  store's, one it left or one it never held, is never taken, also after `resetChangeToken()`, so a
+  stale replica or cache that answers both requests, however many syncs in a row, cannot take the
+  store back either.
 - Deleted records stay deleted. A server that lost its data, or another server, makes the store
   pull everything again and keep its pending changes, which meet the new history through their
   push's answer, not through a page. A record the app cannot decode, or one nested deeper than 64
@@ -374,22 +377,23 @@ app and server restarts and stale pages, as long as the server follows the
   off and are parked, a sync ends after `syncTimeout`, and syncs wait while the file cannot be
   written.
 
-The server must never give the same revision to two versions of a record, should send an `epoch`
-that only moves to later ones (longer, or greater byte by byte) and never comes back, a `sequence`
-that keeps counting across restarts (the only order the store uses), the pushed timestamps (a wall
-time far ahead of its clock moved back to a limit) and the `changeID` that wrote each version, and
-must remember change IDs across restarts, show a write in pages only once it is stored, and keep
-every page and the answer to each pushed change within the client's response limit (a page holds at
-most `limit` changes, cut by bytes, at least one change per page). Limits: writes a server lost in a
-restore are not uploaded again, a server without `sequence` gets no order guarantee (a stale page
-can roll a record back until it changes again, though no write is lost), a record saved again right
-after `discardChange(for:)` meets the server's copy as a conflict, one store instance per file
-(enforced for `FileStore`, `InMemoryStorage` and custom backends that report a `claimIdentity`), the
-whole file is written on every change, records nest at most 64 levels, a page holds at most 1,000
-changes, a single change larger than four times the response limit stops the pull, a change whose
-push answer alone is larger than the response limit stays in doubt and is parked after its last
-attempt, an earlier epoch stays refused until the server reports one later than the store's, and
-deletions beyond 10,000 are forgotten.
+The server must never give the same revision to two versions of a record, should send on every page
+an `epoch` that only moves to later ones (longer, or greater byte by byte) and never comes back, a
+`sequence` that keeps counting across restarts (the only order the store uses), the pushed
+timestamps (a wall time far ahead of its clock moved back to a limit) and the `changeID` that wrote
+each version, and must remember change IDs across restarts, show a write in pages only once it is
+stored, and keep every page and the answer to each pushed change within the client's response limit
+(a page holds at most `limit` changes, cut by bytes, at least one change per page). Limits: writes a
+server lost in a restore are not uploaded again, a server without `sequence` gets no order guarantee
+(a stale page can roll a record back until it changes again, though no write is lost), a record
+saved again right after `discardChange(for:)` meets the server's copy as a conflict, one store
+instance per file (enforced for `FileStore`, `InMemoryStorage` and custom backends that report a
+`claimIdentity`), the whole file is written on every change, records nest at most 64 levels, a page
+holds at most 1,000 changes, a single change larger than four times the response limit stops the
+pull, a change whose push answer alone is larger than the response limit stays in doubt and is
+parked after its last attempt, an earlier epoch stays refused until the server reports one later
+than the store's and a page without an epoch until it reports one again, and deletions beyond 10,000
+are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh, eighth, ninth and tenth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth, ninth, tenth and eleventh rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -201,6 +201,24 @@ now state what the store promises and what it needs from the server.
   revisions the device's own writes replaced, never by timestamps, and a pull leaves a pending
   change that meets a version without a sequence to its push, whose conflict answer names the
   server's current version.
+- On a server without sequences, a stale page that brought back an older write of the device
+  while the user's edit of a newer version waited made the store base the edit on that write:
+  the push then met the newer version as a conflict, and `.serverWins` dropped the edit. The
+  store now bases a change on its own write only when the server's sequences show that write is
+  newer than the version the change is based on; otherwise the version waits for the push.
+- A version a pull kept back for a change in doubt replaced the push's conflict answer whenever
+  the server sent no sequences, so the resolver met a stale page instead of the version the
+  server named: an answer that named the device's own write still asked the resolver,
+  `.serverWins` dropped the user's last edit, and a merge brought back an item another device
+  had removed. The answer now decides: the device's own write is never a conflict, a kept-back
+  version takes the answer's place only when the sequences show it is newer, and when they
+  cannot tell, the change goes out once more under a new change ID, so the server answers with
+  its current version.
+- A page without an epoch was taken from a single request while the store held an epoch: one
+  page from another deployment behind the same URL could give a record a sequence that made
+  every later conflict answer of the real server look older, so each edit of the record was
+  parked, also after `retryFailedChanges()` and `resetChangeToken()`. Once the store holds an
+  epoch, a page without one is checked by a second request like another epoch and never taken.
 
 ### Added
 
@@ -238,6 +256,9 @@ now state what the store promises and what it needs from the server.
   by byte, and keep counting sequences across a restart that keeps the data. Both reference
   servers make each epoch from the time in microseconds (16 hexadecimal digits), and at least
   one more than the last epoch they handed out in the process or, with `--data`, saved.
+- Servers that report an epoch must report it on every page: while the store holds an epoch, it
+  refuses a page without one, and a server that stops reporting epochs is refused until it
+  reports one again.
 - Servers should send back the change ID that wrote each version and may bound pushed
   timestamps by their clock; a server without change IDs has to keep timestamps as they were
   pushed. The reference servers do the first and bound timestamps to five minutes ahead.

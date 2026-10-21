@@ -107,7 +107,8 @@ version of one record, so records well below the limit keep every answer within 
 ```
 
 A change without `record` is a deletion. `timestamp`, `sequence`, `changeID` and `epoch` are
-optional. Conflict and rejection answers name the server's version in the same form.
+optional, but a server that reports an epoch reports it on every page. Conflict and rejection
+answers name the server's version in the same form.
 
 A page must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by default). Return at most
 `limit` changes (``HTTPSyncTransport/pageSize``, 100 by default, 1,000 at most), cut the page by
@@ -140,21 +141,22 @@ an empty page, and report a new epoch: the store then pulls everything again, sk
 whose revision it already has, and keeps its pending changes. The reference server creates a
 later epoch on every start, 16 hexadecimal digits of the time in microseconds, and puts it in
 front of its revisions and tokens (`"00064a1f3c2b9e18.43"`). The store believes another epoch
-than its own only when two requests of one sync report it: the pull with its token and the
-pull from the beginning, or, without a token, the pull from the beginning and the pull after
-that page's token. A later epoch then starts a new history. **Never report an earlier epoch,
-and never report an epoch again once you reported a later one**: the store refuses a page that
-names an earlier epoch than its own in every sync, however many requests or syncs report it,
-as it comes from a stale replica or cache. That holds for an epoch the store left for a later
-one (it keeps the last 32 of them) and for one it never held, such as the epoch between two
-restarts. A server restored from a backup reports a new, later epoch; a server whose clock may
-go back keeps its last epoch and counts on from it, as the reference server does with `--data`.
-``OfflineStore/resetChangeToken()`` forgets the token only: the next sync pulls from the
-beginning, and earlier epochs stay refused.
-When the two requests disagree, the sync fails without a change to the store. So serve the pull
-from the beginning (`GET <base>/changes` without `since`) from a cache only for a short time:
-every device asks for the same URL, and right after a reset both requests of the check are
-such URLs.
+than its own only when two requests of one sync report it: the pull with its token and the pull
+from the beginning, or, without a token, the pull from the beginning and the pull after that
+page's token. A later epoch then starts a new history. **Never report an earlier epoch, and
+never report an epoch again once you reported a later one**: the store refuses a page that names
+an earlier epoch than its own in every sync, however many requests or syncs report it, as it
+comes from a stale replica or cache. That holds for an epoch the store left for a later one (it
+keeps the last 32 of them) and for one it never held, such as the epoch between two restarts. A
+server restored from a backup reports a new, later epoch; a server whose clock may go back keeps
+its last epoch and counts on from it, as the reference server does with `--data`. A page without
+an epoch, once the store holds one, is refused the same way: it comes from no history the store
+knows, such as another deployment behind the same URL, so a server that stops reporting epochs
+is refused until it reports one again. ``OfflineStore/resetChangeToken()`` forgets the token
+only: the next sync pulls from the beginning, and earlier epochs stay refused. When the two
+requests disagree, the sync fails without a change to the store. So serve the pull from the
+beginning (`GET <base>/changes` without `since`) from a cache only for a short time: every
+device asks for the same URL, and right after a reset both requests of the check are such URLs.
 
 A change the app cannot decode, for example a field of another type, is set aside in
 ``OfflineStore/quarantinedChanges()``; the rest of the page is used and the token moves on. The
