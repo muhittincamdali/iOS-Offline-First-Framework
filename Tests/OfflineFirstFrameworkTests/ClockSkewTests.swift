@@ -79,15 +79,44 @@ struct ClockSkewTests {
         #expect(await store.state.entries["y"]?.timestamp.wallTime == nowMilliseconds)
     }
 
-    /// The pushing device recognises its own write by the exact timestamp, so the server keeps
-    /// it; the drift limit is the devices' to apply.
-    @Test func theInMemoryServerKeepsPushedTimestampsAsTheyWereSent() async throws {
+    /// The server bounds a pushed timestamp by its own clock, the one clock every device shares,
+    /// and sends back the change ID that wrote the version, by which the pushing device
+    /// recognises its own write.
+    @Test func theInMemoryServerBoundsPushedTimestampsAndSendsBackTheChangeID() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         let future = HLCTimestamp(wallTime: nowMilliseconds + 86_400_000, counter: 1, nodeID: "broken")
         let change = OutgoingChange<Note>(id: UUID(), recordID: "x", operation: .upsert(Note(id: "x", text: "X")), timestamp: future, baseRevision: nil)
         _ = try await server.push([change])
-        let stored = try #require(try await server.pull(since: nil).changes.first?.timestamp)
-        #expect(stored == future)
+        let stored = try #require(try await server.pull(since: nil).changes.first)
+        #expect(stored.timestamp == HLCTimestamp(wallTime: nowMilliseconds + 300_000, counter: 1, nodeID: "broken"))
+        #expect(stored.changeID == change.id)
+    }
+
+    /// Device A's clock runs ahead by ten minutes or a day. A writes a record; B edits it
+    /// offline later in real time, on the version before. B's edit is the newer one, on the
+    /// server and on both devices.
+    @Test(arguments: [(600.0, 480.0), (86_400.0, 7_200.0)])
+    func aWriteFromADeviceAheadDoesNotBeatALaterEditOnAnotherDevice(ahead: TimeInterval, laterBy: TimeInterval) async throws {
+        let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
+        let aheadClock = TestClock()
+        aheadClock.advance(by: ahead)
+        let a = try makeStore(server, name: "a", clock: aheadClock)
+        let b = try makeStore(server, name: "b")
+        await server.write(Note(id: "x", text: "v0"))
+        try await a.sync()
+        try await b.sync()
+        clock.advance(by: 60)
+        aheadClock.advance(by: 60)
+        try await a.save(Note(id: "x", text: "A edit"))
+        try await a.sync()
+        clock.advance(by: laterBy)
+        aheadClock.advance(by: laterBy)
+        try await b.save(Note(id: "x", text: "B edit, later in real time"))
+        try await b.sync()
+        try await a.sync()
+        #expect(await server.record("x")?.text == "B edit, later in real time")
+        #expect(await a.record("x")?.text == "B edit, later in real time")
+        #expect(await b.record("x")?.text == "B edit, later in real time")
     }
 
     /// X edits offline, then its clock is set back, by ten minutes or a day; Y edits an hour

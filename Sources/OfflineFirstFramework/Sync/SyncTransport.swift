@@ -73,10 +73,12 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
 
     /// When the record was last changed, if the server keeps the timestamps it receives.
     /// ``ConflictResolver/lastWriteWins`` lets the server's copy win when it is missing. Keep it
-    /// as it was pushed: the store recognises a write of its own whose answer was lost by it. A
-    /// timestamp further ahead than ``OfflineStore/Configuration/maximumClockDrift`` counts as at
-    /// that limit when last write wins weighs it against a local write, and does not order the
-    /// server's versions.
+    /// as it was pushed, except that a wall time further ahead of the server's clock than a few
+    /// minutes is moved back to that limit, as the reference servers do: a device whose clock
+    /// runs ahead then wins over later edits on other devices for those minutes at most. A
+    /// timestamp further ahead than ``OfflineStore/Configuration/maximumClockDrift`` also counts
+    /// as at that limit when last write wins weighs it against a local write, and does not order
+    /// the server's versions.
     public let timestamp: HLCTimestamp?
 
     /// Where this version stands in the server's order of writes, if the server numbers them:

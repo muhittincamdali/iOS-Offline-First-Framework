@@ -6,7 +6,8 @@ import os
 /// It behaves like a real backend: every write gets a new revision, a push based on an old
 /// revision gets a conflict, pulls return changes after a token in pages, change IDs are
 /// remembered so a repeated push is not applied twice and sent back with the version they wrote,
-/// and ``isOnline`` simulates losing the connection. Revisions and change tokens start with an epoch that is new for every instance
+/// a pushed timestamp more than ``maximumClockDrift`` ahead of the server's clock is moved back
+/// to that limit, and ``isOnline`` simulates losing the connection. Revisions and change tokens start with an epoch that is new for every instance
 /// and every ``restart()``, and later than every earlier one, so a revision is never handed out
 /// twice, a store that kept a token from an earlier instance (an app relaunched with a fresh demo
 /// server) pulls everything again, and a page answered from before a restart is recognised.
@@ -32,6 +33,11 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
 
     /// Change IDs the server remembers for idempotent pushes; older ones are forgotten.
     public static var rememberedChangeLimit: Int { 10_000 }
+
+    /// How far ahead of the server's clock a pushed timestamp may be; one further ahead is
+    /// stored at this limit, so a device whose clock runs ahead wins over later edits on other
+    /// devices for this long at most.
+    public static var maximumClockDrift: Duration { .seconds(300) }
 
     private var stored: [Record.ID: Stored] = [:]
     /// The number of writes so far; the last write's position in the change feed.
@@ -85,7 +91,7 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         self.latency = max(.zero, latency)
         self.validate = validate
         self.now = now
-        self.clock = HybridLogicalClock(nodeID: "server", maximumDrift: .seconds(300))
+        self.clock = HybridLogicalClock(nodeID: "server", maximumDrift: Self.maximumClockDrift)
     }
 
     /// Simulates losing or regaining the connection.
@@ -195,10 +201,15 @@ public actor InMemorySyncServer<Record: SyncableRecord>: SyncTransport {
         if let record = change.record, let reason = validate(record) {
             return .rejected(reason: reason, current: current.map { remote(change.recordID, $0) })
         }
-        _ = try? clock.receive(change.timestamp, at: now())
-        // The timestamp is kept as it was pushed, and the change ID with it: the device
-        // recognises its own write by them after a lost answer.
-        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: change.timestamp, changeID: change.id))
+        let now = now()
+        _ = try? clock.receive(change.timestamp, at: now)
+        // The device recognises its own write after a lost answer by the change ID, so the
+        // timestamp can be bounded by the server's clock, the one clock all devices share.
+        let limit = HybridLogicalClock.milliseconds(since1970: now.addingTimeInterval(Self.maximumClockDrift.seconds))
+        let timestamp = change.timestamp.wallTime > limit
+            ? HLCTimestamp(wallTime: limit, counter: change.timestamp.counter, nodeID: change.timestamp.nodeID)
+            : change.timestamp
+        return .accepted(revision: commit(change.record, id: change.recordID, timestamp: timestamp, changeID: change.id))
     }
 
     private func commit(_ record: Record?, id: Record.ID, timestamp: HLCTimestamp, changeID: UUID? = nil) -> String {

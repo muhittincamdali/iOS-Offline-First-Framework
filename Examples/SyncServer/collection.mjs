@@ -10,6 +10,8 @@ export const LIMITS = Object.freeze({
   idLength: 256,
   nodeIDLength: 128,
   revisionLength: 64,
+  // How far ahead of the server's clock a pushed timestamp may be, in milliseconds.
+  clockDrift: 300_000,
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -92,11 +94,13 @@ export class Collection {
 
   /**
    * `validate` returns a reason to reject a record, or null. `maxRecords` caps the records,
-   * deleted ones included, so clients cannot grow the server's memory without limit.
+   * deleted ones included, so clients cannot grow the server's memory without limit. `now`
+   * returns the server's time in milliseconds.
    */
-  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection } = {}) {
+  constructor({ validate = () => null, state, maxRecords = LIMITS.recordsPerCollection, now = () => Date.now() } = {}) {
     this.validate = validate;
     this.maxRecords = maxRecords;
+    this.now = now;
     if (state) this.#restore(state);
   }
 
@@ -166,12 +170,19 @@ export class Collection {
       record: change.record,
       revision,
       sequence: this.#sequence,
-      // Kept as it was pushed, and the change ID with it: the device that pushed it recognises
-      // its own write by them when the answer was lost.
-      timestamp: change.timestamp,
+      // Bounded by the server's clock, the one clock all devices share: a device whose clock
+      // runs ahead wins over later edits on other devices for LIMITS.clockDrift at most.
+      timestamp: this.#bounded(change.timestamp),
+      // Sent back with the version, so the device that pushed it recognises its own write when
+      // the answer was lost.
       changeID: change.id,
     });
     return { status: 'accepted', revision };
+  }
+
+  #bounded(timestamp) {
+    const limit = this.now() + LIMITS.clockDrift;
+    return timestamp.wallTime > limit ? { ...timestamp, wallTime: limit } : timestamp;
   }
 
   #remote(entry) {
