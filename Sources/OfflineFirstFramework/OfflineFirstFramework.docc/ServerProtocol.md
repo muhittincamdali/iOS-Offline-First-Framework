@@ -126,13 +126,13 @@ Return changes oldest first, at most one per record, and a `token` the server un
 differ from every token the store pulled with in this sync, or the sync fails. The token is
 sent percent-encoded, `+` as `%2B`.
 
-| Field       | Meaning                                                                                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                   |
-| `sequence`  | Grows with every write the server stores, also across a restart that keeps the data; orders versions within one epoch. Lets the store skip stale pages.  |
-| `epoch`     | Names the server's history. Change it to a later one whenever the data may have been lost or replaced: longer, or as long and greater byte by byte.      |
-| `timestamp` | The timestamp the change was pushed with; a wall time more than a few minutes ahead of the server's clock moved back to that limit.                   |
-| `changeID`  | The `id` of the pushed change that wrote this version. The store knows its own writes by it; without it, by the exact timestamp it pushed.            |
+| Field       | Meaning                                                                                                                                                                                               |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `revision`  | Names this version. Never give it to another version of the record, also after a restart or a restore.                                                                                                |
+| `sequence`  | Grows with every write the server stores, also across a restart that keeps the data; orders versions within one epoch. The only order the store uses: without it a stale page can roll a record back. |
+| `epoch`     | Names the server's history. Change it to a later one whenever the data may have been lost or replaced: longer, or as long and greater byte by byte.                                                   |
+| `timestamp` | The timestamp the change was pushed with; a wall time more than a few minutes ahead of the server's clock moved back to that limit.                                                                   |
+| `changeID`  | The `id` of the pushed change that wrote this version. The store knows its own writes by it; without it, by the exact timestamp it pushed.                                                            |
 
 When the server cannot continue after a token, because it lost its data, was restored from a
 backup or the token belongs to another database, return changes from the beginning rather than

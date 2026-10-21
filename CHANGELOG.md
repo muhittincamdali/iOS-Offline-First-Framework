@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth, sixth, seventh, eighth and ninth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth, seventh, eighth, ninth and tenth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -20,8 +20,7 @@ now state what the store promises and what it needs from the server.
 - The conflict resolver was asked about server versions older than the stored one and about
   records without a local change: `.serverWins` rolled records back and brought deleted ones
   back, `.clientWins` made passive devices overwrite accepted writes. Older versions are now
-  skipped, ordered by the server's `sequence` (or the timestamps), and only a real local change
-  meets the resolver.
+  skipped, ordered by the server's `sequence`, and only a real local change meets the resolver.
 - The deletion of a record the store never held was not kept, so an older page could create
   the record. Two deletions now go to the resolver, so the newer one stays.
 - A timestamp years ahead won every last-write-wins conflict on every device. Timestamps more
@@ -69,13 +68,12 @@ now state what the store promises and what it needs from the server.
   pending change the server already holds is settled as accepted. Node IDs alone are not
   trusted for this, since a store file restored onto a second device shares its node ID.
 - On a server without sequences, a version without a timestamp was ordered by the time the
-  store received it, so another device's newer version could be skipped for good. A missing
-  timestamp now leaves the order unknown; files from before keep the timestamp they stored.
+  store received it, so another device's newer version could be skipped for good. The store no
+  longer orders the versions of such a server by any time.
 - On a device whose clock was set back by more than `maximumClockDrift`, newer edits from other
   devices were moved below the device's own older edit, and last write wins pushed the older
-  edit over them; without sequences, all remote timestamps ended at the same limit. The limit
-  now counts from the newest timestamp the store holds when that is later than the device
-  clock, and server versions are ordered only by timestamps within the limit.
+  edit over them. The limit now counts from the newest timestamp the store holds when that is
+  later than the device clock.
 - After a server restart, a page from a stale replica or cache could roll records back. Epochs
   now have an order (a longer one is later; of two as long, the greater byte by byte): a page of
   another epoch than the store's counts only when two requests of one sync report that epoch, so
@@ -190,6 +188,19 @@ now state what the store promises and what it needs from the server.
   that named the device's accepted write met the edit as another device's version. Each record
   now keeps the change IDs and timestamps of its last 16 writes the server holds or held, and a
   version one of them wrote is the device's own, never a conflict.
+- A page that listed an older own write of the device before a version whose answer was lost,
+  as the first page after a server restart can, made the store forget the versions in doubt of
+  the user's next edit, and that version met the resolver as another device's write:
+  `.serverWins` dropped the edit on the device and the server, a merge merged it with the
+  device's own write. Only a push answer settles versions in doubt now, and they then stay known
+  as the device's own writes.
+- On a server without sequences, a device clock that ran ahead, for a moment or for good, hid
+  every later version of a record the device wrote, and its later edits of that record were
+  parked for good: the store ordered versions by timestamps and took the timestamp it pushed as
+  the server's. Server versions are now ordered only by the server's sequences and by the
+  revisions the device's own writes replaced, never by timestamps, and a pull leaves a pending
+  change that meets a version without a sequence to its push, whose conflict answer names the
+  server's current version.
 
 ### Added
 
@@ -217,6 +228,10 @@ now state what the store promises and what it needs from the server.
 - While a sync waits after a failed write of the store file, `sync()` throws that error without
   a request; the next write that succeeds ends the wait.
 - `SyncReport.conflicts` no longer counts a conflict with the device's own earlier write.
+- Without `RemoteChange.sequence` the store no longer orders a server's versions at all: a stale
+  page can roll a record back until it changes again, and a pull leaves a pending change to its
+  push. Servers that want stale pages skipped and older versions of deleted records ignored
+  must send sequences; the reference servers do.
 - The reference server starts a new epoch on every start, also with `--data`, so each client
   pulls everything once after a restart, and it saves the answers to change IDs with its data.
 - Servers must report epochs that only move to later ones: longer, or as long and greater byte

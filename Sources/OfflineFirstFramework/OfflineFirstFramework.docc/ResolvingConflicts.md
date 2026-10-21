@@ -12,11 +12,13 @@ deleted record) is not a conflict: the store skips it, whatever the resolver, an
 without a local change simply takes the server's newer version. Neither is a version the device
 wrote itself, such as a push the server applied although its answer was lost: the change made
 on top of it goes out again on its revision without asking the resolver. The store tells older
-from newer by the server's ``RemoteChange/sequence``, or by the timestamps within the drift
-limit when the server sends none (see <doc:ServerProtocol>), and keeps deletions as tombstones, the newest
+from newer only by the server's ``RemoteChange/sequence`` (see <doc:ServerProtocol>), never by
+timestamps, which device clocks write, and keeps deletions as tombstones, the newest
 ``OfflineStore/Configuration/maximumTombstones`` of them, so an older version of a deleted
-record does not bring it back. The store hands both versions to its ``ConflictResolver`` as a
-``Conflict`` and acts on the ``ConflictResolution``:
+record does not bring it back. From a server without sequences a pull cannot tell a newer
+version from a stale copy: it leaves a waiting local change to its push, and the resolver meets
+the version the server names in its conflict answer. The store hands both versions to its
+``ConflictResolver`` as a ``Conflict`` and acts on the ``ConflictResolution``:
 
 - ``ConflictResolution/keepRemote``: the server's version replaces the local one, and the local
   change is dropped.

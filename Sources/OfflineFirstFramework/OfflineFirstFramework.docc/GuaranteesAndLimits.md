@@ -11,22 +11,25 @@ random saves, deletes, syncs (also two at once), restarts and calls of
 ``OfflineStore/resetChangeToken()`` against an ``InMemorySyncServer`` that restarts and answers
 some pulls with stale pages, from a cache of each device or one cache both devices share, with
 pages of two, three or a hundred changes and one to a hundred pages per sync, for last write
-wins, server wins, client wins and a merge. It
-checks the end state, that no accepted write is applied again after a later one, that no device
-goes back to an older server version of a record, and that no resolver is asked about a
-device's own write. A second property test runs one to three operations of three devices at
-once, with resets, server restarts between a push and its pull, a lagging replica of earlier
-epochs and storage that dies at random writes, against a server written apart from the store,
-and checks the same. Further tests send the HTTP transport pages of junk, deeply nested records,
-pages larger than its limit and pages with more changes than it asked for, in debug and release
-builds, stream pages that never end over a real socket, measure the memory a 16 MiB page costs,
-and run 68 records of 250 KiB against the reference server, also across its restart, 70
-conflict answers of 250 KiB that together exceed the response limit, a write whose save
-failed across a restart of the reference server, a push the server applied behind a proxy that
-answers 504 or a 200 too long to read, and a replica that serves pages from before a restart
-after ``OfflineStore/resetChangeToken()``. Scenario tests run, for every policy, a replica of
-the epoch between two server restarts that answers a device for many syncs in a row, a change
-made during a pull, two syncs at once, and a crash at every write of a sync.
+wins, server wins, client wins and a merge. It checks the end state, that no accepted write is
+applied again after a later one, that no device goes back to an older server version of a
+record, and that no resolver is asked about a device's own write. A second property test runs
+one to three operations of three devices at once, with resets, server restarts between a push
+and its pull, a lagging replica of earlier epochs and storage that dies at random writes,
+against a server written apart from the store, with and without sequences and change IDs, and
+checks the same, except that a device may go back without sequences (see the limits). Further
+tests send the HTTP transport pages of junk, deeply nested records, pages larger than its limit
+and pages with more changes than it asked for, in debug and release builds, stream pages that
+never end over a real socket, measure the memory a 16 MiB page costs, and run 68 records of 250
+KiB against the reference server, also across its restart, 70 conflict answers of 250 KiB that
+together exceed the response limit, a write whose save failed across a restart of the reference
+server, a push the server applied behind a proxy that answers 504 or a 200 too long to read, and
+a replica that serves pages from before a restart after ``OfflineStore/resetChangeToken()``.
+Scenario tests run, for every policy, a replica of the epoch between two server restarts that
+answers a device for many syncs in a row, a change made during a pull, two syncs at once, a
+crash at every write of a sync, and a page after a restart that lists an older own write before
+a version whose answer was lost. Device clocks a year ahead for a moment, or an hour ahead for
+good, run against servers without sequences.
 
 ## Guarantees
 
@@ -44,19 +47,25 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
   when a record changed on the device and, by another device, on the server: a version the
   device wrote itself is not a conflict, and the change made on top of it goes out again on its
   revision. That holds for a push applied although its answer was lost, and for a write the
-  server accepted even when a page the store could not order took the record back afterwards
-  and the user edited on top of that: the store keeps the change IDs and timestamps of the last
-  16 writes of each record the server holds or held. A server version older than the one
-  the store holds (a page out of order, a lagging replica, a stale cache) is skipped and never
-  pushed back, also right after the store's own write was accepted: until its echo arrives,
-  the store knows the write is newer than every version up to the one it replaced, its own
-  earlier accepted writes included, and keeps that in its file. That holds across a server
-  restart too, also after ``OfflineStore/resetChangeToken()``: a sync pushes before it pulls, so
-  a push may be answered after a restart the store has not seen yet, and what a push answer
-  told about a record (an accepted write, or the version a conflict answer brought) moves into
-  the later epoch until a pull brings that version.
+  server accepted even when a page the store could not order took the record back afterwards and
+  the user edited on top of that: the store keeps the change IDs and timestamps of the last 16
+  writes of each record the server holds or held. The versions of a change that were in doubt
+  stay known until a push answer settles them, also when a page lists an older own write before
+  them, as the first page after a server restart can. From a server that sends
+  ``RemoteChange/sequence``, a server version older than the one the store holds (a page out of
+  order, a lagging replica, a stale cache) is skipped and never pushed back, also right after
+  the store's own write was accepted: until its echo arrives, the store knows the write is newer
+  than every version up to the one it replaced, its own earlier accepted writes included, and
+  keeps that in its file. That holds across a server restart too, also after
+  ``OfflineStore/resetChangeToken()``: a sync pushes before it pulls, so a push may be answered
+  after a restart the store has not seen yet, and what a push answer told about a record (an
+  accepted write, or the version a conflict answer brought) moves into the later epoch until a
+  pull brings that version. From a server without sequences a pull cannot tell a newer version
+  from a stale copy: it leaves a pending change to its push, and the resolver meets the version
+  the server names in its conflict answer, never a stale page.
 - **Deleted records stay deleted.** Deletions are kept as tombstones, also for records the store
-  never held, so an older version that arrives later does not bring a record back.
+  never held, so an older version that arrives later from a server that sends sequences does
+  not bring a record back.
 - **A server that lost or replaced its data starts a new history.** A later
   ``PullResponse/epoch``, or a transport with another ``SyncTransport/serverIdentity``, makes the
   store pull everything again from the beginning, and the server's versions replace the ones of
@@ -125,8 +134,9 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
   so a device whose clock was set back still takes a newer edit from another device as newer
   than its own older one. A device clock that showed a time far ahead only for a moment does not
   stamp later writes: the store's clock goes on from the drift limit once the device clock is
-  back. Server versions are never ordered by a timestamp beyond the limit, so one stamped far
-  ahead does not hide later versions.
+  back. Server versions are never ordered by timestamps, also not by those within the limit, so
+  a clock that ran ahead, for a moment or for good, hides no later version of a record and makes
+  no conflict answer of the server look older: no change is parked for it.
 - **Retries are bounded.** Failed pushes and pushes answered with a conflict wait with
   exponential backoff and jitter (``RetryPolicy``) and are parked after the last attempt; a sync
   ends after ``OfflineStore/Configuration/syncTimeout``; the ``CircuitBreaker`` pauses pulls but
@@ -134,8 +144,9 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
   protection, another instance), syncs wait with the same backoff instead of sending requests
   whose answers they could not store, and automatic sync waits after every failed sync.
 - **Devices converge.** Once the network is quiet and every device has synced, every device
-  holds the server's records and nothing is queued. With ``ConflictResolver/lastWriteWins``
-  every record ends as its newest write on any device.
+  holds the server's records and nothing is queued; from a server without sequences, unless a
+  stale page answered after the last change of a record (see the limits). With
+  ``ConflictResolver/lastWriteWins`` every record ends as its newest write on any device.
 
 ## What the server must do
 
@@ -148,9 +159,9 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
   after a restore or with a clock set back: the store refuses it in every sync. Never report an
   epoch again once you reported a later one, and serve the pull from the beginning from a
   shared cache for a short time at most. Report a ``RemoteChange/sequence`` that grows with
-  every write, also across a restart that keeps the data. Without a sequence the store orders
-  versions by their timestamps, which matches the server's order only while the devices
-  resolve conflicts by last write wins or a merge.
+  every write, also across a restart that keeps the data: a server that sends it gets the order
+  guarantees above. Without it the store has no order of the server's versions, since it does
+  not take one from timestamps, which device clocks write.
 - Send back the ``RemoteChange/timestamp`` a change was pushed with, a wall time far ahead of the
   server's clock moved back to a limit of a few minutes, and the ``RemoteChange/changeID`` that
   wrote each version. The store recognises a write of its own whose answer was lost by the
@@ -187,7 +198,9 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
 - **A save right after a discard has no base.** ``OfflineStore/discardChange(for:)`` removes the
   local version and pulls everything again. A record saved again before that pull brings the
   server's copy back is pushed as new, so the server's copy, also a version the device wrote
-  itself, meets the resolver as a conflict.
+  itself, meets the resolver as a conflict. The store forgets the device's writes of the record
+  with the discard, so the same holds when a stale page brings an older copy back and the user
+  edits that.
 - **One instance per file.** With the built-in backends, ``FileStore`` and
   ``InMemoryStorage``, and with a custom backend that reports a
   ``StorageBackend/claimIdentity`` (a backend that wraps a built-in one can forward its
@@ -231,12 +244,14 @@ made during a pull, two syncs at once, and a crash at every write of a sync.
   changes; it follows that server again once the server reports an epoch later than the one the
   store holds. A server whose epoch went back, after a restart with its clock set back and
   without its saved epoch, is refused the same way until it reports one later than the store's.
-- **A server without sequences and timestamps cannot be checked for order.** The store then
-  takes every server version as the newest, so a stale page can roll a record back until the
-  next change of it. The same holds without sequences for a version whose timestamp is missing
-  or beyond the drift limit; on a device whose clock is far behind, that can be every timestamp
-  from a correct clock. When the version a stale page replaced was the device's own accepted
-  write, an edit made on the stale copy still replaces that write without a conflict.
+- **A server without sequences gets no order guarantee.** The store does not order versions
+  by timestamps, which device clocks write, so it takes every server version a page brings as
+  the newest: a stale page (out of order, from a lagging replica or a cache) can roll a record
+  without a local change back, also to a version from before its deletion, until the record
+  changes again, and devices then differ until it does. No write is lost and no change is parked
+  for it: a pull leaves a pending change to its push. When the version a stale page replaced was
+  the device's own accepted write, an edit made on the stale copy still replaces that write
+  without a conflict.
 - **A copied store file shares its node ID.** A file restored onto a second device, or moved
   with a migration while the first device stays in use, stamps its writes with the same node
   ID. The store neither orders versions nor recognises its own writes by the node ID alone,

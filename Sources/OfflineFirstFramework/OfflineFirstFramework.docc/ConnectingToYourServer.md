@@ -59,7 +59,8 @@ The rules that keep sync correct:
   server's record instead of overwriting it.
 - **Order and history.** Send ``RemoteChange/sequence``, a number that grows with every write,
   also across a restart that keeps the data, so the store recognises older versions that
-  arrive late without trusting device clocks, and ``PullResponse/epoch``, which changes to a
+  arrive late; it never orders versions by device clocks, so without a sequence a stale page
+  can roll a record back until it changes again. Send ``PullResponse/epoch``, which changes to a
   later one (longer, or as long and greater byte by byte) when the server restarted, lost or
   replaced its data, so the store pulls everything again, and never goes back to an epoch it
   reported before a later one; the store refuses a page with an earlier epoch than its own in
