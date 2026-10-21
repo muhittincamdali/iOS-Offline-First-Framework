@@ -1,5 +1,6 @@
-# Repository-specific: builds the example app the README samples come from, and tests the
-# reference sync server alone and together with the package (end to end over HTTP).
+# Repository-specific: builds the example app the README samples come from, tests the
+# reference sync server alone and together with the package (end to end over HTTP, also across
+# a server restart), and runs the tests of untrusted pages and deep records in a release build.
 name: Examples
 
 on:
@@ -74,6 +75,54 @@ jobs:
             curl --silent --fail http://localhost:8080/sync/health/changes > /dev/null && break
             sleep 1
           done
-          OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEnd 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+          OFFLINE_FIRST_SERVER_URL=http://localhost:8080 swift test --filter EndToEndTests 2>&1 | tee "$RUNNER_TEMP/e2e.log"
           # The suite skips itself without the server; make sure it ran.
           grep -q "twoDevicesShareEditsDeletesAndConflicts() passed" "$RUNNER_TEMP/e2e.log"
+          grep -q "largeRecordsReachANewDeviceAndOneThatPullsAgain() passed" "$RUNNER_TEMP/e2e.log"
+
+      - name: End-to-end tests across a server restart
+        run: |
+          set -o pipefail
+          export OFFLINE_FIRST_SERVER_URL=http://localhost:8081
+          export OFFLINE_FIRST_E2E_STORE_DIR="$RUNNER_TEMP/restart-stores"
+          start_server() {
+            node Examples/SyncServer/server.mjs --port 8081 --data "$RUNNER_TEMP/restart-data.json" >> "$RUNNER_TEMP/restart-server.log" 2>&1 &
+            SERVER=$!
+            for _ in $(seq 1 30); do
+              curl --silent --fail http://localhost:8081/sync/health/changes > /dev/null && break
+              sleep 1
+            done
+          }
+          start_server
+          OFFLINE_FIRST_E2E_RESTART_PHASE=before swift test --filter EndToEndRestartTests 2>&1 | tee "$RUNNER_TEMP/restart-before.log"
+          kill "$SERVER"
+          wait "$SERVER" || true
+          # Same data file, new epoch: every device pulls everything again from the beginning.
+          start_server
+          OFFLINE_FIRST_E2E_RESTART_PHASE=after swift test --filter EndToEndRestartTests 2>&1 | tee "$RUNNER_TEMP/restart-after.log"
+          kill "$SERVER"
+          grep -q "beforeTheRestart() passed" "$RUNNER_TEMP/restart-before.log"
+          grep -q "afterTheRestart() passed" "$RUNNER_TEMP/restart-after.log"
+
+  release:
+    name: Untrusted pages and deep records (release build)
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Toolchain
+        run: swift --version
+
+      # Optimised code uses its stack differently; a record nested too deeply ended the process
+      # in both builds, so the limits are checked in a release build too.
+      - name: Tests
+        run: |
+          set -o pipefail
+          swift test -c release -Xswiftc -enable-testing \
+            --filter "RecordDepthTests|PageBudgetTests|PageSizeTests|PushSizeTests|ByteOrderMarkTests|DeepNestingTests" 2>&1 | tee "$RUNNER_TEMP/release.log"
+          grep -q "Test run with .* passed" "$RUNNER_TEMP/release.log"
