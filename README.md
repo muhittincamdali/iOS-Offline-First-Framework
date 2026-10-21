@@ -8,7 +8,7 @@
 
 <p align="center">
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml"><img src="https://github.com/muhittincamdali/iOS-Offline-First-Framework/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Latest version: v2.0.0"></picture></a>
+<a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-version-light.svg" alt="Latest version: v2.1.0"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-platforms-light.svg" alt="Supported platforms: iOS 17+ · macOS 14+ · tvOS 17+ · watchOS 10+ · visionOS 1+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/Package.swift"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-language-light.svg" alt="Language version: Swift 6.2+"></picture></a>
 <a href="https://github.com/muhittincamdali/iOS-Offline-First-Framework/blob/master/LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/badge-license-light.svg" alt="License: MIT"></picture></a>
@@ -46,18 +46,19 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 374 Swift Testing tests on macOS and an iPhone simulator, among
-  them three property tests that run every conflict policy through lost requests, restarts, token
-  resets, overlapping syncs, small page limits, stale pages, operations at once and crashes, also
-  against a server without sequences, scenario tests of a replica that answers a device for many
-  syncs, of a stale page that brings back an older own write or meets an accepted push, of a crash
-  at every write of a sync and of device clocks that jump ahead, and tests that send pages of junk,
-  deeply nested records, pages larger than the response limit and pages with more changes than asked
-  for, also streamed endlessly over a socket; 28 Node tests for the server; and an end-to-end suite
-  in CI that syncs stores through the server over HTTP, also with 68 records of 250 KiB across a
-  server restart, with 70 conflict answers of 250 KiB that together exceed the response limit, with
-  a write whose save failed before a restart, with a push the server applied behind a proxy that
-  answers 504, and with a replica that serves pages from before a restart after a token reset.
+- **Tested against a real server** — 375 Swift Testing tests on macOS and 372 on an iPhone
+  simulator, among them three property tests that run every conflict policy through lost requests,
+  restarts, token resets, overlapping syncs, small page limits, stale pages, operations at once and
+  crashes, also against a server without sequences, scenario tests of a replica that answers a
+  device for many syncs, of a stale page that brings back an older own write or meets an accepted
+  push, of a crash at every write of a sync and of device clocks that jump ahead, and tests that
+  send pages of junk, deeply nested records, pages larger than the response limit and pages with
+  more changes than asked for, also streamed endlessly over a socket; 28 Node tests for the server;
+  and an end-to-end suite in CI that syncs stores through the server over HTTP, also with 68 records
+  of 250 KiB across a server restart, with 70 conflict answers of 250 KiB that together exceed the
+  response limit, with a write whose save failed before a restart, with a push the server applied
+  behind a proxy that answers 504, and with a replica that serves pages from before a restart after
+  a token reset.
 
 ### What's included
 
@@ -83,7 +84,7 @@ https://github.com/muhittincamdali/iOS-Offline-First-Framework.git
 ```
 
 Paste it into the search field at the top right of the window. Leave **Dependency Rule** at
-**Up to Next Major Version** from `2.0.0`, then click **Add Package**. In the next window,
+**Up to Next Major Version** from `2.1.0`, then click **Add Package**. In the next window,
 choose your app target next to **OfflineFirstFramework** and click **Add Package** again.
 
 **2. Import the module**
@@ -163,7 +164,7 @@ Or add it to the `dependencies` in your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "YourApp", dependencies: [

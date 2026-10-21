@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] - Unreleased
+## [2.1.0] - Unreleased
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
 fourth, fifth, sixth, seventh, eighth, ninth, tenth, eleventh, twelfth and thirteenth rounds, and of a review of this release, each with a test
@@ -459,6 +459,6 @@ and the platform minimums rise to iOS 17, macOS 14, tvOS 17, watchOS 10 and visi
 First tagged release. It could not be added as a dependency by version (see 2.0.0) and is not
 supported; use 2.0.0.
 
-[2.0.1]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v2.0.0...v2.0.1
+[2.1.0]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/muhittincamdali/iOS-Offline-First-Framework/releases/tag/v1.0.0

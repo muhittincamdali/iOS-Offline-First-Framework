@@ -10,7 +10,7 @@ In Xcode, choose **File › Add Package Dependencies…**, enter
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.0.0")
+    .package(url: "https://github.com/muhittincamdali/iOS-Offline-First-Framework.git", from: "2.1.0")
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
