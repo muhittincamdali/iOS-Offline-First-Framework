@@ -76,7 +76,7 @@ struct PageSizeTests {
     @Test func aServerThatIgnoresTheLimitStillFailsAndNothingChanges() async throws {
         let feed = Feed(records: [("a", Self.text(kibibytes: 600)), ("b", Self.text(kibibytes: 600))], ignoresLimit: true)
         let store = try store(feed)
-        await #expect(throws: HTTPSyncTransport<Note>.Failure.responseTooLarge(limit: 1 << 20)) { try await store.sync() }
+        await #expect(throws: DecodingError.self) { try await store.sync() }
         #expect(await store.records().isEmpty)
         #expect(await store.quarantinedChanges().isEmpty)
         #expect(await store.state.token == nil)

@@ -11,11 +11,10 @@ extension HTTPSyncTransport {
     /// as the store keeps; the others are only counted (``PullResponse/quarantinedCount``).
     static var listedQuarantinePerPage: Int { OfflineStore<Record>.maximumQuarantinedChanges }
 
-    /// A page with more changes that cannot be read is refused. Each one costs a decoding
-    /// attempt, and a 16 MiB page holds millions of elements: without the limit such a page
-    /// took seconds and gigabytes on every sync. A page of the reference server (1,000 changes
-    /// at most) can always be set aside in full.
-    static var maximumUnreadableChangesPerPage: Int { 1_000 }
+    /// The error for a page that holds more than `limit` changes, the most its pull asked for.
+    static func tooManyChanges(_ limit: Int) -> DecodingError {
+        JSONLayout.corrupted("The page holds more changes than the \(limit) its pull asked for (limit); the page is refused.")
+    }
 
     /// The outcomes of a push answer, each measured and read on its own: one that cannot be
     /// read, also one nested deeper than a record may, leaves only its own change without an
@@ -43,36 +42,39 @@ extension HTTPSyncTransport {
         }
     }
 
-    /// A page, each change measured and read on its own: one that cannot be read, also one
-    /// nested deeper than a record may, is set aside and the rest of the page is used. The first
-    /// of two members with the same name counts.
+    /// A page of at most `limit` changes, each measured and read on its own: one that cannot be
+    /// read, also one nested deeper than a record may, is set aside and the rest of the page is
+    /// used. The first of two members with the same name counts.
     ///
     /// What an untrusted page costs stays bounded: the page is walked once without being copied,
-    /// only the first ``listedQuarantinePerPage`` unreadable changes are listed, a page with more
-    /// than ``maximumUnreadableChangesPerPage`` of them is refused with a `DecodingError`, and the
-    /// walk stops with `CancellationError` once its task is cancelled, as the store does when a
-    /// sync passes ``OfflineStore/Configuration/syncTimeout``.
-    static func page(from data: Data) throws -> PullResponse<Record> {
-        try page(from: data, settingAsideEveryChange: nil)
+    /// the walk refuses the page with a `DecodingError` at its change after `limit`, readable or
+    /// not, only the first ``listedQuarantinePerPage`` unreadable changes are listed, and the walk
+    /// stops with `CancellationError` once its task is cancelled, as the store does when a sync
+    /// passes ``OfflineStore/Configuration/syncTimeout``. A 16 MiB page holds hundreds of
+    /// thousands of small changes, valid or not; reading and storing them all took seconds and a
+    /// gigabyte of memory on every sync.
+    static func page(from data: Data, limit: Int) throws -> PullResponse<Record> {
+        try page(from: data, limit: limit, settingAsideEveryChange: nil)
     }
 
     /// The page of one change that is larger than the transport reads, from the outline of the
     /// page (``PageOutline``): the change is set aside with its record ID and revision, and the
-    /// page's token moves past it. An outline with more or fewer changes comes from a server that
-    /// ignored `limit=1`, or one whose page is too large for another reason.
+    /// page's token moves past it. An outline with more changes comes from a server that ignored
+    /// `limit=1`; one without a change, from a page that is too large for another reason.
     static func oversizedPage(from outline: Data, limit: Int) throws -> PullResponse<Record> {
         let reason = "The change is larger than the \(limit) bytes the transport reads (maximumResponseSize)."
-        let page = try page(from: outline, settingAsideEveryChange: reason)
+        let page = try page(from: outline, limit: 1, settingAsideEveryChange: reason)
         guard page.quarantinedCount == 1 else { throw Failure.responseTooLarge(limit: limit) }
         return page
     }
 
     /// A page; with `reason`, every change of it is set aside for that reason, unread.
-    private static func page(from data: Data, settingAsideEveryChange reason: String?) throws -> PullResponse<Record> {
+    private static func page(from data: Data, limit: Int, settingAsideEveryChange reason: String?) throws -> PullResponse<Record> {
         try JSONLayout.read(data) { page in
             var changes: [RemoteChange<Record>] = []
             var quarantined: [QuarantinedChange] = []
             var unreadable = 0
+            var count = 0
             var fields: [String: Range<Int>] = [:]
             try page.forEachRootMember { key, start in
                 let name = page.string(at: key) ?? ""
@@ -81,6 +83,8 @@ extension HTTPSyncTransport {
                 case "changes":
                     let end = try page.forEachElement(ofArrayAt: start) { start in
                         try Task.checkCancellation()
+                        count += 1
+                        guard count <= limit else { throw tooManyChanges(limit) }
                         let (end, element) = try change(in: page, at: start, listing: quarantined.count < listedQuarantinePerPage,
                                                         settingAsideBecause: reason)
                         switch element {
@@ -88,10 +92,6 @@ extension HTTPSyncTransport {
                             changes.append(change)
                         case .unreadable(let entry):
                             unreadable += 1
-                            guard unreadable <= maximumUnreadableChangesPerPage else {
-                                throw JSONLayout.corrupted(
-                                    "More than \(maximumUnreadableChangesPerPage) changes of the page cannot be read; the page is refused.")
-                            }
                             if let entry { quarantined.append(entry) }
                         }
                         return end

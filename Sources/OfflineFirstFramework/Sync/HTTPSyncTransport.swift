@@ -24,7 +24,7 @@ import Foundation
 /// split into requests of at most ``maximumRequestSize`` bytes. A pull asks
 /// for ``pageSize`` changes and, while the page is larger than that, for half as many; a single
 /// change that is larger on its own is set aside in ``OfflineStore/quarantinedChanges()`` and
-/// the pull moves past it.
+/// the pull moves past it. A page with more changes than the pull asked for is refused.
 public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Errors of the HTTP transport.
     public enum Failure: Error, Equatable, Sendable, LocalizedError {
@@ -179,15 +179,16 @@ public struct HTTPSyncTransport<Record: SyncableRecord>: SyncTransport {
     /// Pulls the page after `token`. A page must fit in ``maximumResponseSize``; while it does
     /// not, the pull asks for half as many changes, down to one. A change that is larger than
     /// the limit on its own is read as it streams in without what it holds, set aside, and the
-    /// page's token moves past it, so one large record cannot stop every later pull. A server
-    /// that ignores `limit` and sends a page that is too large still fails with
-    /// ``Failure/responseTooLarge(limit:)``.
+    /// page's token moves past it, so one large record cannot stop every later pull. A page
+    /// with more changes than the request's `limit`, readable or not, is refused with a
+    /// `DecodingError`, so a server that ignores `limit` fails the pull without a change to the
+    /// store.
     public func pull(since token: String?) async throws -> PullResponse<Record> {
         var limit = pageSize
         while true {
             let request = try await makeRequest(url: changesURL(after: token, limit: limit))
             do {
-                return try Self.page(from: try await send(request))
+                return try Self.page(from: try await send(request), limit: limit)
             } catch Failure.responseTooLarge(limit: _) where limit > 1 {
                 limit /= 2
             } catch Failure.responseTooLarge(limit: _) {
