@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@dda00c8524eaba424ab0bb3aa2216dc80dbca2ef status=reviewed -->
+<!-- i18n-source: README.md@6e72ff5e6ef94a96506e050f9bd8e143e0f19840 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,21 +51,22 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 331 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 342 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter zwei Eigenschaftstests, die jede Konfliktrichtlinie durch verlorene
   Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
   Seitengrenzen, veraltete Seiten, gleichzeitige Operationen und Abstürze schicken, auch gegen
   einen Server ohne Sequenzen, Szenariotests mit einem Replikat, das einem Gerät viele
-  Synchronisierungen lang antwortet, mit einem Absturz bei jedem Schreibvorgang einer
-  Synchronisierung und mit Geräteuhren, die nach vorn springen, und Tests, die Seiten voller
-  unbrauchbarer Daten, sehr tief verschachtelte Datensätze, Seiten über dem Antwortlimit und
-  Seiten mit mehr Änderungen als angefordert senden, auch endlos über einen Socket gestreamt; 28
-  Node-Tests für den Server; und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch
-  den Server synchronisiert, auch mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg,
-  mit 70 Konfliktantworten zu 250 KiB, die zusammen das Antwortlimit überschreiten, mit einem
-  Schreibvorgang, dessen Speichern vor einem Neustart fehlschlug, mit einer Übertragung, die der
-  Server hinter einem Proxy angewandt hat, der mit 504 antwortet, und mit einem Replikat, das nach
-  dem Zurücksetzen des Tokens Seiten von vor einem Neustart liefert.
+  Synchronisierungen lang antwortet, mit einer veralteten Seite, die einen älteren eigenen
+  Schreibvorgang zurückbringt, mit einem Absturz bei jedem Schreibvorgang einer Synchronisierung
+  und mit Geräteuhren, die nach vorn springen, und Tests, die Seiten voller unbrauchbarer Daten,
+  sehr tief verschachtelte Datensätze, Seiten über dem Antwortlimit und Seiten mit mehr Änderungen
+  als angefordert senden, auch endlos über einen Socket gestreamt; 28 Node-Tests für den Server;
+  und eine End-to-End-Testsuite in der CI, die Stores über HTTP durch den Server synchronisiert,
+  auch mit 68 Datensätzen zu 250 KiB über einen Serverneustart hinweg, mit 70 Konfliktantworten zu
+  250 KiB, die zusammen das Antwortlimit überschreiten, mit einem Schreibvorgang, dessen Speichern
+  vor einem Neustart fehlschlug, mit einer Übertragung, die der Server hinter einem Proxy
+  angewandt hat, der mit 504 antwortet, und mit einem Replikat, das nach dem Zurücksetzen des
+  Tokens Seiten von vor einem Neustart liefert.
 
 ### Was enthalten ist
 
@@ -359,16 +360,21 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   auch wenn eine veraltete Seite den Datensatz zurückgesetzt und der Nutzer darauf
   weiterbearbeitet hat oder eine Seite einen älteren eigenen Schreibvorgang vor einer Version
   auflistet, deren Antwort verloren ging. Ohne Sequenzen überlässt ein Abruf eine ausstehende
-  Änderung ihrer Übertragung, deren Konfliktantwort die aktuelle Version des Servers nennt.
+  Änderung ihrer Übertragung, auch wenn die Seite einen älteren Schreibvorgang des Geräts selbst
+  bringt, und die Antwort der Übertragung entscheidet: Eine Version, die ein Abruf inzwischen
+  zurückgehalten hat, tritt nur dann an ihre Stelle, wenn die `sequence` des Servers zeigt, dass
+  sie neuer ist, und wenn nichts das zeigt, geht die Änderung für eine frische Antwort noch einmal
+  hinaus.
 - Eine andere Server-Epoch zählt nur, wenn zwei Anfragen derselben Synchronisierung sie melden,
   der Abruf mit dem Token und der Abruf von Anfang an. Ein veralteter Cache oder ein anderes
-  Deployment hinter derselben URL kann den Store also nicht zurücksetzen. Eine Synchronisierung,
-  die nur eine Seite abruft, folgt trotzdem einem Serverneustart, und wenn die beiden Anfragen
-  nicht übereinstimmen, schlägt die Synchronisierung fehl, statt Erfolg zu melden. Epochs laufen
-  nur in eine Richtung: Eine frühere Epoch als die des Stores, ob er sie verlassen oder nie gehabt
-  hat, wird nie übernommen, auch nicht nach `resetChangeToken()`, sodass auch ein veraltetes
-  Replikat oder ein Cache, das beide Anfragen beantwortet, wie viele Synchronisierungen in Folge
-  auch immer, den Store nicht zurücksetzen kann.
+  Deployment hinter derselben URL kann den Store also nicht zurücksetzen. Eine Seite ohne Epoch
+  wird, sobald der Server eine gemeldet hat, ebenfalls nie übernommen. Eine Synchronisierung, die
+  nur eine Seite abruft, folgt trotzdem einem Serverneustart, und wenn die beiden Anfragen nicht
+  übereinstimmen, schlägt die Synchronisierung fehl, statt Erfolg zu melden. Epochs laufen nur in
+  eine Richtung: Eine frühere Epoch als die des Stores, ob er sie verlassen oder nie gehabt hat,
+  wird nie übernommen, auch nicht nach `resetChangeToken()`, sodass auch ein veraltetes Replikat
+  oder ein Cache, das beide Anfragen beantwortet, wie viele Synchronisierungen in Folge auch
+  immer, den Store nicht zurücksetzen kann.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein
   anderer Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben;
   sie treffen auf die neue Historie über die Antwort auf ihre Übertragung, nicht über eine Seite.
@@ -395,11 +401,11 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   und werden geparkt, eine Synchronisierung endet nach `syncTimeout`, und Synchronisierungen
   warten, solange die Datei nicht geschrieben werden kann.
 
-Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
-die nur zu späteren wechselt (länger oder Byte für Byte größer) und nie zurückkehrt, eine
-`sequence`, die über Neustarts weiterzählt (die einzige Reihenfolge, die der Store nutzt), die
-übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt, auf eine Grenze
-zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss sich
+Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte auf jeder
+Seite eine `epoch`, die nur zu späteren wechselt (länger oder Byte für Byte größer) und nie
+zurückkehrt, eine `sequence`, die über Neustarts weiterzählt (die einzige Reihenfolge, die der
+Store nutzt), die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt, auf eine
+Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden, muss sich
 Änderungs-IDs über Neustarts hinweg merken, einen Schreibvorgang erst in Seiten zeigen, wenn er
 gespeichert ist, und jede Seite sowie die Antwort auf jede übertragene Änderung innerhalb des
 Antwortlimits des Clients halten (eine Seite enthält höchstens `limit` Änderungen, auch nach Bytes
@@ -414,9 +420,10 @@ höchstens 64 Ebenen tief verschachtelt, eine Seite enthält höchstens 1.000 Ä
 einzelne Änderung, die größer als das Vierfache des Antwortlimits ist, hält den Abruf an, eine
 Änderung, deren Übertragungsantwort allein größer als das Antwortlimit ist, bleibt ungewiss und
 wird nach ihrem letzten Versuch geparkt, eine frühere Epoch bleibt abgewiesen, bis der Server eine
-spätere als die des Stores meldet, und Löschungen jenseits von 10.000 werden vergessen. [Garantien
-und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
-enthält die vollständige Liste.
+spätere als die des Stores meldet, eine Seite ohne Epoch, bis er wieder eine meldet, und
+Löschungen jenseits von 10.000 werden vergessen. [Garantien und
+Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
+die vollständige Liste.
 
 ## Demo
 

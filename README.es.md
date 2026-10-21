@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@dda00c8524eaba424ab0bb3aa2216dc80dbca2ef status=reviewed -->
+<!-- i18n-source: README.md@6e72ff5e6ef94a96506e050f9bd8e143e0f19840 status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,21 +51,22 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 331 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 342 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas dos pruebas de propiedades que someten cada política de conflictos a
   solicitudes perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas,
   límites de páginas pequeños, páginas obsoletas, operaciones simultáneas y caídas, también contra
   un servidor sin secuencias, pruebas de escenarios con una réplica que responde a un dispositivo
-  durante muchas sincronizaciones, con una caída en cada escritura de una sincronización y con
-  relojes de dispositivo que saltan hacia adelante, y pruebas que envían páginas de datos
-  inservibles, registros anidados a gran profundidad, páginas mayores que el límite de respuesta y
-  páginas con más cambios de los pedidos, también transmitidas sin fin por un socket; 28 pruebas
-  de Node para el servidor; y un conjunto de pruebas de extremo a extremo en CI que sincroniza
-  almacenes a través del servidor por HTTP, también con 68 registros de 250 KiB a través de un
-  reinicio del servidor, con 70 respuestas de conflicto de 250 KiB que juntas superan el límite de
-  respuesta, con una escritura cuyo guardado falló antes de un reinicio, con un envío que el
-  servidor aplicó detrás de un proxy que responde 504 y con una réplica que sirve páginas de antes
-  de un reinicio tras restablecer el token.
+  durante muchas sincronizaciones, con una página obsoleta que trae de vuelta una escritura propia
+  más antigua, con una caída en cada escritura de una sincronización y con relojes de dispositivo
+  que saltan hacia adelante, y pruebas que envían páginas de datos inservibles, registros anidados
+  a gran profundidad, páginas mayores que el límite de respuesta y páginas con más cambios de los
+  pedidos, también transmitidas sin fin por un socket; 28 pruebas de Node para el servidor; y un
+  conjunto de pruebas de extremo a extremo en CI que sincroniza almacenes a través del servidor
+  por HTTP, también con 68 registros de 250 KiB a través de un reinicio del servidor, con 70
+  respuestas de conflicto de 250 KiB que juntas superan el límite de respuesta, con una escritura
+  cuyo guardado falló antes de un reinicio, con un envío que el servidor aplicó detrás de un proxy
+  que responde 504 y con una réplica que sirve páginas de antes de un reinicio tras restablecer el
+  token.
 
 ### Qué incluye
 
@@ -356,14 +357,18 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   dispositivo nunca es un conflicto, tampoco cuando una página obsoleta hizo retroceder el
   registro y el usuario editó sobre ella, o una página lista una escritura propia más antigua
   antes de una versión cuya respuesta se perdió. Sin secuencias, una descarga deja un cambio
-  pendiente a su envío, cuya respuesta de conflicto nombra la versión actual del servidor.
+  pendiente a su envío, también cuando la página trae una escritura más antigua del propio
+  dispositivo, y decide la respuesta del envío: una versión que una descarga retuvo entretanto
+  solo ocupa su lugar cuando el `sequence` del servidor muestra que es más nueva, y cuando nada lo
+  indica, el cambio sale una vez más para obtener una respuesta nueva.
 - Otro epoch del servidor solo cuenta cuando lo informan dos solicitudes de la misma
   sincronización, la descarga con el token y la descarga desde el principio, así que una caché
   obsoleta u otro despliegue detrás de la misma URL no puede hacer retroceder el almacén. Una
-  sincronización que descarga una sola página sigue igualmente un reinicio del servidor, y cuando
-  las dos solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los
-  epochs van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca
-  tuvo, nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
+  página sin epoch, una vez que el servidor informó uno, tampoco se toma nunca. Una sincronización
+  que descarga una sola página sigue igualmente un reinicio del servidor, y cuando las dos
+  solicitudes no coinciden la sincronización falla en lugar de informar de un éxito. Los epochs
+  van en un solo sentido: un epoch anterior al del almacén, uno que dejó o uno que nunca tuvo,
+  nunca se toma, tampoco tras `resetChangeToken()`, así que una réplica o caché obsoleta que
   responde ambas solicitudes, durante cuantas sincronizaciones seguidas sea, tampoco puede hacer
   retroceder el almacén.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
@@ -391,25 +396,26 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
   esperan y se aparcan, una sincronización termina tras `syncTimeout` y las sincronizaciones
   esperan mientras no se pueda escribir el archivo.
 
-El servidor nunca debe dar la misma revisión a dos versiones de un registro, debería enviar un
-`epoch` que solo avance a otros posteriores (más largos, o mayores byte a byte) y nunca vuelva, un
-`sequence` que siga contando tras los reinicios (el único orden que usa el almacén), las marcas de
-tiempo recibidas (con una hora muy por delante de su reloj llevada a un límite) y el `changeID`
-que escribió cada versión, y debe recordar los IDs de cambio a través de los reinicios, mostrar
-una escritura en las páginas solo cuando esté guardada y mantener cada página y la respuesta a
-cada cambio enviado dentro del límite de respuesta del cliente (una página contiene como mucho
-`limit` cambios, cortada también por bytes, al menos un cambio por página). Límites: las
-escrituras que un servidor perdió en una restauración no se vuelven a subir, un servidor sin
-`sequence` no tiene garantía de orden (una página obsoleta puede hacer retroceder un registro
-hasta que vuelva a cambiar, aunque no se pierde ninguna escritura), un registro guardado de nuevo
-justo después de `discardChange(for:)` encuentra la copia del servidor como un conflicto, una sola
-instancia del almacén por archivo (garantizado con `FileStore`, `InMemoryStorage` y los backends
-propios que informan un `claimIdentity`), el archivo entero se escribe en cada cambio, los
-registros se anidan como mucho 64 niveles, una página contiene como mucho 1.000 cambios, un único
-cambio mayor que cuatro veces el límite de respuesta detiene la descarga, un cambio cuya respuesta
-de envío por sí sola supera el límite de respuesta queda en duda y se aparca tras su último
-intento, un epoch anterior sigue rechazado hasta que el servidor informe uno posterior al del
-almacén y los borrados más allá de 10.000 se olvidan. [Garantías y
+El servidor nunca debe dar la misma revisión a dos versiones de un registro, debería enviar en
+cada página un `epoch` que solo avance a otros posteriores (más largos, o mayores byte a byte) y
+nunca vuelva, un `sequence` que siga contando tras los reinicios (el único orden que usa el
+almacén), las marcas de tiempo recibidas (con una hora muy por delante de su reloj llevada a un
+límite) y el `changeID` que escribió cada versión, y debe recordar los IDs de cambio a través de
+los reinicios, mostrar una escritura en las páginas solo cuando esté guardada y mantener cada
+página y la respuesta a cada cambio enviado dentro del límite de respuesta del cliente (una página
+contiene como mucho `limit` cambios, cortada también por bytes, al menos un cambio por página).
+Límites: las escrituras que un servidor perdió en una restauración no se vuelven a subir, un
+servidor sin `sequence` no tiene garantía de orden (una página obsoleta puede hacer retroceder un
+registro hasta que vuelva a cambiar, aunque no se pierde ninguna escritura), un registro guardado
+de nuevo justo después de `discardChange(for:)` encuentra la copia del servidor como un conflicto,
+una sola instancia del almacén por archivo (garantizado con `FileStore`, `InMemoryStorage` y los
+backends propios que informan un `claimIdentity`), el archivo entero se escribe en cada cambio,
+los registros se anidan como mucho 64 niveles, una página contiene como mucho 1.000 cambios, un
+único cambio mayor que cuatro veces el límite de respuesta detiene la descarga, un cambio cuya
+respuesta de envío por sí sola supera el límite de respuesta queda en duda y se aparca tras su
+último intento, un epoch anterior sigue rechazado hasta que el servidor informe uno posterior al
+del almacén, una página sin epoch hasta que vuelva a informar uno, y los borrados más allá de
+10.000 se olvidan. [Garantías y
 límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la
 lista completa.
 
