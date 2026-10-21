@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 Fixes for the data-integrity findings of two audits of 2.0.0 and of their second, third,
-fourth, fifth and sixth rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
+fourth, fifth, sixth and seventh rounds, each with a test that failed before the fix. The documentation article "Guarantees and limits" and a section of the README
 now state what the store promises and what it needs from the server.
 
 ### Fixed
@@ -47,8 +47,13 @@ now state what the store promises and what it needs from the server.
   not move was stored before the check, and `+` in a token reached form-decoding servers as a
   space.
 - `sync()` called while a sync was pulling returned without pushing a change saved just before.
-- Two store instances on one file silently dropped each other's saved records; the second
-  instance's write now throws `OfflineFirstError.storeChangedElsewhere(name:)`.
+- Two store instances on one file silently dropped each other's saved records. With
+  `FileStore`, `InMemoryStorage` and a custom backend that reports
+  `StorageBackend.claimIdentity` (a backend that wraps a built-in one can forward its
+  identity), the second instance's write now throws
+  `OfflineFirstError.storeChangedElsewhere(name:)`; a `FileStore` reached through a symbolic
+  link shares the protection. A custom backend without an identity, the default, is not
+  protected: the instance that writes last still drops the other's records.
 - A transport that reported its cancellation as `URLError(.cancelled)` counted a failed attempt,
   and a full disk while counting an attempt hid the transport's error.
 - Right after the server accepted the store's own write, a page from a lagging replica rolled
@@ -145,6 +150,15 @@ now state what the store promises and what it needs from the server.
   that never ended was read until the sync's deadline, and a page that ignored `limit=1` was
   read to its end. That read now stops when a second change starts and after four times
   `maximumResponseSize`, or before it starts when the page announces more.
+- Conflict answers bring the server's version of each record, so a device that pushed 70
+  offline edits of records another device had grown to 250 KiB, within the reference server's
+  limits, got an answer of about 17.5 MiB, more than the 16 MiB the transport reads. Every
+  push failed with `responseTooLarge`, the edits were parked, `retryFailedChanges()` met the
+  same answer, and the device never got the other device's versions while the server never
+  got its edits. The transport now sends a request whose answer is too long again as two
+  halves, which the server answers from its memory of change IDs, and parks a single change
+  whose answer alone is longer than the limit with `HTTPSyncTransport.answerTooLarge`, so the
+  sync goes on.
 
 ### Added
 
@@ -159,6 +173,7 @@ now state what the store promises and what it needs from the server.
   `PullResponse.quarantinedCount`, and the `pageSize` and `maximumRequestSize` parameters of
   `HTTPSyncTransport`.
 - `OfflineStore.maximumChangesPerPage` (1,000).
+- `StorageBackend.claimIdentity` (default `nil`) and `HTTPSyncTransport.answerTooLarge`.
 
 ### Changed
 
@@ -187,6 +202,8 @@ now state what the store promises and what it needs from the server.
 - `HTTPSyncTransport` sends `limit` with every pull and pushes in requests of at most 1 MiB.
   Servers must keep every page within the client's response limit: at most `limit` changes, cut
   by bytes, at least one change per page. The reference server cuts pages at 8 MiB.
+- The answer to a single pushed change must fit in the client's response limit; a longer one
+  parks the change. A push answer that is too long as a whole no longer fails the push.
 - A page may hold at most the `limit` its pull asked for and, from any transport, 1,000 changes;
   `InMemorySyncServer.pageSize` is at most 1,000. A page beyond `limit` fails with a
   `DecodingError` instead of `HTTPSyncTransport.Failure.responseTooLarge`, and a single change

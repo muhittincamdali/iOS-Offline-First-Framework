@@ -46,13 +46,14 @@ dependencies.
   a background refresh task.
 - **Data at rest protected** — AES-GCM file encryption with a key kept in the Keychain, data
   protection classes, record schema migrations, and a policy for damaged files.
-- **Tested against a real server** — 293 Swift Testing tests on macOS and an iPhone simulator,
+- **Tested against a real server** — 300 Swift Testing tests on macOS and an iPhone simulator,
   among them a property test that runs every conflict policy through lost requests, restarts,
   token resets, overlapping syncs, small page limits and stale pages, and tests that send pages of
   junk, deeply nested records, pages larger than the response limit and pages with more changes
   than asked for, also streamed endlessly over a socket; 28 Node tests for the server; and an
   end-to-end suite in CI that syncs stores through the server over HTTP, also with 68 records of
-  250 KiB across a server restart and with a write whose save failed before a restart.
+  250 KiB across a server restart, with 70 conflict answers of 250 KiB that together exceed the
+  response limit, and with a write whose save failed before a restart.
 
 ### What's included
 
@@ -347,8 +348,9 @@ app and server restarts and stale pages, as long as the server follows the
   than the pull asked for (1,000 at most), is refused within milliseconds instead of taking
   gigabytes, and its download is cancelled; a page larger than the response limit makes the
   pull ask for fewer changes, and a single change larger than the limit, up to four times it, is
-  set aside; a push is split into requests the server's body limit takes; a UTF-8 byte order
-  mark is read.
+  set aside; a push is split into requests the server's body limit takes and sent again in
+  halves while its answer is longer than the response limit, and a change whose answer alone
+  is longer is parked; a UTF-8 byte order mark is read.
 - A clock that runs ahead or was set back, a server that answers every push with a conflict, a
   server that never answers and a file that cannot be written have a bounded effect: the
   reference servers keep a pushed timestamp at most five minutes past their own clock, a moment
@@ -359,13 +361,15 @@ The server must never give the same revision to two versions of a record, should
 `epoch` that only moves to later ones (longer, or greater byte by byte), a `sequence` that keeps
 counting across restarts, the pushed timestamps (a wall time far ahead of its clock moved back to
 a limit) and the `changeID` that wrote each version, and must remember change IDs across
-restarts, show a write in pages only once it is stored, and keep every page within the client's
-response limit (at most `limit` changes, cut by bytes, at least one change per page). Limits:
-writes a server lost in a restore are not uploaded again, a record saved again right after
-`discardChange(for:)` meets the server's copy as a conflict, one store instance per file, the
-whole file is written on every change, records nest at most 64 levels, a page holds at most
-1,000 changes, a single change larger than four times the response limit stops the pull, and
-deletions beyond 10,000 are forgotten.
+restarts, show a write in pages only once it is stored, and keep every page and the answer to
+each pushed change within the client's response limit (a page holds at most `limit` changes,
+cut by bytes, at least one change per page). Limits: writes a server lost in a restore are not
+uploaded again, a record saved again right after `discardChange(for:)` meets the server's copy
+as a conflict, one store instance per file (enforced for `FileStore`, `InMemoryStorage` and
+custom backends that report a `claimIdentity`), the whole file is written on every change,
+records nest at most 64 levels, a page holds at most 1,000 changes, a single change larger than
+four times the response limit stops the pull, a change whose push answer alone is larger than
+the response limit is parked, and deletions beyond 10,000 are forgotten.
 [Guarantees and limits](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)
 has the full list.
 

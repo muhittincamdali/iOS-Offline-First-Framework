@@ -69,6 +69,10 @@ An outcome is `{"status": "accepted", "revision": "5"}`,
 - A page holds at most `limit` changes (100 by default, 1,000 at most) and at most 8 MiB of
   them, but always at least one, so it fits in the client's response limit (16 MiB by
   default) however large the records are.
+- A push answer brings at most one version of one record per change, 256 KiB at most, so the
+  answer to one change fits in the client's response limit. When the answers of one request
+  add up to more (70 conflicts on records of 250 KiB make 17.5 MiB), the client sends the
+  request again in halves, and the server answers those changes from its memory of change IDs.
 - Limits: 1 MiB per request body, 500 changes per push, 1,000 changes per page, 100
   collections, 100,000 records per collection (deleted ones included), record IDs of at most
   256 characters, timestamps that a JavaScript number holds exactly. Requests outside them get

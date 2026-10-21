@@ -17,8 +17,9 @@ goes back to an older server version of a record, and that no resolver is asked 
 device's own write. Further tests send the HTTP transport pages of junk, deeply nested records,
 pages larger than its limit and pages with more changes than it asked for, in debug and release
 builds, stream pages that never end over a real socket, measure the memory a 16 MiB page costs,
-and run 68 records of 250 KiB against the reference server, also across its restart, and a
-write whose save failed across a restart of the reference server.
+and run 68 records of 250 KiB against the reference server, also across its restart, 70
+conflict answers of 250 KiB that together exceed the response limit, and a write whose save
+failed across a restart of the reference server.
 
 ## Guarantees
 
@@ -85,9 +86,12 @@ write whose save failed across a restart of the reference server.
   more. A page larger than the limit makes the pull ask for half as many changes, down to one,
   and a single change larger than the limit is set aside while the pull moves past it, reading
   four times the limit at most, so no first page can lock out a device that pulls from the
-  beginning. A push is sent in
-  requests of at most ``HTTPSyncTransport/maximumRequestSize``, halved when the server answers
-  413. A body may start with a UTF-8 byte order mark.
+  beginning. A push is sent in requests of at most ``HTTPSyncTransport/maximumRequestSize``,
+  halved when the server answers 413 or with more than the response limit, as 70 conflicts
+  that each bring a version of 250 KiB do; the server answers a change it already applied from
+  its memory of change IDs. A single change whose answer alone is longer than the limit is
+  parked with ``HTTPSyncTransport/answerTooLarge`` and the sync goes on; a push of n changes
+  takes at most 2n − 1 requests. A body may start with a UTF-8 byte order mark.
 - **A wrong clock has a bounded effect.** The reference servers move a pushed timestamp more
   than five minutes ahead of their clock back to that limit and send back the change ID that
   wrote each version (``RemoteChange/changeID``), by which the device recognises its own write.
@@ -138,7 +142,10 @@ write whose save failed across a restart of the reference server.
   the next write of the file that succeeds keeps the changes of both pushes.
 - Keep every page within the transport's response limit (16 MiB by default): return at most
   `limit` changes (a longer page is refused), cut pages by bytes too, and put at least one
-  change in each, as the reference server does with 8 MiB. Answer a push body larger than you accept with status 413.
+  change in each, as the reference server does with 8 MiB. Answer a push body larger than you
+  accept with status 413, and keep the answer to a single change within the response limit:
+  a conflict or rejection brings at most one version of one record, so keeping records well
+  below the limit is enough (the reference server allows 256 KiB).
 - In a custom ``SyncTransport``, stop when the task is cancelled, so the deadline and
   cancellation can end a request.
 
@@ -156,10 +163,14 @@ write whose save failed across a restart of the reference server.
   local version and pulls everything again. A record saved again before that pull brings the
   server's copy back is pushed as new, so the server's copy, also a version the device wrote
   itself, meets the resolver as a conflict.
-- **One instance per file.** A second ``OfflineStore`` on the same file in the same process
-  cannot write once the first one did
-  (``OfflineFirstError/storeChangedElsewhere(name:)``); separate processes, such as an app and
-  its extension, are not coordinated.
+- **One instance per file.** With the built-in backends, ``FileStore`` and
+  ``InMemoryStorage``, and with a custom backend that reports a
+  ``StorageBackend/claimIdentity`` (a backend that wraps a built-in one can forward its
+  identity), a second ``OfflineStore`` on the same file in the same process cannot write once
+  the first one did (``OfflineFirstError/storeChangedElsewhere(name:)``). A custom backend
+  without an identity, the default, is not protected: two instances on one file each write
+  their own state, and the one that writes last drops the records the other one saved.
+  Separate processes, such as an app and its extension, are not coordinated.
 - **The whole file is written on every change.** That suits tens of thousands of records per
   store. The file cannot grow beyond ``FileStore/maximumFileSize``: a pull that would make it
   larger fails with ``OfflineFirstError/fileTooLarge(name:size:limit:)``.
@@ -182,6 +193,12 @@ write whose save failed across a restart of the reference server.
   broken, and a single change larger than four times the response limit fail every sync,
   without a change to the store. Finding such a change costs up to four times the response
   limit per sync; raise ``HTTPSyncTransport/maximumResponseSize`` for records that large.
+- **A change whose push answer alone exceeds the response limit is parked.** Its answer is
+  not read, so the change waits in ``OfflineStore/failedChanges()`` with
+  ``HTTPSyncTransport/answerTooLarge``; ``OfflineStore/retryFailedChanges()`` meets the same
+  answer until the server's version of the record is smaller or
+  ``HTTPSyncTransport/maximumResponseSize`` is raised, and ``OfflineStore/discardChange(for:)``
+  drops the change.
 - **A server without sequences and timestamps cannot be checked for order.** The store then
   takes every server version as the newest, so a stale page can roll a record back until the
   next change of it. The same holds without sequences for a version whose timestamp is missing

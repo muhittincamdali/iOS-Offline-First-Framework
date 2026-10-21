@@ -52,6 +52,15 @@ the transport sends it again as two halves, and a single change answered with 41
 and parked, since it can never succeed. When a later request fails, the outcomes of the earlier
 ones still count.
 
+An answer must fit in ``HTTPSyncTransport/maximumResponseSize`` (16 MiB by default). A longer
+one, such as conflicts that each bring a large version of their record, makes the transport
+send the request again as two halves; answer a change ID you already applied with the outcome
+you gave it, as the reference server does from its memory of the last 10,000 change IDs. **The
+answer to a single change must not be longer than ``HTTPSyncTransport/maximumResponseSize``**:
+the transport parks such a change with ``HTTPSyncTransport/answerTooLarge`` and the sync goes
+on without it. A conflict or a rejection brings at most one version of one record, so records
+well below the limit keep every answer within it.
+
 ```json
 {
   "outcomes": {

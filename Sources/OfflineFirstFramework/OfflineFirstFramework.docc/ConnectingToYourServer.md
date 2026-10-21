@@ -29,7 +29,9 @@ retries the changes later. Responses longer than
 ``HTTPSyncTransport/maximumResponseSize`` are not read: a pull asks for
 ``HTTPSyncTransport/pageSize`` changes, and for fewer while a page is longer, and refuses a page
 with more changes than it asked for. A push is sent in requests of at most
-``HTTPSyncTransport/maximumRequestSize``.
+``HTTPSyncTransport/maximumRequestSize``, and in halves while an answer is longer than the
+response limit; a change whose answer alone is longer is parked with
+``HTTPSyncTransport/answerTooLarge``.
 
 ## Write your own transport
 
