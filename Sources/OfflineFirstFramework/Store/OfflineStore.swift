@@ -30,9 +30,9 @@ public actor OfflineStore<Record: SyncableRecord> {
         var quarantine: [QuarantinedChange] = []
         /// An earlier epoch than ``serverEpoch`` that the last syncs in a row refused.
         var epochRefusal: EpochRefusal? = nil
-        /// Set by ``OfflineStore/resetChangeToken()``: an earlier epoch than ``serverEpoch`` is
-        /// taken in the next sync that confirms it, without the refusals.
-        var takesNextEpoch = false
+        /// Epochs the store left for a later one, oldest first; a page that names one is
+        /// refused. ``OfflineStore/resetChangeToken()`` keeps them.
+        var retiredEpochs: [String] = []
 
         mutating func takeSequence() -> UInt64 {
             defer { nextSequence += 1 }
@@ -233,23 +233,22 @@ public actor OfflineStore<Record: SyncableRecord> {
     /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
     /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
     ///
-    /// Another ``PullResponse/epoch`` than the store's is believed, as always, once two requests
-    /// of one sync report it: the pull from the beginning and the pull after its token. A later
-    /// epoch then starts a new server history as after a restart, keeping what push answers
-    /// told; an earlier one is taken at once instead of after eight syncs in a row. One page
-    /// from a stale replica or cache therefore still cannot roll the store back.
+    /// What the store knows about the server's epochs stays: another ``PullResponse/epoch`` than
+    /// the store's is believed, as always, once two requests of one sync report it, the pull
+    /// from the beginning and the pull after its token, and an epoch the store left for a later
+    /// one is never taken again. A stale replica or a shared cache that answers both requests
+    /// after the reset, as one easily does since the pull from the beginning asks every device
+    /// for the same URL, therefore cannot roll the store back.
     ///
     /// Use it when the server can no longer continue after the token, for example when it
-    /// answers every pull with an error for it; after an app update that can read records the
-    /// store set aside; or when the store refuses the server's pages as coming from an earlier
-    /// epoch because it took a later one from elsewhere (another deployment behind the same
-    /// URL). Without it, the store follows such a server after eight syncs in a row.
+    /// answers every pull with an error for it, or after an app update that can read records
+    /// the store set aside. It does not bring the store back to an epoch it left: a store that
+    /// followed another deployment behind the same URL returns to the first one only once that
+    /// server reports a new epoch.
     public func resetChangeToken() throws {
         try update { state in
             state.token = nil
             state.quarantine.removeAll()
-            state.epochRefusal = nil
-            state.takesNextEpoch = true
         }
         tokenGeneration &+= 1
     }
@@ -310,7 +309,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
                              serverEpoch: state.serverEpoch, history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
-                             epochRefusal: state.epochRefusal, takesNextEpoch: state.takesNextEpoch ? true : nil)
+                             epochRefusal: state.epochRefusal, retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         guard let fileKey else {
             try storage.write(data, to: fileName)

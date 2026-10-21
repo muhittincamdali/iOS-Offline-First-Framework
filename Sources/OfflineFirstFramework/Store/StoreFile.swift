@@ -106,7 +106,7 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// brought that version or another one. The server may have answered from a later history
     /// than the store's, after a restart the store has not seen yet, so when a pull starts a
     /// later epoch such an entry moves into the new history and keeps what it knows about the
-    /// order (see ``OfflineStore/beginHistory(epoch:keepingPushAnswers:in:)``). An entry whose
+    /// order (see ``OfflineStore/beginHistory(epoch:isLaterEpoch:in:)``). An entry whose
     /// ``history`` differs from this one was moved so.
     var pushedInHistory: UInt64? = nil
     /// The timestamp of the server version ``revision`` names, if the server sent one the store
@@ -201,8 +201,8 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var quarantine: [QuarantinedChange]? = nil
     /// An earlier epoch the last syncs refused; `nil` when there is none.
     var epochRefusal: EpochRefusal? = nil
-    /// `true` after ``OfflineStore/resetChangeToken()`` until the server reports an epoch.
-    var takesNextEpoch: Bool? = nil
+    /// Epochs the store left for a later one, oldest first; `nil` when there are none.
+    var retiredEpochs: [String]? = nil
 }
 
 /// The two fields read before the rest of the file, to pick the migrations.

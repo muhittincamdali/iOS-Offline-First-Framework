@@ -31,7 +31,7 @@ extension OfflineStore {
                 // A page is checked before it is stored, so a broken one changes nothing.
                 try Self.checkProgress(of: page.response, after: page.token, requested: requested)
                 try store(page.response, startingHistory: index == 0 && step.standing.startsHistory,
-                          keepingPushAnswers: step.standing == .later, report: &report)
+                          isLaterEpoch: step.standing == .later, report: &report)
             }
             guard step.pages.last?.response.hasMore == true else { return }
         }
@@ -40,10 +40,11 @@ extension OfflineStore {
 
     /// The pages of the next step after the store's token.
     ///
-    /// A page that names another epoch than the store's (``EpochStanding/later`` or
-    /// ``EpochStanding/earlier``) is believed only when a second request of the other kind
-    /// reports the same epoch: a pull from the beginning after a pull with the token, or a pull
-    /// with the first page's token after a pull from the beginning. A stale cache or replica, or
+    /// A page that names another epoch than the store's (``EpochStanding/later``,
+    /// ``EpochStanding/earlier`` or ``EpochStanding/retired``) is believed only when a second
+    /// request of the other kind reports the same epoch: a pull from the beginning after a pull
+    /// with the token, or a pull with the first page's token after a pull from the beginning. A
+    /// retired epoch is refused even then, every time. A stale cache or replica, or
     /// another deployment behind the same URL, rarely answers both, and a shared cache answers
     /// the pull from the beginning first, since every device asks for the same URL. Both
     /// requests belong to the same step, so a sync that may fetch one page still gets there.
@@ -58,7 +59,7 @@ extension OfflineStore {
         let token = state.token
         let first = try await page(after: token, using: transport, until: deadline)
         let standing = try Self.standing(of: first.epoch, in: state)
-        guard standing.startsHistory, let epoch = first.epoch else {
+        guard standing.namesAnotherEpoch, let epoch = first.epoch else {
             return PullStep(pages: [(token, first)], standing: standing)
         }
         guard !checkedEpoch else {
@@ -68,6 +69,7 @@ extension OfflineStore {
         let secondToken = token == nil ? first.token : nil
         let second = try await page(after: secondToken, using: transport, until: deadline)
         if second.epoch == epoch {
+            if standing == .retired { throw Self.retiredEpochRefusal(epoch) }
             if standing == .earlier { try takeOrRefuse(epoch) }
             // After a token of the old history the first page is dropped; the pull starts over
             // from the beginning of the new one.
@@ -108,17 +110,16 @@ extension OfflineStore {
     }
 
     /// Stores a checked page: its epoch, its changes and its token.
-    private func store(_ response: PullResponse<Record>, startingHistory: Bool, keepingPushAnswers: Bool,
+    private func store(_ response: PullResponse<Record>, startingHistory: Bool, isLaterEpoch: Bool,
                        report: inout SyncReport) throws {
         try update { state in
             if startingHistory {
-                Self.beginHistory(epoch: response.epoch, keepingPushAnswers: keepingPushAnswers, in: &state)
+                Self.beginHistory(epoch: response.epoch, isLaterEpoch: isLaterEpoch, in: &state)
             } else if let epoch = response.epoch {
                 // The store's epoch, or the first one the server reports (a new store, an update
                 // of the server): an earlier epoch refused before is no longer current.
                 state.serverEpoch = epoch
                 state.epochRefusal = nil
-                state.takesNextEpoch = false
             }
             for change in response.quarantined {
                 Self.quarantine(change, in: &state, report: &report)

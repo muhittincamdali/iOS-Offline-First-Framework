@@ -5,8 +5,9 @@ import Testing
 
 /// Epochs grow. Another epoch than the store's is believed only when two requests of one sync
 /// report it, a pull with the token and a pull from the beginning: a later one starts a new
-/// history, an earlier one is refused until eight syncs in a row met it. Neither a stale page
-/// nor one misdirected request may stop the store from following the real server.
+/// history, an earlier one the store never left is refused until eight syncs in a row met it,
+/// and one the store left is refused for good. Neither a stale page nor one misdirected request
+/// may stop the store from following the real server.
 @Suite("Offline store: server epochs")
 struct EpochTests {
     let clock = TestClock()
@@ -134,22 +135,22 @@ struct EpochTests {
         #expect(await store.pendingChanges().isEmpty)
     }
 
-    /// The store took a later epoch from somewhere else, confirmed by two answers in a row, and
-    /// the real server's epoch is earlier. Its pages, with and without the token, are refused,
-    /// eight syncs in a row at most, counted across app restarts; then the store follows it
-    /// again. A page of the store's own epoch in between starts the count over.
-    @Test func anEarlierEpochIsTakenAfterItWasRefusedEightSyncsInARow() async throws {
+    /// The store's first epoch came from somewhere else, and the real server's epoch is
+    /// earlier, one the store never held (a server whose epochs do not grow looks the same). Its
+    /// pages, with and without the token, are refused, eight syncs in a row at most, counted
+    /// across app restarts; then the store follows it. A page of the store's own epoch in
+    /// between starts the count over.
+    @Test func anEarlierEpochTheStoreNeverHeldIsTakenAfterItWasRefusedEightSyncsInARow() async throws {
         let wrong = PullResponse<Note>(changes: [RemoteChange(recordID: "w", record: Note(id: "w", text: "elsewhere"), revision: "e2.1",
                                                              timestamp: nil, sequence: 1)], token: "e2.1", hasMore: false, epoch: "e2")
         let real = PullResponse<Note>(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "real"), revision: "e1.1",
                                                             timestamp: nil, sequence: 1)], token: "e1.1", hasMore: false, epoch: "e1")
-        let answers = OSAllocatedUnfairLock<[PullResponse<Note>]>(initialState: [real, wrong, wrong])
+        let answers = OSAllocatedUnfairLock<[PullResponse<Note>]>(initialState: [wrong])
         let transport = ScriptedTransport(pull: { _ in
             answers.withLock { $0.count > 1 ? $0.removeFirst() : $0[0] }
         })
         let storage = InMemoryStorage()
         var store = try makeStore(transport, storage: storage)
-        try await store.sync()
         try await store.sync()
         #expect(await store.state.serverEpoch == "e2")
         #expect(await store.record("w") != nil)
@@ -165,10 +166,11 @@ struct EpochTests {
         #expect(await store.state.epochRefusal == nil)
         #expect(await store.record("a")?.text == "real")
 
-        // Two refusals, then a page of the store's own epoch: the count starts over.
-        answers.withLock { $0 = [wrong, wrong, wrong] }
-        try await store.sync()
-        answers.withLock { $0 = [real, real, real, real, wrong] }
+        // Going back retired nothing. Two refusals of another epoch the store never held, then
+        // a page of the store's own epoch: the count starts over.
+        #expect(await store.state.retiredEpochs.isEmpty)
+        let older = PullResponse<Note>(changes: [], token: "e0.0", hasMore: false, epoch: "e0")
+        answers.withLock { $0 = [older, older, older, older, real] }
         for _ in 0..<2 {
             await #expect(throws: OfflineFirstError.self) { try await store.sync() }
         }
@@ -177,24 +179,40 @@ struct EpochTests {
         #expect(await store.state.epochRefusal == nil)
     }
 
-    /// After resetChangeToken() an earlier epoch that the pull from the beginning and the pull
-    /// after its token both report is taken at once, as a new history.
-    @Test func resetChangeTokenTakesAnEarlierEpochAtOnce() async throws {
-        let later = PullResponse<Note>(changes: [], token: "e2.0", hasMore: false, epoch: "e2")
-        let earlier = PullResponse<Note>(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: "real"), revision: "e1.1",
-                                                               timestamp: nil, sequence: 1)], token: "e1.1", hasMore: false, epoch: "e1")
-        let transport = ScriptedTransport(pull: { _ in later })
-        let store = try makeStore(transport)
+    /// The store left e1 for e2. Pages of e1, with and without the token, are refused in every
+    /// sync, more than eight in a row, after resetChangeToken() and after an app restart; the
+    /// store keeps e2 and its records. A new epoch of the server, e3, is followed.
+    @Test func anEpochTheStoreLeftIsRefusedForGood() async throws {
+        @Sendable func page(_ epoch: String, _ text: String) -> PullResponse<Note> {
+            PullResponse(changes: [RemoteChange(recordID: "a", record: Note(id: "a", text: text), revision: "\(epoch).1", timestamp: nil,
+                                                sequence: 1)], token: "\(epoch).1", hasMore: false, epoch: epoch)
+        }
+        let answer = OSAllocatedUnfairLock(initialState: page("e1", "first"))
+        let transport = ScriptedTransport(pull: { _ in answer.withLock { $0 } })
+        let storage = InMemoryStorage()
+        var store = try makeStore(transport, storage: storage)
         try await store.sync()
-        await transport.onPull { _ in earlier }
-        await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        answer.withLock { $0 = page("e2", "after the restart") }
+        try await store.sync()
+        #expect(await store.state.serverEpoch == "e2")
+        #expect(await store.state.retiredEpochs == ["e1"])
 
-        try await store.resetChangeToken()
+        answer.withLock { $0 = page("e1", "first") }
         let history = await store.state.history
+        for attempt in 0..<(2 * OfflineStore<Note>.maximumEpochRefusals) {
+            if attempt == 3 { try await store.resetChangeToken() }
+            if attempt == 5 { store = try makeStore(transport, storage: storage) }
+            await #expect(throws: OfflineFirstError.self) { try await store.sync() }
+        }
+        #expect(await store.state.serverEpoch == "e2")
+        #expect(await store.state.history == history)
+        #expect(await store.state.retiredEpochs == ["e1"])
+        #expect(await store.record("a")?.text == "after the restart")
+
+        answer.withLock { $0 = page("e3", "after the next restart") }
         try await store.sync()
-        #expect(await store.state.serverEpoch == "e1")
-        #expect(await store.state.history == history + 1)
-        #expect(await store.record("a")?.text == "real")
-        #expect(await !store.state.takesNextEpoch)
+        #expect(await store.state.serverEpoch == "e3")
+        #expect(await store.state.retiredEpochs == ["e1", "e2"])
+        #expect(await store.record("a")?.text == "after the next restart")
     }
 }

@@ -51,7 +51,7 @@ extension OfflineStore {
         return State(entries: byID, clock: clock, token: file.token, lastSyncedAt: file.lastSyncedAt, nextSequence: sequence,
                      serverIdentity: file.serverIdentity, serverEpoch: file.serverEpoch, history: file.history ?? 0,
                      quarantine: Array((file.quarantine ?? []).suffix(maximumQuarantinedChanges)),
-                     epochRefusal: file.epochRefusal, takesNextEpoch: file.takesNextEpoch ?? false)
+                     epochRefusal: file.epochRefusal, retiredEpochs: file.retiredEpochs ?? [])
     }
 }
 

@@ -79,6 +79,12 @@ jobs:
           OFFLINE_FIRST_NODE="$(command -v node)" swift test --filter GatewayEndToEndTests 2>&1 | tee "$RUNNER_TEMP/gateway.log"
           grep -q "aLaterEditOnAnotherDeviceSurvivesAnAnswerThatWasNeverRead(policy:mode:) with 12 test cases passed" "$RUNNER_TEMP/gateway.log"
 
+      - name: A stale replica after a server restart and a reset
+        run: |
+          set -o pipefail
+          OFFLINE_FIRST_NODE="$(command -v node)" swift test --filter StaleReplicaEndToEndTests 2>&1 | tee "$RUNNER_TEMP/replica.log"
+          grep -q "aReplicaThatAnswersBothRequestsCannotTakeTheStoreBack(policy:) with 4 test cases passed" "$RUNNER_TEMP/replica.log"
+
       - name: End-to-end tests against the server
         run: |
           set -o pipefail
