@@ -85,6 +85,7 @@ jobs:
           # The suite skips itself without the server; make sure it ran.
           grep -q "twoDevicesShareEditsDeletesAndConflicts() passed" "$RUNNER_TEMP/e2e.log"
           grep -q "largeRecordsReachANewDeviceAndOneThatPullsAgain() passed" "$RUNNER_TEMP/e2e.log"
+          grep -q "conflictAnswersLargerThanTheResponseLimitReachTheDevice() passed" "$RUNNER_TEMP/e2e.log"
 
       - name: End-to-end tests across a server restart
         run: |
@@ -130,5 +131,5 @@ jobs:
         run: |
           set -o pipefail
           swift test -c release -Xswiftc -enable-testing \
-            --filter "RecordDepthTests|PageBudgetTests|PageLimitTests|PageSizeTests|PushSizeTests|ByteOrderMarkTests|DeepNestingTests|ResponseReaderTests|StreamingServerTests" 2>&1 | tee "$RUNNER_TEMP/release.log"
+            --filter "RecordDepthTests|PageBudgetTests|PageLimitTests|PageSizeTests|PushSizeTests|PushAnswerSizeTests|ByteOrderMarkTests|DeepNestingTests|ResponseReaderTests|StreamingServerTests" 2>&1 | tee "$RUNNER_TEMP/release.log"
           grep -q "Test run with .* passed" "$RUNNER_TEMP/release.log"

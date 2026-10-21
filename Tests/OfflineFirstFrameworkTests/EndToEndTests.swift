@@ -72,4 +72,33 @@ struct EndToEndTests {
         #expect(await phone.quarantinedChanges().isEmpty)
         #expect(await phone.state.token?.hasSuffix(".68") == true)
     }
+
+    /// The phone edits 70 records offline while the laptop grows each of them to 250 KiB, within
+    /// the server's limits. The server answers the phone's push with 70 conflicts that bring the
+    /// laptop's versions, about 17.5 MiB, more than the transport reads; the transport sends the
+    /// push again in halves, which the server answers from its memory of change IDs. The
+    /// laptop's later edits win, and both devices end with the same records, none parked.
+    @Test func conflictAnswersLargerThanTheResponseLimitReachTheDevice() async throws {
+        let phone = try device("phone")
+        let laptop = try device("laptop")
+        let ids = (0..<70).map { "grown-\($0)" }
+        try await laptop.save(contentsOf: ids.map { Note(id: $0, text: "small") })
+        #expect(try await laptop.sync().pushed == 70)
+        #expect(try await phone.sync().pulled == 70)
+
+        try await phone.save(contentsOf: ids.map { Note(id: $0, text: "the phone's edit") })
+        try await Task.sleep(for: .milliseconds(20))
+        let grown = ids.map { Note(id: $0, text: String(repeating: "g", count: 250 * 1024)) }
+        try await laptop.save(contentsOf: grown)
+        #expect(try await laptop.sync().pushed == 70)
+
+        let report = try await phone.sync()
+        #expect(report.conflicts == 70)
+        #expect(report.parked == 0)
+        #expect(await phone.pendingChanges().isEmpty)
+        #expect(await phone.records() == grown)
+        try await laptop.sync()
+        #expect(await laptop.records() == grown)
+        #expect(await laptop.pendingChanges().isEmpty)
+    }
 }
