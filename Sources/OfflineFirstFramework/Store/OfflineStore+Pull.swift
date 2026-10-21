@@ -177,7 +177,6 @@ extension OfflineStore {
                 entry.minimumSequence = nil
                 entry.olderRevisions = []
             }
-            entry.serverTimestamp = Self.orderable(change.timestamp, below: Self.driftLimit(of: state, configuration: configuration))
             state.entries[change.recordID] = entry
             return
         }
@@ -192,10 +191,12 @@ extension OfflineStore {
         }
         switch authorship(of: change, comparedWith: entry) {
         case .pendingChange:
-            // The pending change itself: the server applied it, although no answer said so.
+            // The pending change itself: the server applied it, although no answer said so. A
+            // version kept back for it came earlier in the pull, so it is older, unless the
+            // server's sequences say otherwise.
             entry.rememberOwnWrite(changeID: pending.changeID, timestamp: entry.timestamp)
-            Self.store(Self.entry(from: newer(entry.deferredRemote, than: change, in: state), replacing: entry, in: &state,
-                                  configuration: configuration), in: &state)
+            let taken = entry.deferredRemote.flatMap { isOlder(change, than: $0) ? $0 : nil } ?? change
+            Self.store(Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration), in: &state)
             return
         case .earlierWrite:
             // The device's own earlier write: the pending change was made on top of it, so it is
@@ -230,8 +231,14 @@ extension OfflineStore {
         // answers of one sync, which a source that answers both requests passes; its version
         // would make the resolver weigh the edit against a copy the server may no longer hold.
         // The device's own earlier write, for a change of an earlier history, waits the same way.
-        if pending.isInDoubt || entry.history != state.history {
-            let keepsDeferred = entry.deferredRemote.map { $0.revision == change.revision || isOlder(change, than: $0, in: state) }
+        //
+        // And so does a change that meets a version without a sequence: nothing tells whether
+        // it is newer than the version the change is based on or a stale copy (a page out of
+        // order, a lagging replica), and a timestamp does not, since a device clock wrote it.
+        // Resolved here, a stale copy could make the resolver drop an edit the server never
+        // saw; the push's conflict answer names the server's current version instead.
+        if pending.isInDoubt || entry.history != state.history || change.sequence == nil {
+            let keepsDeferred = entry.deferredRemote.map { $0.revision == change.revision || isOlder(change, than: $0) }
             if keepsDeferred != true { entry.deferredRemote = change }
             state.entries[change.recordID] = entry
             return

@@ -77,16 +77,19 @@ public struct RemoteChange<Record: SyncableRecord>: Sendable {
     /// minutes is moved back to that limit, as the reference servers do: a device whose clock
     /// runs ahead then wins over later edits on other devices for those minutes at most. A
     /// timestamp further ahead than ``OfflineStore/Configuration/maximumClockDrift`` also counts
-    /// as at that limit when last write wins weighs it against a local write, and does not order
-    /// the server's versions.
+    /// as at that limit when last write wins weighs it against a local write. The store never
+    /// orders the server's versions by timestamps: device clocks write them.
     public let timestamp: HLCTimestamp?
 
     /// Where this version stands in the server's order of writes, if the server numbers them:
     /// a number that grows with every write the server stores, such as a global change counter
     /// or a per-record version number. It may start over only together with a new
     /// ``PullResponse/epoch``. With it the store recognises an older version that arrives late
-    /// (a page out of order, a lagging replica) by the server's order rather than by device
-    /// clocks.
+    /// (a page out of order, a lagging replica) and keeps the newer one, and a pull resolves a
+    /// conflict with a pending change. Without it the store takes every version a page brings
+    /// as the newest, so a stale page can roll a record back until the record changes again,
+    /// and leaves a pending change to its push, whose conflict answer names the server's current
+    /// version. Timestamps never take its place.
     public let sequence: UInt64?
 
     /// The ``OutgoingChange/id`` of the pushed change that wrote this version, if the server

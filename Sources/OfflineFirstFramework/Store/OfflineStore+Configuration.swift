@@ -40,8 +40,9 @@ extension OfflineStore {
         public var maximumPullPages: Int
 
         /// Deleted records the store remembers, so that an older version of one that arrives
-        /// late (a page out of order, a lagging replica) does not bring it back. Beyond the
-        /// limit the oldest are forgotten; such a late version could then return the record.
+        /// late (a page out of order, a lagging replica) from a server that sends
+        /// ``RemoteChange/sequence`` does not bring it back. Beyond the limit the oldest are
+        /// forgotten; such a late version could then return the record.
         /// Each takes a few hundred bytes in the file. Default: 10,000.
         public var maximumTombstones: Int
 
@@ -50,8 +51,9 @@ extension OfflineStore {
         /// store does not move its clock to a timestamp further ahead of the device clock, and a
         /// clock that is further ahead (the device clock showed a time far ahead and was set
         /// back) goes on from the limit with the next local write; last write wins weighs a
-        /// server timestamp beyond the limit against local writes as if it were at the limit,
-        /// and server versions are not ordered by it. Default: 5 minutes.
+        /// server timestamp beyond the limit against local writes as if it were at the limit.
+        /// Server versions are never ordered by timestamps, also not by those within the limit
+        /// (see ``RemoteChange/sequence``). Default: 5 minutes.
         public var maximumClockDrift: Duration
 
         /// What happens when the store file cannot be read. Default: ``CorruptionPolicy/fail``.

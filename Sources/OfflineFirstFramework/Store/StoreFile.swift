@@ -40,11 +40,6 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
     /// order (see ``OfflineStore/beginHistory(epoch:isLaterEpoch:in:)``). An entry whose
     /// ``history`` differs from this one was moved so.
     var pushedInHistory: UInt64? = nil
-    /// The timestamp of the server version ``revision`` names, if the server sent one the store
-    /// can order versions by: not further ahead than the drift limit when it arrived (see
-    /// ``OfflineStore/Configuration/maximumClockDrift``). `nil` says nothing about the order.
-    /// ``timestamp`` is the local write's while a change is pending.
-    var serverTimestamp: HLCTimestamp? = nil
     /// The newest server version a pull brought while the pending change was in doubt
     /// (``PendingWrite/isInDoubt``). It is newer than that change, so it replaces the record
     /// once the next push shows the change was applied; a conflict answer makes it moot. For a
@@ -84,15 +79,13 @@ struct StoredEntry<Record: SyncableRecord>: Codable, Sendable {
 extension StoredEntry {
     private enum CodingKeys: String, CodingKey {
         case id, record, timestamp, revision, position, pending, wasSent, history, sequence, minimumSequence, olderRevisions,
-             pushedInHistory, serverTimestamp, deferredRemote, ownChangeIDs, ownTimestamps
+             pushedInHistory, deferredRemote, ownChangeIDs, ownTimestamps
     }
 
     /// Files written before `wasSent` existed have no such key; their records count as unsent.
     /// Files written before `history` existed belong to the first history. Files written before
-    /// `serverTimestamp` existed kept the server's timestamp as ``timestamp`` while no change
-    /// was pending; newer files always write the key, `null` when the server sent none. Files
-    /// written before `ownChangeIDs` and `ownTimestamps` existed know no own writes; a damaged
-    /// file keeps the newest within the limit.
+    /// `ownChangeIDs` and `ownTimestamps` existed know no own writes; a damaged file keeps the
+    /// newest within the limit.
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Record.ID.self, forKey: .id)
@@ -107,11 +100,6 @@ extension StoredEntry {
         minimumSequence = try container.decodeIfPresent(UInt64.self, forKey: .minimumSequence)
         olderRevisions = try container.decodeIfPresent([String].self, forKey: .olderRevisions) ?? []
         pushedInHistory = try container.decodeIfPresent(UInt64.self, forKey: .pushedInHistory)
-        if container.contains(.serverTimestamp) {
-            serverTimestamp = try container.decodeIfPresent(HLCTimestamp.self, forKey: .serverTimestamp)
-        } else {
-            serverTimestamp = pending == nil ? timestamp : nil
-        }
         deferredRemote = try container.decodeIfPresent(RemoteChange<Record>.self, forKey: .deferredRemote)
         ownChangeIDs = try Array((container.decodeIfPresent([UUID].self, forKey: .ownChangeIDs) ?? []).suffix(Self.maximumOwnWrites))
         ownTimestamps = try Array((container.decodeIfPresent([HLCTimestamp].self, forKey: .ownTimestamps) ?? [])
@@ -134,13 +122,6 @@ extension StoredEntry {
             try container.encode(olderRevisions, forKey: .olderRevisions)
         }
         try container.encodeIfPresent(pushedInHistory, forKey: .pushedInHistory)
-        // Written also when it is nil, so a file tells a server version without a timestamp
-        // from a file of a version before the key existed.
-        if let serverTimestamp {
-            try container.encode(serverTimestamp, forKey: .serverTimestamp)
-        } else {
-            try container.encodeNil(forKey: .serverTimestamp)
-        }
         try container.encodeIfPresent(deferredRemote, forKey: .deferredRemote)
         if !ownChangeIDs.isEmpty {
             try container.encode(ownChangeIDs, forKey: .ownChangeIDs)

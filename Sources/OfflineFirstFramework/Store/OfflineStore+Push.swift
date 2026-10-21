@@ -121,7 +121,7 @@ extension OfflineStore {
                     entry.deferredRemote = nil
                     if let current, Self.isConsistent(current, for: entry.id) {
                         receive(current, in: &state)
-                        let taken = newer(deferred, than: current, in: state)
+                        let taken = newer(deferred, than: current)
                         entry = Self.entry(from: taken, replacing: entry, in: &state, configuration: configuration)
                         if taken.revision == current.revision { entry.pushedInHistory = state.history }
                     } else {
@@ -155,7 +155,6 @@ extension OfflineStore {
         entry.pushedInHistory = state.history
         entry.sequence = nil
         entry.olderRevisions = Array(olderRevisions.suffix(Self.maximumOlderRevisions))
-        entry.serverTimestamp = change.timestamp
         entry.rememberOwnWrite(changeID: change.id, timestamp: change.timestamp)
         let deferred = entry.deferredRemote
         entry.deferredRemote = nil
@@ -190,12 +189,19 @@ extension OfflineStore {
         receive(current, in: &state)
         // A repeated push is answered from the server's memory of change IDs, with the version
         // that was current then; a version pulled since is newer.
-        let current = newer(deferred, than: current, in: state)
-        guard current.revision != entry.revision, !isStale(current, comparedWith: entry, in: state, isConflictAnswer: true) else {
-            // The version the change is based on, or an older one (a lagging replica
-            // answered): nothing to resolve; the change is pushed again later.
+        let current = newer(deferred, than: current)
+        // The version the change is based on, which a conflict cannot name, or one the server's
+        // sequences, or the store's own accepted write, show to be older (a lagging replica
+        // answered): nothing to resolve; the change is pushed again later. A timestamp never
+        // makes an answer older; without sequences the server's answer is its current version.
+        guard current.revision != entry.revision else {
             report.conflicts += 1
-            fail(&entry, message: "The server answered with a conflict that names the same or an older version of the record.",
+            fail(&entry, message: "The server answered with a conflict that names the version the change is based on.", report: &report)
+            return
+        }
+        guard !isStale(current, comparedWith: entry, in: state, isConflictAnswer: true) else {
+            report.conflicts += 1
+            fail(&entry, message: "The server answered with a conflict that names an older version of the record than the store holds.",
                  report: &report)
             return
         }
@@ -222,10 +228,13 @@ extension OfflineStore {
         entry.pushedInHistory = state.history
     }
 
-    /// `deferred`, the version a pull brought while the change was in doubt, when it is not
-    /// older than `current`; otherwise `current`.
-    func newer(_ deferred: RemoteChange<Record>?, than current: RemoteChange<Record>, in state: State) -> RemoteChange<Record> {
-        guard let deferred, deferred.revision != current.revision, !isOlder(deferred, than: current, in: state) else { return current }
+    /// `deferred`, the version a pull brought while the change was in doubt, unless the
+    /// server's sequences show it is older than `current`, the version a push answer names;
+    /// otherwise `current`. Without sequences the pulled version is taken: it came after the
+    /// push went out, the answer to a repeated push comes from the server's memory of change
+    /// IDs, and the change token has moved past the pulled version, so no pull brings it again.
+    func newer(_ deferred: RemoteChange<Record>?, than current: RemoteChange<Record>) -> RemoteChange<Record> {
+        guard let deferred, deferred.revision != current.revision, !isOlder(deferred, than: current) else { return current }
         return deferred
     }
 

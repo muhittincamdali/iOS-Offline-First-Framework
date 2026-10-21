@@ -13,9 +13,9 @@ import Testing
 ///
 /// For every policy no write the server accepted may be applied again after a later one
 /// replaced it, no device may go back to an older server version of a record without a local
-/// change, the resolver is never asked about the device's own write, and every device ends with
-/// the server's records and nothing queued; with last write wins every record ends as its
-/// newest write. 120 runs by default; `CONCURRENT_CONVERGENCE_SEEDS=120` makes 1,200
+/// change (a server that sends sequences), the resolver is never asked about the device's own
+/// write, and every device ends with the server's records and nothing queued; with last write
+/// wins every record ends as its newest write. 120 runs by default; `CONCURRENT_CONVERGENCE_SEEDS=120` makes 1,200
 /// (`swift test --filter ConcurrentConvergenceTests`).
 @Suite("Offline store: concurrent operations, restarts, replicas and crashes")
 struct ConcurrentConvergenceTests {
@@ -36,11 +36,20 @@ struct ConcurrentConvergenceTests {
         try await run(policy: policy, seed: seed, options: ModelOptions(sendSequence: true, sendChangeID: false))
     }
 
-    /// Without sequences the store orders versions by their timestamps, which matches the
-    /// server's order for last write wins and merges only (documented).
-    @Test(arguments: [Policy.lastWriteWins, .merge], seeds)
+    /// Without sequences the store does not order the server's versions: a record without a
+    /// local change may show a lagging replica's older version until it changes again, as the
+    /// limits say, so that check is left out. Everything else holds for every policy: a pull
+    /// leaves a pending change to its push, whose conflict answer names the server's version.
+    @Test(arguments: Policy.allCases, seeds)
     func withoutSequences(policy: Policy, seed: UInt64) async throws {
         try await run(policy: policy, seed: seed, options: ModelOptions(sendSequence: false, sendChangeID: true))
+    }
+
+    /// Without sequences and change IDs the store recognises its own writes by the exact
+    /// timestamp the server sends back.
+    @Test(arguments: Policy.allCases, seeds)
+    func withoutSequencesOrChangeIDs(policy: Policy, seed: UInt64) async throws {
+        try await run(policy: policy, seed: seed, options: ModelOptions(sendSequence: false, sendChangeID: false))
     }
 
     final class Device: @unchecked Sendable {
@@ -145,7 +154,9 @@ struct ConcurrentConvergenceTests {
                 try device.restart()
             }
             for device in devices {
-                await Self.checkHeld(device.store, device: device.name, step: step, held: &held, into: violations)
+                if options.sendSequence {
+                    await Self.checkHeld(device.store, device: device.name, step: step, held: &held, into: violations)
+                }
             }
         }
 
@@ -160,7 +171,9 @@ struct ConcurrentConvergenceTests {
                 try await device.store.retryFailedChanges()
                 var syncs = 0
                 while try await device.store.sync().hasMoreChanges, syncs < 40 { syncs += 1 }
-                await Self.checkHeld(device.store, device: device.name, step: Self.steps, held: &held, into: violations)
+                if options.sendSequence {
+                    await Self.checkHeld(device.store, device: device.name, step: Self.steps, held: &held, into: violations)
+                }
             }
         }
 

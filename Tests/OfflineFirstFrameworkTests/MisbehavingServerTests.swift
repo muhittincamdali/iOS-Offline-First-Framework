@@ -30,11 +30,13 @@ struct MisbehavingServerTests {
         #expect(file.count < 10_000)
     }
 
+    /// The server's sequences tell the older version; without them the store cannot tell (see
+    /// ServerOrderTests).
     @Test func pagesOutOfOrderDoNotRollBackARecord() async throws {
         let newer = RemoteChange(recordID: "a", record: Note(id: "a", text: "new"), revision: "5",
-                                 timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"))
+                                 timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"), sequence: 5)
         let older = RemoteChange(recordID: "a", record: Note(id: "a", text: "old"), revision: "3",
-                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"))
+                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"), sequence: 3)
         let transport = ScriptedTransport(pull: { token in
             switch token {
             case nil: PullResponse(changes: [newer], token: "p1", hasMore: true)
@@ -58,9 +60,9 @@ struct MisbehavingServerTests {
     /// an older one either.
     @Test func pagesOutOfOrderDoNotRollBackARecordWithServerWins() async throws {
         let newer = RemoteChange(recordID: "a", record: Note(id: "a", text: "new"), revision: "5",
-                                 timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"))
+                                 timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"), sequence: 5)
         let older = RemoteChange(recordID: "a", record: Note(id: "a", text: "old"), revision: "3",
-                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"))
+                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"), sequence: 3)
         let transport = ScriptedTransport(pull: { token in
             switch token {
             case nil: PullResponse(changes: [newer], token: "p1", hasMore: true)
@@ -77,9 +79,9 @@ struct MisbehavingServerTests {
     /// The store first sees the deletion of a record it never held, then an older live version.
     @Test func aDeletionOfARecordTheStoreNeverHeldIsKept() async throws {
         let deleted = RemoteChange<Note>(recordID: "a", record: nil, revision: "5",
-                                         timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"))
+                                         timestamp: HLCTimestamp(wallTime: 5_000, nodeID: "laptop"), sequence: 5)
         let older = RemoteChange(recordID: "a", record: Note(id: "a", text: "old"), revision: "3",
-                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"))
+                                 timestamp: HLCTimestamp(wallTime: 3_000, nodeID: "laptop"), sequence: 3)
         let transport = ScriptedTransport(pull: { token in
             switch token {
             case nil: PullResponse(changes: [deleted], token: "p1", hasMore: true)

@@ -2,9 +2,9 @@ import Foundation
 import Testing
 @testable import OfflineFirstFramework
 
-/// Servers that send no ``RemoteChange/sequence``: the store orders their versions by the
-/// timestamps the server sent, never by a time of its own, and not by a timestamp it cannot
-/// trust.
+/// Servers that send no ``RemoteChange/sequence``: the store does not order their versions,
+/// neither by a time of its own nor by the timestamps the devices wrote. Each version a page
+/// brings is taken as the newest, as the server sends them in order.
 @Suite("Offline store: servers without sequences")
 struct ServerOrderTests {
     let clock = TestClock()
@@ -74,31 +74,51 @@ struct ServerOrderTests {
         #expect(await store.record("a")?.text == "newer")
     }
 
-    /// An older page with the timestamps still recognised as older.
-    @Test func anOlderPageIsStillSkipped() async throws {
+    /// A page out of order is taken: without sequences nothing tells it is older, and a
+    /// timestamp does not, since a device clock wrote it. The record shows the older version
+    /// until it changes again, as the limits say.
+    @Test func anOlderPageIsTakenUntilTheRecordChangesAgain() async throws {
         let newer = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "new"), revision: "r2",
                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds - 1_000, nodeID: "B"))
         let older = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "old"), revision: "r1",
                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds - 5_000, nodeID: "B"))
+        let newest = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "newest"), revision: "r3",
+                                        timestamp: HLCTimestamp(wallTime: nowMilliseconds - 3_000, nodeID: "C"))
+        let store = try makeStore(ScriptedTransport(pull: { token in
+            switch token {
+            case nil: PullResponse(changes: [newer], token: "t1", hasMore: false)
+            case "t1": PullResponse(changes: [older], token: "t2", hasMore: false)
+            case "t2": PullResponse(changes: [newest], token: "t3", hasMore: false)
+            default: PullResponse(changes: [], token: token, hasMore: false)
+            }
+        }))
+        try await store.sync()
+        try await store.sync()
+        #expect(await store.record("a")?.text == "old")
+        try await store.sync()
+        #expect(await store.record("a")?.text == "newest")
+    }
+
+    /// The same pages with sequences: the older one is skipped.
+    @Test func anOlderPageWithSequencesIsSkipped() async throws {
+        let newer = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "new"), revision: "r2", timestamp: nil, sequence: 2)
+        let older = RemoteChange<Note>(recordID: "a", record: Note(id: "a", text: "old"), revision: "r1", timestamp: nil, sequence: 1)
         let store = try makeStore(twoPages(newer, older))
         try await store.sync()
         try await store.sync()
         #expect(await store.record("a")?.text == "new")
     }
 
-    /// Files from before the server's timestamp was kept knew it only as the record's
-    /// timestamp; a file that says the server sent none is not read as having one.
-    @Test func filesTellAMissingServerTimestampFromAnUnknownOne() throws {
+    /// Earlier builds of this version kept a server timestamp per record to order the versions
+    /// of a server without sequences; a file with that key opens, and the key is not written
+    /// again.
+    @Test func filesWithAServerTimestampOpen() throws {
         let timestamp = #""timestamp":{"wallTime":5000,"counter":0,"nodeID":"B"}"#
-        let old = Data(#"{"id":"a","record":{"id":"a","text":"A"},\#(timestamp),"revision":"r1","position":0}"#.utf8)
-        let none = Data(#"{"id":"a","record":{"id":"a","text":"A"},\#(timestamp),"revision":"r1","position":0,"serverTimestamp":null}"#.utf8)
-        let decoder = JSONDecoder()
-        #expect(try decoder.decode(StoredEntry<Note>.self, from: old).serverTimestamp == HLCTimestamp(wallTime: 5_000, nodeID: "B"))
-        #expect(try decoder.decode(StoredEntry<Note>.self, from: none).serverTimestamp == nil)
-
-        var entry = try decoder.decode(StoredEntry<Note>.self, from: none)
-        entry.record = Note(id: "a", text: "B")
-        let roundTrip = try decoder.decode(StoredEntry<Note>.self, from: JSONEncoder().encode(entry))
-        #expect(roundTrip.serverTimestamp == nil)
+        let file = Data(#"{"id":"a","record":{"id":"a","text":"A"},\#(timestamp),"revision":"r1","position":0,"serverTimestamp":{"wallTime":9000,"counter":0,"nodeID":"B"}}"#.utf8)
+        let entry = try JSONDecoder().decode(StoredEntry<Note>.self, from: file)
+        #expect(entry.record?.text == "A")
+        #expect(entry.revision == "r1")
+        let written = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
+        #expect(!written.contains("serverTimestamp"))
     }
 }

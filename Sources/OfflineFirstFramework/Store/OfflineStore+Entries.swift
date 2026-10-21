@@ -45,7 +45,7 @@ extension OfflineStore {
         let timestamp = clamped(remote.timestamp, to: limit) ?? (try? tick(&state, configuration: configuration)) ?? state.clock.latest
         var entry = StoredEntry(id: remote.recordID, record: remote.record, timestamp: timestamp, revision: remote.revision,
                                 position: existing?.position ?? state.takeSequence(), pending: nil, history: state.history,
-                                sequence: remote.sequence, serverTimestamp: orderable(remote.timestamp, below: limit))
+                                sequence: remote.sequence)
         entry.ownChangeIDs = existing?.ownChangeIDs ?? []
         entry.ownTimestamps = existing?.ownTimestamps ?? []
         return entry
@@ -61,7 +61,6 @@ extension OfflineStore {
         entry.minimumSequence = nil
         entry.olderRevisions = []
         entry.pushedInHistory = nil
-        entry.serverTimestamp = orderable(remote.timestamp, below: driftLimit(of: state, configuration: configuration))
     }
 
     // MARK: - Time limits
@@ -124,35 +123,30 @@ extension OfflineStore {
         return HLCTimestamp(wallTime: limit, counter: timestamp.counter, nodeID: timestamp.nodeID)
     }
 
-    /// `timestamp` when two server versions may be ordered by it; `nil` beyond `limit`. Moved
-    /// back to the limit, every such timestamp would end at the same time and their order
-    /// would be lost; kept as it is, one stamped far ahead would hide every later version.
-    static func orderable(_ timestamp: HLCTimestamp?, below limit: Int64) -> HLCTimestamp? {
-        guard let timestamp, timestamp.wallTime <= limit else { return nil }
-        return timestamp
-    }
-
     // MARK: - Order of server versions
 
-    /// Whether `change` is an older server version than `other`, both of the current history.
-    func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>, in state: State) -> Bool {
-        let limit = Self.driftLimit(of: state, configuration: configuration)
-        return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
-                       than: other.sequence, nil, Self.orderable(other.timestamp, below: limit))
+    /// Whether the server's sequences show that `change` is an older server version than
+    /// `other`, both of the current history.
+    func isOlder(_ change: RemoteChange<Record>, than other: RemoteChange<Record>) -> Bool {
+        guard let sequence = change.sequence, let otherSequence = other.sequence else { return false }
+        return sequence < otherSequence
     }
 
     /// Whether `change` is an older server version than the one `entry` is based on: a page out
     /// of order, a lagging replica, the earlier version of a record whose deletion the store saw.
     ///
-    /// The server's ``RemoteChange/sequence`` decides when both versions have one. Until the echo
-    /// of the store's own accepted write arrives, the store knows only that the write is newer
-    /// than every version up to the one it replaced (``StoredEntry/minimumSequence``) and than
-    /// the versions its earlier accepted writes replaced (``StoredEntry/olderRevisions``). Only a
-    /// server that sends no sequences is ordered by the timestamps, which matches the server's
-    /// order as long as the devices resolve conflicts by ``ConflictResolver/lastWriteWins`` or a
-    /// merge. A version from an earlier server history is never newer than the server's current
-    /// one. When the order is unknown, the version counts as newer: the server sends its versions
-    /// in order, so a newer one follows anyway.
+    /// Only the server's own order decides. Its ``RemoteChange/sequence`` does when both
+    /// versions have one. Until the echo of the store's own accepted write arrives, the store
+    /// knows only that the write is newer than every version up to the one it replaced
+    /// (``StoredEntry/minimumSequence``) and than the versions its earlier accepted writes
+    /// replaced (``StoredEntry/olderRevisions``), which a server without sequences tells by
+    /// those revisions too. A timestamp never does: timestamps come from device clocks, and one
+    /// that ran ahead, for a moment or for good, would hide every later version of the record,
+    /// and make the server's own conflict answers look older. A version from an earlier server
+    /// history is never newer than the server's current one. When the order is unknown, the
+    /// version counts as newer: the server sends its versions in order, so a newer one follows
+    /// anyway. A server without sequences can therefore roll a record back with a stale page
+    /// until the record changes again (see <doc:GuaranteesAndLimits>).
     ///
     /// `isConflictAnswer` is true for the version a push answer names, which comes from the
     /// server itself. What an entry moved into a new history from a push answer of the old one
@@ -164,21 +158,10 @@ extension OfflineStore {
         guard entry.revision != nil, entry.history == state.history else { return false }
         if isConflictAnswer, let pushed = entry.pushedInHistory, pushed != entry.history { return false }
         if entry.olderRevisions.contains(change.revision) { return true }
-        let limit = Self.driftLimit(of: state, configuration: configuration)
-        return isOlder(change.sequence, Self.orderable(change.timestamp, below: limit),
-                       than: entry.sequence, entry.minimumSequence, entry.serverTimestamp)
-    }
-
-    /// Orders two server versions. `heldMinimum` is a sequence the second version is known to
-    /// follow; the timestamps are ``orderable(_:below:)`` ones.
-    private func isOlder(_ sequence: UInt64?, _ timestamp: HLCTimestamp?, than heldSequence: UInt64?, _ heldMinimum: UInt64?,
-                         _ heldTimestamp: HLCTimestamp?) -> Bool {
-        if let sequence {
-            if let heldSequence { return sequence < heldSequence }
-            if let heldMinimum, sequence <= heldMinimum { return true }
-        }
-        guard sequence == nil, heldSequence == nil, let timestamp, let heldTimestamp else { return false }
-        return timestamp < heldTimestamp
+        guard let sequence = change.sequence else { return false }
+        if let held = entry.sequence { return sequence < held }
+        if let minimum = entry.minimumSequence { return sequence <= minimum }
+        return false
     }
 
     /// How a server version relates to `entry`'s pending change: by the change ID that wrote it

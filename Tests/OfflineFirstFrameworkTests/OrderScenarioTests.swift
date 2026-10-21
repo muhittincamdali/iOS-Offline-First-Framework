@@ -5,11 +5,11 @@ import Testing
 @Suite("Scenarios: pages out of order")
 struct OrderScenarioTests {
     /// A lagging replica of the same epoch serves older versions of every record while the
-    /// device holds newer ones and an edit waits.
+    /// device holds newer ones and an edit waits. Without sequences the record without a
+    /// pending change shows the replica's version until the server's own pages come again, as
+    /// the limits say; the edit waits for its push either way.
     @Test(arguments: ScenarioPolicy.allCases, [true, false])
     func laggingReplicaOfTheSameEpoch(policy: ScenarioPolicy, sequences: Bool) async throws {
-        // Without sequences only last write wins and a merge are ordered by the store.
-        guard sequences || policy == .lastWriteWins || policy == .merge else { return }
         let world = ScenarioWorld(policy: policy, options: ScenarioOptions(sequences: sequences, changeIDs: true), pageSize: 2)
         let a = try world.device("A")
         let x = HLCTimestamp(wallTime: 1_699_999_000_000, counter: 0, nodeID: "X")
@@ -26,14 +26,18 @@ struct OrderScenarioTests {
         try await a.store.resetChangeToken()
         await a.network.setReplica(lagging, pulls: 1_000)
         for _ in 0..<3 { _ = await scenarioSync(a.store) }
-        #expect(await a.store.record("s")?.text == "X#s2", "a record without a pending change went back")
+        if sequences {
+            #expect(await a.store.record("s")?.text == "X#s2", "a record without a pending change went back")
+        }
         #expect(await a.store.record("r")?.text == "A#1")
         #expect(world.conflicts.all.isEmpty, "the stale version reached the resolver: \(world.conflicts.all)")
         await a.network.setReplica(nil, pulls: 0)
         world.clock.advance(by: 120)
         try await a.store.sync()
         #expect(await world.server.text("r") == "A#1")
+        #expect(await a.store.record("s")?.text == "X#s2")
         #expect(world.conflicts.all.isEmpty, "\(world.conflicts.all)")
+        #expect(world.violations.all.isEmpty, "\(world.violations.all)")
     }
 
     /// One page that lists the newer version first and the older one after it.
