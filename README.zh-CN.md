@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
+<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-zh-CN-light.svg" alt="Offline-First Framework: 面向 Swift 应用的本地存储：离线照常工作，联网后与你的服务器同步。"></picture></p>
@@ -33,7 +33,7 @@
 - **任何后端** — `HTTPSyncTransport` 使用一套有文档的 JSON 协议，[`Examples/SyncServer`](Examples/SyncServer) 中的参考服务器用大约 280 行 JavaScript 实现了它；任何其他 API 都可以接在 `SyncTransport` 之后，例如使用 ETag 的 REST API。
 - **为 SwiftUI 而生** — `SyncedCollection` 是存储的 `@Observable` 模型；设备联网时以及本地编辑之后不久会自动同步，也可以通过一次调用在后台刷新任务中同步。
 - **静态数据受保护** — 使用保存在 Keychain 中的密钥进行 AES-GCM 文件加密、数据保护级别、记录架构迁移，以及针对损坏文件的处理策略。
-- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 237 个 Swift Testing 测试，其中包括一个让每种冲突策略经受请求丢失、重启和过期页面考验的属性测试；为服务器编写了 20 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
+- **针对真实服务器测试** — 在 macOS 和 iPhone 模拟器上运行 250 个 Swift Testing 测试，其中包括一个让每种冲突策略经受请求丢失、重启、令牌重置、重叠同步、较小页数上限和过期页面考验的属性测试；为服务器编写了 21 个 Node 测试，并在 CI 中有一套端到端测试，通过 HTTP 经由服务器同步两个存储。
 
 ### 内容一览
 
@@ -285,11 +285,12 @@ static func twoDevices() async throws -> (phone: [Todo], laptop: [Todo]) {
 只要服务器遵循[协议](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/ServerProtocol.md)，无论使用哪种冲突策略，存储在请求丢失、应答丢失、应用和服务器重启以及过期页面的情况下都会信守以下承诺：
 
 - 保存或删除在调用返回之前就已写入文件，队列中的改动会一直推送，直到服务器给出应答。重试沿用同一个改动 ID，因此服务器只会应用一次。
-- 过期的副本绝不会覆盖服务器已接受的写入：只有当一条记录在本设备和另一台设备上都发生了变化时才会询问解决器，服务器上较旧的版本会被跳过，在设备自己的写入刚被接受之后、甚至跨越设备尚未察觉的服务器重启时也是如此。
-- 已删除的记录保持删除状态。丢失了数据的服务器或另一台服务器会让存储从头重新拉取全部内容，并保留待同步改动。应用无法解码的记录会被放进 `quarantinedChanges()`，而不会让拉取停止。
-- 走快或被往回调的时钟、对每次推送都回应冲突的服务器、从不应答的服务器以及无法写入的文件，其影响都是有限的：时间戳最多按领先设备所知的最新时间五分钟计算，重试会退避并被搁置，一次同步会在 `syncTimeout` 之后结束，文件无法写入期间同步会等待。
+- 过期的副本绝不会覆盖服务器已接受的写入：只有当一条记录在本设备和另一台设备上都发生了变化时才会询问解决器，服务器上较旧的版本会被跳过，在设备自己的写入刚被接受之后、跨越设备尚未察觉的服务器重启时以及调用 `resetChangeToken()` 之后也是如此。
+- 服务器的另一个 epoch 只有在一次同步中的两个请求（带令牌的拉取和从头开始的拉取）都报告它时才算数，因此过期的缓存或同一 URL 后面的另一个部署无法让存储回退。每次只拉取一页的同步也能跟上服务器重启；两个请求不一致时，同步会失败，而不是报告成功。
+- 已删除的记录保持删除状态。丢失了数据的服务器或另一台服务器会让存储从头重新拉取全部内容，并保留待同步改动。应用无法解码的记录，包括嵌套深度超过 `JSONDecoder` 可读范围的记录，会被放进 `quarantinedChanges()`，而不会让拉取停止。
+- 走快或被往回调的时钟、对每次推送都回应冲突的服务器、从不应答的服务器以及无法写入的文件，其影响都是有限的：参考服务器保存的推送时间戳最多比自己的时钟领先五分钟，设备时钟短暂出错不会延续到之后的写入，重试会退避并被搁置，一次同步会在 `syncTimeout` 之后结束，文件无法写入期间同步会等待。
 
-服务器绝不能把同一个 revision 分配给一条记录的两个版本，应当发送只会前进到更晚值的 `epoch`（更长，或长度相同时按字节更大）、在重启后继续计数的 `sequence` 以及原样返回推送时的时间戳，并且必须在重启后仍记得改动 ID。限制：服务器在恢复备份时丢失的写入不会被重新上传；每个文件只能有一个存储实例；每次改动都会写入整个文件；超过 10,000 条的删除会被遗忘。完整列表见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
+服务器绝不能把同一个 revision 分配给一条记录的两个版本，应当发送只会前进到更晚值的 `epoch`（更长，或长度相同时按字节更大）、在重启后继续计数的 `sequence`、推送时的时间戳（远超其时钟的时间被拉回到上限）以及写入每个版本的 `changeID`，并且必须在重启后仍记得改动 ID。限制：服务器在恢复备份时丢失的写入不会被重新上传；在 `discardChange(for:)` 之后立即再次保存的记录会与服务器的副本作为冲突相遇；每个文件只能有一个存储实例；每次改动都会写入整个文件；超过 10,000 条的删除会被遗忘。完整列表见[保证与限制](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md)。
 
 ## 演示
 

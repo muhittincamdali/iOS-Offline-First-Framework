@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
+<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-pt-BR-light.svg" alt="Offline-First Framework: Um armazenamento local para apps em Swift que continua funcionando offline e sincroniza com o seu servidor."></picture></p>
@@ -51,10 +51,11 @@ em memória para testes e pré-visualizações. O pacote não tem dependências.
 - **Dados em repouso protegidos** — criptografia de arquivos AES-GCM com uma chave guardada no
   Keychain, classes de proteção de dados, migrações de esquema dos registros e uma política para
   arquivos danificados.
-- **Testado contra um servidor real** — 237 testes de Swift Testing no macOS e em um simulador de
+- **Testado contra um servidor real** — 250 testes de Swift Testing no macOS e em um simulador de
   iPhone, entre eles um teste de propriedades que submete cada política de conflito a solicitações
-  perdidas, reinícios e páginas desatualizadas, 20 testes de Node para o servidor e uma suíte de
-  testes de ponta a ponta na CI que sincroniza dois stores por meio do servidor via HTTP.
+  perdidas, reinícios, redefinições do token, sincronizações simultâneas, limites de páginas
+  pequenos e páginas desatualizadas, 21 testes de Node para o servidor e uma suíte de testes de
+  ponta a ponta na CI que sincroniza dois stores por meio do servidor via HTTP.
 
 ### O que está incluído
 
@@ -338,22 +339,33 @@ siga o [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/Serv
 - Uma cópia desatualizada nunca substitui uma gravação que o servidor aceitou: o resolvedor só é
   consultado quando um registro mudou no dispositivo e em outro dispositivo, e uma versão mais
   antiga do servidor é ignorada, também logo depois de o servidor aceitar a gravação do próprio
-  dispositivo, mesmo depois de um reinício do servidor que o dispositivo ainda não viu.
+  dispositivo, mesmo depois de um reinício do servidor que o dispositivo ainda não viu e depois
+  de `resetChangeToken()`.
+- Outro epoch do servidor só conta quando duas solicitações da mesma sincronização o informam, a
+  leitura com o token e a leitura desde o início, então um cache desatualizado ou outra
+  implantação atrás da mesma URL não consegue fazer o store voltar atrás. Uma sincronização que
+  lê uma única página ainda acompanha um reinício do servidor, e quando as duas solicitações não
+  concordam a sincronização falha em vez de informar sucesso.
 - Registros excluídos continuam excluídos. Um servidor que perdeu seus dados, ou outro servidor,
   faz o store ler tudo de novo, mantendo suas alterações pendentes. Um registro que o app não
-  consegue decodificar é separado em `quarantinedChanges()` em vez de interromper a leitura.
+  consegue decodificar, inclusive um aninhado mais fundo do que o `JSONDecoder` lê, é separado em
+  `quarantinedChanges()` em vez de interromper a leitura.
 - Um relógio adiantado ou atrasado à mão, um servidor que responde a cada envio com um conflito,
-  um servidor que nunca responde e um arquivo que não pode ser gravado têm efeito limitado: um
-  carimbo de data/hora conta no máximo cinco minutos além da hora mais recente que o dispositivo
-  conhece, as novas tentativas esperam e são estacionadas, uma sincronização termina após
+  um servidor que nunca responde e um arquivo que não pode ser gravado têm efeito limitado: os
+  servidores de referência guardam um carimbo de data/hora recebido no máximo cinco minutos além
+  do próprio relógio, um instante de relógio errado no dispositivo não passa para as gravações
+  seguintes, as novas tentativas esperam e são estacionadas, uma sincronização termina após
   `syncTimeout` e as sincronizações esperam enquanto o arquivo não puder ser gravado.
 
 O servidor nunca deve dar a mesma revisão a duas versões de um registro, deveria enviar um `epoch`
 que só avança para outros posteriores (mais longos, ou maiores byte a byte), um `sequence` que
-continua contando entre reinícios e os carimbos de data/hora recebidos sem alteração, e precisa
-lembrar os IDs de alteração entre reinícios. Limites: gravações que um
-servidor perdeu em uma restauração não são enviadas de novo, uma única instância do store por
-arquivo, o arquivo inteiro é gravado a cada alteração, e exclusões além de 10.000 são esquecidas.
+continua contando entre reinícios, os carimbos de data/hora recebidos (com uma hora muito à
+frente do seu relógio trazida a um limite) e o `changeID` que gravou cada versão, e precisa
+lembrar os IDs de alteração entre reinícios. Limites: gravações que um servidor perdeu em uma
+restauração não são enviadas de novo, um registro salvo de novo logo depois de
+`discardChange(for:)` encontra a cópia do servidor como um conflito, uma única instância do
+store por arquivo, o arquivo inteiro é gravado a cada alteração, e exclusões além de 10.000 são
+esquecidas.
 [Garantias e limites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) traz a lista completa.
 
 ## Demonstração

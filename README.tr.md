@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
+<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-tr-light.svg" alt="Offline-First Framework: Swift uygulamaları için çevrimdışı çalışmayı sürdüren ve sunucunuzla eşitlenen yerel bir veri deposu."></picture></p>
@@ -50,10 +50,11 @@ hiçbir bağımlılığı yoktur.
   da arka plan yenileme görevinden eşitleme yapar.
 - **Bekleyen veri korunur** — anahtarı Keychain'de tutulan AES-GCM dosya şifrelemesi, veri koruma
   sınıfları, kayıt şeması geçişleri ve hasarlı dosyalar için bir politika.
-- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 237 Swift Testing
-  testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar ve bayat
-  sayfalarla sınayan bir özellik testi), sunucu için 20 Node testi ve CI'da iki yerel depoyu sunucu
-  üzerinden HTTP ile eşitleyen uçtan uca bir test paketi.
+- **Gerçek bir sunucuya karşı test edildi** — macOS'ta ve bir iPhone simülatöründe 250 Swift Testing
+  testi (aralarında her çakışma politikasını kaybolan istekler, yeniden başlatmalar, token
+  sıfırlamaları, üst üste binen eşitlemeler, küçük sayfa sınırları ve bayat sayfalarla sınayan bir
+  özellik testi), sunucu için 21 Node testi ve CI'da iki yerel depoyu sunucu üzerinden HTTP ile
+  eşitleyen uçtan uca bir test paketi.
 
 ### Neler var
 
@@ -338,22 +339,30 @@ tutar:
 - Bayat bir kopya, sunucunun kabul ettiği bir yazmanın yerini asla almaz: çözücüye yalnızca kayıt
   hem bu cihazda hem başka bir cihazda değiştiyse sorulur ve sunucunun daha eski bir sürümü,
   cihazın kendi yazması kabul edildikten hemen sonra da, cihazın henüz görmediği bir sunucu
-  yeniden başlatmasının ardından bile atlanır.
+  yeniden başlatmasının ardından ve `resetChangeToken()` sonrasında bile atlanır.
+- Başka bir sunucu epoch'u ancak tek bir eşitlemedeki iki istek, yani token ile çekme ve baştan
+  çekme, onu birlikte bildirdiğinde sayılır; böylece bayat bir önbellek ya da aynı URL'nin
+  arkasındaki başka bir dağıtım depoyu geri saramaz. Tek sayfa çeken bir eşitleme de sunucunun
+  yeniden başlatılmasını izler ve iki istek uyuşmadığında eşitleme başarı bildirmek yerine hata
+  verir.
 - Silinen kayıtlar silinmiş kalır. Verisini kaybetmiş bir sunucu ya da başka bir sunucu, deponun
   her şeyi baştan çekmesine yol açar ve bekleyen değişiklikler korunur. Uygulamanın çözemediği bir
-  kayıt, çekmeyi durdurmak yerine `quarantinedChanges()` içine ayrılır.
+  kayıt, `JSONDecoder`'ın okuduğundan daha derin iç içe geçmiş olanlar da dahil, çekmeyi
+  durdurmak yerine `quarantinedChanges()` içine ayrılır.
 - İleri giden ya da geri alınmış bir saat, her gönderime çakışmayla yanıt veren bir sunucu, hiç
-  yanıt vermeyen bir sunucu ve yazılamayan bir dosya sınırlı etki yapar: bir zaman damgası
-  cihazın bildiği en yeni zamandan en fazla beş dakika ileri sayılır, yeniden denemeler bekletilir
-  ve park edilir, bir eşitleme `syncTimeout` sonunda biter ve dosya yazılamadığı sürece
-  eşitlemeler bekler.
+  yanıt vermeyen bir sunucu ve yazılamayan bir dosya sınırlı etki yapar: referans sunucular
+  gönderilen bir zaman damgasını kendi saatlerinin en fazla beş dakika ötesinde tutar, cihaz
+  saatinin bir anlık yanlışlığı sonraki yazmalara taşınmaz, yeniden denemeler bekletilir ve park
+  edilir, bir eşitleme `syncTimeout` sonunda biter ve dosya yazılamadığı sürece eşitlemeler bekler.
 
 Sunucu aynı revision'ı bir kaydın iki sürümüne asla vermemeli; yalnızca daha geç olanlara ilerleyen
 bir `epoch` (daha uzun ya da bayt bayt daha büyük), yeniden başlatmalarda saymayı sürdüren bir
-`sequence` ve gönderilen zaman damgalarını değiştirmeden göndermeli ve değişiklik kimliklerini
-yeniden başlatmalar boyunca hatırlamalıdır. Sınırlar:
-sunucunun bir geri yüklemede kaybettiği yazmalar yeniden yüklenmez, dosya başına tek bir depo
-örneği kullanılır, her değişiklikte dosyanın tamamı yazılır ve 10.000'i aşan silmeler unutulur.
+`sequence`, gönderilen zaman damgalarını (saatinin çok ilerisindeki bir zaman bir sınıra çekilmiş
+olarak) ve her sürümü yazan `changeID`'yi göndermeli ve değişiklik kimliklerini yeniden
+başlatmalar boyunca hatırlamalıdır. Sınırlar: sunucunun bir geri yüklemede kaybettiği yazmalar
+yeniden yüklenmez, `discardChange(for:)` çağrısının hemen ardından yeniden kaydedilen bir kayıt
+sunucunun kopyasıyla çakışma olarak karşılaşır, dosya başına tek bir depo örneği kullanılır, her
+değişiklikte dosyanın tamamı yazılır ve 10.000'i aşan silmeler unutulur.
 Tam liste [Güvenceler ve sınırlar](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) makalesindedir.
 
 ## Demo

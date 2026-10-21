@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
+<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-de-light.svg" alt="Offline-First Framework: Ein lokaler Speicher für Swift-Apps, der offline weiterarbeitet und mit deinem Server synchronisiert."></picture></p>
@@ -51,9 +51,10 @@ keine Abhängigkeiten.
   Änderungen, und ein einziger Aufruf synchronisiert aus einer Hintergrundaktualisierung heraus.
 - **Gespeicherte Daten geschützt** — AES-GCM-Dateiverschlüsselung mit einem Schlüssel im Keychain,
   Datenschutzklassen, Schemamigrationen für Datensätze und eine Richtlinie für beschädigte Dateien.
-- **Gegen einen echten Server getestet** — 237 Swift-Testing-Tests auf macOS und in einem
+- **Gegen einen echten Server getestet** — 250 Swift-Testing-Tests auf macOS und in einem
   iPhone-Simulator, darunter ein Eigenschaftstest, der jede Konfliktrichtlinie durch verlorene
-  Anfragen, Neustarts und veraltete Seiten schickt, 20 Node-Tests für den Server und eine
+  Anfragen, Neustarts, zurückgesetzte Tokens, überlappende Synchronisierungen, kleine
+  Seitengrenzen und veraltete Seiten schickt, 21 Node-Tests für den Server und eine
   End-to-End-Testsuite in der CI, die zwei Stores über HTTP durch den Server synchronisiert.
 
 ### Was enthalten ist
@@ -340,24 +341,33 @@ verlorenen Antworten, Neustarts von App und Server und veralteten Seiten, solang
   Resolver wird nur gefragt, wenn sich ein Datensatz auf dem Gerät und auf einem anderen Gerät
   geändert hat, und eine ältere Serverversion wird übersprungen, auch direkt nachdem der Server
   den eigenen Schreibvorgang des Geräts angenommen hat, selbst über einen Serverneustart hinweg,
-  den das Gerät noch nicht gesehen hat.
+  den das Gerät noch nicht gesehen hat, und nach `resetChangeToken()`.
+- Eine andere Server-Epoch zählt nur, wenn zwei Anfragen derselben Synchronisierung sie melden,
+  der Abruf mit dem Token und der Abruf von Anfang an. Ein veralteter Cache oder ein anderes
+  Deployment hinter derselben URL kann den Store also nicht zurücksetzen. Eine Synchronisierung,
+  die nur eine Seite abruft, folgt trotzdem einem Serverneustart, und wenn die beiden Anfragen
+  nicht übereinstimmen, schlägt die Synchronisierung fehl, statt Erfolg zu melden.
 - Gelöschte Datensätze bleiben gelöscht. Ein Server, der seine Daten verloren hat, oder ein anderer
   Server lässt den Store alles neu abrufen, wobei ausstehende Änderungen erhalten bleiben. Ein
-  Datensatz, den die App nicht dekodieren kann, wird in `quarantinedChanges()` zurückgestellt,
-  statt den Abruf anzuhalten.
+  Datensatz, den die App nicht dekodieren kann, auch einer, der tiefer verschachtelt ist, als
+  `JSONDecoder` liest, wird in `quarantinedChanges()` zurückgestellt, statt den Abruf anzuhalten.
 - Eine vorgehende oder zurückgestellte Uhr, ein Server, der jede Übertragung mit einem Konflikt
   beantwortet, ein Server, der nie antwortet, und eine Datei, die sich nicht schreiben lässt,
-  wirken nur begrenzt: Ein Zeitstempel zählt höchstens fünf Minuten über die neueste Zeit des
-  Geräts hinaus, Wiederholungen warten und werden geparkt, eine Synchronisierung endet nach
-  `syncTimeout`, und Synchronisierungen warten, solange die Datei nicht geschrieben werden kann.
+  wirken nur begrenzt: Die Referenzserver speichern einen übertragenen Zeitstempel höchstens fünf
+  Minuten nach ihrer eigenen Uhr, ein kurzer Moment einer falschen Geräteuhr geht nicht auf
+  spätere Schreibvorgänge über, Wiederholungen warten und werden geparkt, eine Synchronisierung
+  endet nach `syncTimeout`, und Synchronisierungen warten, solange die Datei nicht geschrieben
+  werden kann.
 
 Der Server darf dieselbe Revision nie zwei Versionen eines Datensatzes geben, sollte eine `epoch`,
 die nur zu späteren wechselt (länger oder Byte für Byte größer), eine `sequence`, die über
-Neustarts weiterzählt, und die übertragenen Zeitstempel unverändert senden und muss sich
-Änderungs-IDs über Neustarts hinweg merken. Grenzen:
-Schreibvorgänge, die ein Server bei einer Wiederherstellung verloren hat, werden nicht erneut
-hochgeladen, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben,
-und Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
+Neustarts weiterzählt, die übertragenen Zeitstempel (eine Zeit, die seiner Uhr weit vorausliegt,
+auf eine Grenze zurückgesetzt) und die `changeID`, die jede Version geschrieben hat, senden und
+muss sich Änderungs-IDs über Neustarts hinweg merken. Grenzen: Schreibvorgänge, die ein Server
+bei einer Wiederherstellung verloren hat, werden nicht erneut hochgeladen, ein Datensatz, der
+direkt nach `discardChange(for:)` erneut gespeichert wird, trifft die Kopie des Servers als
+Konflikt, eine Store-Instanz pro Datei, die ganze Datei wird bei jeder Änderung geschrieben, und
+Löschungen jenseits von 10.000 werden vergessen. [Garantien und Grenzen](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) enthält
 die vollständige Liste.
 
 ## Demo

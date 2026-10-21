@@ -1,4 +1,4 @@
-<!-- i18n-source: README.md@a2cfe83ca8ddfbb907d4765a50520b1442196ef0 status=reviewed -->
+<!-- i18n-source: README.md@245985d4ed12256c8f854d8b22ebd07730b12f9c status=reviewed -->
 <!-- brand:start -->
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg"><img src="https://raw.githubusercontent.com/muhittincamdali/iOS-Offline-First-Framework/master/.github/brand/banner-es-light.svg" alt="Offline-First Framework: Un almacén local para apps en Swift que sigue funcionando sin conexión y se sincroniza con tu servidor."></picture></p>
@@ -51,10 +51,11 @@ para pruebas y previsualizaciones. El paquete no tiene dependencias.
 - **Datos en reposo protegidos** — cifrado de archivos AES-GCM con una clave guardada en el Keychain,
   clases de protección de datos, migraciones del esquema de los registros y una política para los
   archivos dañados.
-- **Probado contra un servidor real** — 237 pruebas de Swift Testing en macOS y en un simulador de
+- **Probado contra un servidor real** — 250 pruebas de Swift Testing en macOS y en un simulador de
   iPhone, entre ellas una prueba de propiedades que somete cada política de conflictos a solicitudes
-  perdidas, reinicios y páginas obsoletas, 20 pruebas de Node para el servidor y un conjunto de
-  pruebas de extremo a extremo en CI que sincroniza dos almacenes a través del servidor por HTTP.
+  perdidas, reinicios, restablecimientos del token, sincronizaciones solapadas, límites de páginas
+  pequeños y páginas obsoletas, 21 pruebas de Node para el servidor y un conjunto de pruebas de
+  extremo a extremo en CI que sincroniza dos almacenes a través del servidor por HTTP.
 
 ### Qué incluye
 
@@ -338,22 +339,32 @@ servidor siga el [protocolo](Sources/OfflineFirstFramework/OfflineFirstFramework
 - Una copia obsoleta nunca reemplaza una escritura que el servidor aceptó: al resolutor solo se le
   pregunta cuando un registro cambió en el dispositivo y en otro dispositivo, y una versión más
   antigua del servidor se omite, también justo después de que se aceptara la escritura del propio
-  dispositivo, incluso tras un reinicio del servidor que el dispositivo aún no ha visto.
+  dispositivo, incluso tras un reinicio del servidor que el dispositivo aún no ha visto y tras
+  `resetChangeToken()`.
+- Otro epoch del servidor solo cuenta cuando lo informan dos solicitudes de la misma
+  sincronización, la descarga con el token y la descarga desde el principio, así que una caché
+  obsoleta u otro despliegue detrás de la misma URL no puede hacer retroceder el almacén. Una
+  sincronización que descarga una sola página sigue igualmente un reinicio del servidor, y cuando
+  las dos solicitudes no coinciden la sincronización falla en lugar de informar de un éxito.
 - Los registros borrados siguen borrados. Un servidor que perdió sus datos, u otro servidor, hace
   que el almacén vuelva a descargarlo todo y conserve sus cambios pendientes. Un registro que la
-  app no puede decodificar se aparta en `quarantinedChanges()` en lugar de detener la descarga.
+  app no puede decodificar, también uno anidado a más profundidad de la que lee `JSONDecoder`, se
+  aparta en `quarantinedChanges()` en lugar de detener la descarga.
 - Un reloj adelantado o retrasado a mano, un servidor que responde cada envío con un conflicto, un
-  servidor que nunca responde y un archivo que no se puede escribir tienen un efecto acotado: una
-  marca de tiempo cuenta como mucho cinco minutos por delante de la hora más reciente que conoce
-  el dispositivo, los reintentos esperan y se aparcan, una sincronización termina tras
+  servidor que nunca responde y un archivo que no se puede escribir tienen un efecto acotado: los
+  servidores de referencia guardan una marca de tiempo recibida como mucho cinco minutos por
+  delante de su propio reloj, un instante de un reloj del dispositivo equivocado no pasa a las
+  escrituras posteriores, los reintentos esperan y se aparcan, una sincronización termina tras
   `syncTimeout` y las sincronizaciones esperan mientras no se pueda escribir el archivo.
 
 El servidor nunca debe dar la misma revisión a dos versiones de un registro, debería enviar un
 `epoch` que solo avance a otros posteriores (más largos, o mayores byte a byte), un `sequence` que
-siga contando tras los reinicios y las marcas de tiempo recibidas sin cambios, y debe recordar los
-IDs de cambio a través de los reinicios. Límites: las
-escrituras que un servidor perdió en una restauración no se vuelven a subir, una sola instancia
-del almacén por archivo, el archivo entero se escribe en cada cambio y los borrados más allá de
+siga contando tras los reinicios, las marcas de tiempo recibidas (con una hora muy por delante de
+su reloj llevada a un límite) y el `changeID` que escribió cada versión, y debe recordar los IDs
+de cambio a través de los reinicios. Límites: las escrituras que un servidor perdió en una
+restauración no se vuelven a subir, un registro guardado de nuevo justo después de
+`discardChange(for:)` encuentra la copia del servidor como un conflicto, una sola instancia del
+almacén por archivo, el archivo entero se escribe en cada cambio y los borrados más allá de
 10.000 se olvidan. [Garantías y límites](Sources/OfflineFirstFramework/OfflineFirstFramework.docc/GuaranteesAndLimits.md) tiene la lista completa.
 
 ## Demo
