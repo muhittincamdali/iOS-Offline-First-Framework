@@ -44,10 +44,12 @@ extension OfflineStore {
     /// only when a second request of the other kind reports the same epoch: a pull from the
     /// beginning after a pull with the token, or a pull with the first page's token after a pull
     /// from the beginning. An earlier epoch (``EpochStanding/earlier`` or
-    /// ``EpochStanding/retired``) is refused even then, in every sync. A stale cache or replica,
-    /// or another deployment behind the same URL, rarely answers both, and a shared cache answers
-    /// the pull from the beginning first, since every device asks for the same URL. Both
-    /// requests belong to the same step, so a sync that may fetch one page still gets there.
+    /// ``EpochStanding/retired``), and no epoch while the store holds one
+    /// (``EpochStanding/missing``), are refused even then, in every sync. A stale cache or
+    /// replica, or another deployment behind the same URL, rarely answers both, and a shared
+    /// cache answers the pull from the beginning first, since every device asks for the same
+    /// URL. Both requests belong to the same step, so a sync that may fetch one page still gets
+    /// there.
     ///
     /// When the second request reports the store's own epoch, the first page came from
     /// somewhere else: it is dropped, and the step asks with the store's token once more. Every
@@ -59,17 +61,18 @@ extension OfflineStore {
         let token = state.token
         let first = try await page(after: token, using: transport, until: deadline)
         let standing = try Self.standing(of: first.epoch, in: state)
-        guard standing.namesAnotherEpoch, let epoch = first.epoch else {
+        guard standing.namesAnotherEpoch else {
             return PullStep(pages: [(token, first)], standing: standing)
         }
         guard !checkedEpoch else {
             throw OfflineFirstError.invalidServerResponse("The server's epoch changed twice during one sync.")
         }
         checkedEpoch = true
+        let epoch = first.epoch
         let secondToken = token == nil ? first.token : nil
         let second = try await page(after: secondToken, using: transport, until: deadline)
         if second.epoch == epoch {
-            if standing.isRefused { throw Self.refusal(of: epoch, standing) }
+            if standing.isRefused { throw Self.refusal(of: epoch, standing, in: state) }
             // After a token of the old history the first page is dropped; the pull starts over
             // from the beginning of the new one.
             if token == nil, secondToken != nil {

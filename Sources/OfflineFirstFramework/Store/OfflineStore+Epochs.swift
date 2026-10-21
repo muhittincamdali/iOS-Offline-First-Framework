@@ -12,6 +12,11 @@ import Foundation
 /// or syncs report it: a server whose data really went back, restored from a backup, reports a
 /// new epoch, later than every one before.
 ///
+/// A page without an epoch, once the store holds one, belongs to no history the store knows: a
+/// server that reports epochs reports one on every page. It is refused like an earlier epoch,
+/// so one page from another deployment cannot bring revisions, sequences and a token of its own
+/// into the store's history.
+///
 /// Epochs go one way. An epoch the store left for a later one is retired: the store keeps the
 /// last ``maximumRetiredEpochs`` of them in its file, ``OfflineStore/resetChangeToken()`` keeps
 /// them and the store's own epoch, and a page that names an earlier epoch is refused in every
@@ -24,8 +29,14 @@ extension OfflineStore {
 
     /// How the epoch of a page relates to the store's history.
     enum EpochStanding: Equatable {
-        /// The page names no epoch or the store's own.
+        /// The page names the store's own epoch, or no epoch while the store holds none.
         case current
+        /// The page names no epoch although the store holds one. A server that reports epochs
+        /// reports one on every page (see <doc:ServerProtocol>), so the page comes from
+        /// somewhere else behind the same URL: another deployment, a server of an older
+        /// version, a proxy or cache that answers for it. Its revisions, sequences and token
+        /// belong to no history the store knows, so it is never taken.
+        case missing
         /// The first epoch the store hears of: a new store, a server that just started to report
         /// epochs, or another server.
         case first
@@ -47,7 +58,7 @@ extension OfflineStore {
 
         /// Whether a page of this epoch is never stored.
         var isRefused: Bool {
-            self == .earlier || self == .retired
+            self == .earlier || self == .retired || self == .missing
         }
 
         /// Whether a page of this epoch has to be checked by a second request of the sync.
@@ -57,7 +68,7 @@ extension OfflineStore {
     }
 
     static func standing(of epoch: String?, in state: State) throws -> EpochStanding {
-        guard let epoch else { return .current }
+        guard let epoch else { return state.serverEpoch == nil ? .current : .missing }
         guard epoch.utf8.count <= maximumRevisionLength else {
             throw OfflineFirstError.invalidServerResponse("The epoch has more than \(maximumRevisionLength) bytes.")
         }
@@ -78,7 +89,12 @@ extension OfflineStore {
 
     /// The error for two requests of one sync that both reported `epoch`, which the store
     /// refuses (``EpochStanding/isRefused``).
-    static func refusal(of epoch: String, _ standing: EpochStanding) -> OfflineFirstError {
+    static func refusal(of epoch: String?, _ standing: EpochStanding, in state: State) -> OfflineFirstError {
+        guard let epoch else {
+            let held = state.serverEpoch.map { "“\($0.prefix(100))”" } ?? "one"
+            return OfflineFirstError.invalidServerResponse(
+                "The server answered without an epoch although it reported the epoch \(held) before, as another deployment behind the same URL would; a server that reports epochs reports one on every page.")
+        }
         let name = "“\(epoch.prefix(100))”"
         guard standing == .retired else {
             return OfflineFirstError.invalidServerResponse(
