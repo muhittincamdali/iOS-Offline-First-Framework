@@ -189,6 +189,9 @@ extension OfflineStore {
             Self.store(Self.entry(from: change, replacing: entry, in: &state, configuration: configuration), in: &state)
             return
         }
+        // Whether the version waits for the change's push instead of meeting the resolver; see
+        // below.
+        var keepsBack = pending.isInDoubt || entry.history != state.history || change.sequence == nil
         switch authorship(of: change, comparedWith: entry) {
         case .pendingChange:
             // The pending change itself: the server applied it, although no answer said so. A
@@ -210,14 +213,22 @@ extension OfflineStore {
                 state.entries[change.recordID] = entry
                 return
             }
-            // A change of the current history goes out on this revision. One of an earlier
-            // history keeps the version back like any other, below.
-            if entry.history == state.history {
+            // The change goes out on this revision when nothing is older than it: the record
+            // has no server version yet, or the server's sequences show the write is newer
+            // than the version the change is based on. Otherwise the write may be older: the
+            // user may have edited another device's version that replaced it, and a stale page
+            // (a lagging replica, a page out of order) brought the write back. Based on it, the
+            // change would meet that newer version as a conflict, and the resolver could drop
+            // an edit made on the server's current version. Nor is the device's own write a
+            // conflict, so the version is kept back, below, and the push's answer tells. A
+            // change of an earlier history keeps it back too.
+            if entry.history == state.history, entry.revision == nil || isNewer(change, than: entry) {
                 Self.base(&entry, on: change, in: state, configuration: configuration)
                 entry.pending = renewed(pending)
                 state.entries[change.recordID] = entry
                 return
             }
+            keepsBack = true
         case .other:
             break
         }
@@ -230,14 +241,14 @@ extension OfflineStore {
         // conflict answer says what it holds now. The store believes a later epoch on two
         // answers of one sync, which a source that answers both requests passes; its version
         // would make the resolver weigh the edit against a copy the server may no longer hold.
-        // The device's own earlier write, for a change of an earlier history, waits the same way.
         //
         // And so does a change that meets a version without a sequence: nothing tells whether
         // it is newer than the version the change is based on or a stale copy (a page out of
         // order, a lagging replica), and a timestamp does not, since a device clock wrote it.
         // Resolved here, a stale copy could make the resolver drop an edit the server never
-        // saw; the push's conflict answer names the server's current version instead.
-        if pending.isInDoubt || entry.history != state.history || change.sequence == nil {
+        // saw; the push's conflict answer names the server's current version instead. The
+        // device's own earlier write that the change does not go out on waits the same way.
+        if keepsBack {
             let keepsDeferred = entry.deferredRemote.map { $0.revision == change.revision || isOlder(change, than: $0) }
             if keepsDeferred != true { entry.deferredRemote = change }
             state.entries[change.recordID] = entry

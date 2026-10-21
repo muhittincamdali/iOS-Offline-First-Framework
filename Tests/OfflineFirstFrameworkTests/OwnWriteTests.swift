@@ -101,6 +101,8 @@ struct OwnWriteTests {
         try await writeTwiceThenServeAStaleVersion(store, server: server)
 
         // The edit on the stale version cannot be sent; the next pull brings the server's A#2.
+        // Without sequences nothing shows A#2 is newer than the stale X#0 the edit is based on,
+        // so the pull keeps it back, and the push's answer tells.
         try await store.save(Note(id: "r", text: "A#3"))
         await transport.onPush { _ in throw URLError(.notConnectedToInternet) }
         await #expect(throws: URLError.self) { try await store.sync() }
@@ -108,7 +110,8 @@ struct OwnWriteTests {
         try await store.sync()
         #expect(conflicts.withLock { $0 }.isEmpty, "\(policy) cid=\(changeIDs): \(conflicts.withLock { $0 })")
         #expect(await store.record("r")?.text == "A#3")
-        #expect(await store.state.entries["r"]?.revision == "s.2")
+        #expect(await store.state.entries["r"]?.revision == "x.0")
+        #expect(await store.state.entries["r"]?.deferredRemote?.revision == "s.2")
 
         clock.advance(by: 3_600)
         try await store.sync()

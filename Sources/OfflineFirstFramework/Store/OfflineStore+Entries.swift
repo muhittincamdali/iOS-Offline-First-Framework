@@ -164,6 +164,17 @@ extension OfflineStore {
         return false
     }
 
+    /// Whether the server's sequences show that `change` is newer than the version `entry` is
+    /// based on, both of the current history: by the entry's sequence, or, before the echo of
+    /// the store's own accepted write, by the version that write replaced. Without sequences
+    /// nothing is.
+    func isNewer(_ change: RemoteChange<Record>, than entry: StoredEntry<Record>) -> Bool {
+        guard let sequence = change.sequence, !entry.olderRevisions.contains(change.revision) else { return false }
+        if let held = entry.sequence { return sequence > held }
+        if let minimum = entry.minimumSequence { return sequence > minimum }
+        return false
+    }
+
     /// How a server version relates to `entry`'s pending change: by the change ID that wrote it
     /// (``RemoteChange/changeID``), or, from a server that does not send one, by its timestamp.
     /// A version counts as the store's own only with the change ID or the exact timestamp of a
