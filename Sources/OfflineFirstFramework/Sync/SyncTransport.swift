@@ -143,9 +143,9 @@ public struct PullResponse<Record: SyncableRecord>: Sendable {
     /// or as long and greater byte by byte, such as a counter or the start time in fixed-width
     /// digits. The store pulls everything again from the start once a pull from the beginning
     /// reports the later epoch too, and keeps its own pending changes. It refuses a page that
-    /// names an earlier epoch than its own, since only a stale replica or cache sends one; when
-    /// the server keeps answering with that epoch for eight syncs in a row, or after
-    /// ``OfflineStore/resetChangeToken()``, the store follows it.
+    /// names an earlier epoch than its own in every sync, also after
+    /// ``OfflineStore/resetChangeToken()``, since only a stale replica or cache sends one: never
+    /// report an epoch again once you reported a later one.
     public let epoch: String?
 
     /// Changes in this page the transport could not read, for example a record that does not

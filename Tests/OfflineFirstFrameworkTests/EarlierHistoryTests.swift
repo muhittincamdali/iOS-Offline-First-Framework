@@ -4,12 +4,11 @@ import Testing
 @testable import OfflineFirstFramework
 
 /// A pending change made on an earlier server history meets the server's versions of the new
-/// history through its push's conflict answer, never through a page. The store believes a new
-/// epoch on two answers of one sync, and an earlier one it never held after eight syncs in a
-/// row; a replica that sticks to a device for that long passes both tests. Its pages rolled
-/// records back until the server answered again, and they also decided pending edits: the
-/// resolver met the device's own older write, and `.serverWins` dropped an edit the server
-/// had never seen.
+/// history through its push's conflict answer, never through a page. A replica that sticks to a
+/// device with an epoch between two the store saw used to be taken after eight syncs in a row:
+/// its pages rolled records back until the server answered again, and they decided pending
+/// edits, so the resolver met the device's own older write and `.serverWins` dropped an edit
+/// the server had never seen. An earlier epoch is now refused in every sync.
 @Suite("Offline store: pending changes and a new server history")
 struct EarlierHistoryTests {
     let clock = TestClock()
@@ -47,13 +46,14 @@ struct EarlierHistoryTests {
         await transport.onPush { _ in throw URLError(.notConnectedToInternet) }
         await #expect(throws: URLError.self) { try await store.sync() }
 
-        // The replica answers every request of eight syncs in a row; the last one takes its epoch.
+        // The replica answers every request of sixteen syncs in a row; each one refuses it.
+        let epoch = await store.state.serverEpoch
         await transport.onPull { token in token == nil ? staleFirst : staleSecond }
-        for _ in 1..<OfflineStore<Note>.maximumEpochRefusals {
+        for _ in 0..<16 {
             await #expect(throws: OfflineFirstError.self) { try await store.sync() }
         }
-        try await store.sync()
-        #expect(await store.state.serverEpoch == staleFirst.epoch)
+        #expect(await store.state.serverEpoch == epoch)
+        #expect(await store.record("d")?.text == "d2", "\(policy)")
         #expect(await store.pendingChanges().first { $0.recordID == "c" }?.record?.text == "v2, never pushed", "\(policy)")
 
         // The server answers again, with its later epoch.

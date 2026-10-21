@@ -124,8 +124,8 @@ struct EpochConfirmationTests {
     }
 
     /// The cached first page is from two restarts ago, earlier than the store's epoch, while
-    /// the pull with the token reports a later one. The two never agree, so no sync counts a
-    /// refusal of the cached epoch or takes it, however many syncs meet it.
+    /// the pull with the token reports a later one. The two never agree, so no sync takes the
+    /// cached epoch, however many syncs meet it.
     @Test func aCachedFirstPageOfAnEarlierEpochIsNeverTaken() async throws {
         let server = InMemorySyncServer<Note>(now: { [clock] in clock.now })
         await server.write(Note(id: "a", text: "a v1, two restarts ago"))
@@ -140,12 +140,11 @@ struct EpochConfirmationTests {
         await server.restart()
         await server.write(Note(id: "a", text: "a v3, current"))
 
-        for _ in 0..<(2 * OfflineStore<Note>.maximumEpochRefusals) {
+        for _ in 0..<16 {
             await #expect(throws: OfflineFirstError.self) { try await store.sync() }
             #expect(await store.record("a")?.text == "a v2")
             clock.advance(by: 300)
         }
-        #expect(await store.state.epochRefusal == nil)
 
         await cache.serve(nil)
         try await store.sync()

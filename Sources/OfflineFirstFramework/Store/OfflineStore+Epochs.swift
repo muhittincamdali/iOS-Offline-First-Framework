@@ -1,35 +1,24 @@
 import Foundation
 
-/// An earlier epoch than the store's that syncs in a row refused, and how many.
-struct EpochRefusal: Codable, Hashable, Sendable {
-    var epoch: String
-    var syncs: Int
-}
-
 /// Server histories: which one a page belongs to, and when the store believes a new one.
 ///
 /// A server reports a later ``PullResponse/epoch`` whenever its history may have changed, and
-/// never an earlier one again. A page that names an earlier epoch comes from a stale replica or
-/// cache, and its versions would roll records back; a page that names a later one comes from a
-/// server that restarted or was restored, or from somewhere else behind the same URL (another
-/// deployment, a misdirected request). The store therefore believes another epoch than its own
-/// only when two requests of different kinds in one sync report it (a pull with the token and a
-/// pull from the beginning), takes a later one then, and refuses an earlier one until the syncs
-/// in a row that met it reach ``maximumEpochRefusals``.
+/// never an earlier one again (see <doc:ServerProtocol>). A page that names an earlier epoch
+/// comes from a stale replica or cache, and its versions would roll records back; a page that
+/// names a later one comes from a server that restarted or was restored, or from somewhere else
+/// behind the same URL (another deployment, a misdirected request). The store therefore takes a
+/// later epoch only when two requests of different kinds in one sync report it (a pull with the
+/// token and a pull from the beginning), and never takes an earlier one, however many requests
+/// or syncs report it: a server whose data really went back, restored from a backup, reports a
+/// new epoch, later than every one before.
 ///
 /// Epochs go one way. An epoch the store left for a later one is retired: the store keeps the
 /// last ``maximumRetiredEpochs`` of them in its file, ``OfflineStore/resetChangeToken()`` keeps
-/// them, and a page that names one is refused in every sync, however often it comes. A stale
-/// replica or a shared cache that answers both requests of a sync with the store's previous
-/// epoch, as one does after a reset, when every device asks for the same URLs, therefore
-/// cannot take the store back.
+/// them and the store's own epoch, and a page that names an earlier epoch is refused in every
+/// sync. A stale replica or a shared cache that answers both requests of a sync with an earlier
+/// epoch, as one does after a reset, when every device asks for the same URLs, or one that
+/// sticks to a device for many syncs, therefore cannot take the store back.
 extension OfflineStore {
-    /// Syncs in a row that meet the same earlier epoch, one the store never left, until the store
-    /// takes it as the server's history: the last of them takes it, the ones before refuse it. A
-    /// server whose epochs do not grow is followed after that many syncs; a stale replica or
-    /// cache rarely answers that many syncs in a row, both with and without a token.
-    static var maximumEpochRefusals: Int { 8 }
-
     /// The epochs a store remembers having left for a later one: 32, the oldest dropped first.
     static var maximumRetiredEpochs: Int { 32 }
 
@@ -42,21 +31,28 @@ extension OfflineStore {
         case first
         /// A later epoch than the store's: the server's history changed.
         case later
-        /// An earlier epoch than the store's that the store never left: a stale replica or cache
-        /// answered, or the server's epochs do not grow.
+        /// An earlier epoch than the store's that the store never held: a stale replica or cache
+        /// of a history between two the store saw, or a server whose epochs do not grow. It is
+        /// never taken.
         case earlier
         /// An epoch the store left for a later one: a stale replica or cache answered. It is
-        /// never taken again.
+        /// never taken.
         case retired
 
-        /// Whether a page of this epoch, once believed, starts a new server history.
+        /// Whether a page of this epoch, once a second request confirmed it, starts a new server
+        /// history.
         var startsHistory: Bool {
-            self == .later || self == .earlier
+            self == .later
         }
 
-        /// Whether a page of this epoch has to be confirmed by a second request of the sync.
+        /// Whether a page of this epoch is never stored.
+        var isRefused: Bool {
+            self == .earlier || self == .retired
+        }
+
+        /// Whether a page of this epoch has to be checked by a second request of the sync.
         var namesAnotherEpoch: Bool {
-            startsHistory || self == .retired
+            startsHistory || isRefused
         }
     }
 
@@ -80,21 +76,16 @@ extension OfflineStore {
         return otherBytes.lexicographicallyPrecedes(bytes)
     }
 
-    /// Counts a sync in which two requests reported `epoch`, earlier than the store's and never
-    /// left by it, and returns when the store now takes it: in the ``maximumEpochRefusals``th
-    /// sync in a row. Otherwise the refusal is written to the file and thrown.
-    func takeOrRefuse(_ epoch: String) throws {
-        let previous = state.epochRefusal?.epoch == epoch ? state.epochRefusal?.syncs ?? 0 : 0
-        guard previous + 1 < Self.maximumEpochRefusals else { return }
-        try update { $0.epochRefusal = EpochRefusal(epoch: epoch, syncs: previous + 1) }
-        throw OfflineFirstError.invalidServerResponse(
-            "The server answered from an earlier history (epoch “\(epoch.prefix(100))”) than the store's, as a stale replica or cache would.")
-    }
-
-    /// The error for two requests of one sync that both reported `epoch`, which the store left.
-    static func retiredEpochRefusal(_ epoch: String) -> OfflineFirstError {
-        OfflineFirstError.invalidServerResponse(
-            "The server answered from the epoch “\(epoch.prefix(100))”, which the store left for a later one, as a stale replica or cache would.")
+    /// The error for two requests of one sync that both reported `epoch`, which the store
+    /// refuses (``EpochStanding/isRefused``).
+    static func refusal(of epoch: String, _ standing: EpochStanding) -> OfflineFirstError {
+        let name = "“\(epoch.prefix(100))”"
+        guard standing == .retired else {
+            return OfflineFirstError.invalidServerResponse(
+                "The server answered from an earlier history (epoch \(name)) than the store's, as a stale replica or cache would; a server's epochs only grow.")
+        }
+        return OfflineFirstError.invalidServerResponse(
+            "The server answered from the epoch \(name), which the store left for a later one, as a stale replica or cache would.")
     }
 
     /// Starts a new server history: the server lost or replaced its data, or the store talks to
@@ -103,16 +94,14 @@ extension OfflineStore {
     /// the server's current versions replace the ones without a pending change whatever their
     /// timestamps say, and a pending change learns where it stands from its push's answer.
     ///
-    /// `isLaterEpoch` is true for a later epoch of the same server. It retires the store's
-    /// previous epoch. An earlier epoch, taken after ``maximumEpochRefusals`` syncs, retires
-    /// none: after a stale source answered that many syncs in a row, the server's own later
-    /// epoch has to bring the store back. And a version that a push answer brought and no pull
-    /// has brought since (``StoredEntry/pushedInHistory``) moves into the later history with what
-    /// the store knows about its order. The sync pushes before it pulls, so the server may have
-    /// answered after its restart: a page of the new epoch from before that answer (a shared
-    /// cache, a lagging replica) would otherwise roll back the store's accepted write, or the
-    /// version a conflict answer brought, and the next edit would be resolved against the
-    /// device's own write.
+    /// `isLaterEpoch` is true for a later epoch of the same server and false for another server
+    /// (``SyncTransport/serverIdentity``). A later epoch retires the store's previous one. And a
+    /// version that a push answer brought and no pull has brought since
+    /// (``StoredEntry/pushedInHistory``) moves into the later history with what the store knows
+    /// about its order. The sync pushes before it pulls, so the server may have answered after its
+    /// restart: a page of the new epoch from before that answer (a shared cache, a lagging
+    /// replica) would otherwise roll back the store's accepted write, or the version a conflict
+    /// answer brought, and the next edit would be resolved against the device's own write.
     static func beginHistory(epoch: String?, isLaterEpoch: Bool, in state: inout State) {
         let previous = state.history
         if isLaterEpoch, let left = state.serverEpoch, left != epoch {
@@ -124,7 +113,6 @@ extension OfflineStore {
         state.serverEpoch = epoch
         state.token = nil
         state.quarantine.removeAll()
-        state.epochRefusal = nil
         for (id, entry) in state.entries {
             let keepsPosition = isLaterEpoch && entry.pushedInHistory != nil && entry.history == previous
             guard entry.deferredRemote != nil || keepsPosition else { continue }

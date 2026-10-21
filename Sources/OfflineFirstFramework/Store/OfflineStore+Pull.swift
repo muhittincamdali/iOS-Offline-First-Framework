@@ -40,12 +40,12 @@ extension OfflineStore {
 
     /// The pages of the next step after the store's token.
     ///
-    /// A page that names another epoch than the store's (``EpochStanding/later``,
-    /// ``EpochStanding/earlier`` or ``EpochStanding/retired``) is believed only when a second
-    /// request of the other kind reports the same epoch: a pull from the beginning after a pull
-    /// with the token, or a pull with the first page's token after a pull from the beginning. A
-    /// retired epoch is refused even then, every time. A stale cache or replica, or
-    /// another deployment behind the same URL, rarely answers both, and a shared cache answers
+    /// A page that names a later epoch than the store's (``EpochStanding/later``) is believed
+    /// only when a second request of the other kind reports the same epoch: a pull from the
+    /// beginning after a pull with the token, or a pull with the first page's token after a pull
+    /// from the beginning. An earlier epoch (``EpochStanding/earlier`` or
+    /// ``EpochStanding/retired``) is refused even then, in every sync. A stale cache or replica,
+    /// or another deployment behind the same URL, rarely answers both, and a shared cache answers
     /// the pull from the beginning first, since every device asks for the same URL. Both
     /// requests belong to the same step, so a sync that may fetch one page still gets there.
     ///
@@ -69,8 +69,7 @@ extension OfflineStore {
         let secondToken = token == nil ? first.token : nil
         let second = try await page(after: secondToken, using: transport, until: deadline)
         if second.epoch == epoch {
-            if standing == .retired { throw Self.retiredEpochRefusal(epoch) }
-            if standing == .earlier { try takeOrRefuse(epoch) }
+            if standing.isRefused { throw Self.refusal(of: epoch, standing) }
             // After a token of the old history the first page is dropped; the pull starts over
             // from the beginning of the new one.
             if token == nil, secondToken != nil {
@@ -117,9 +116,8 @@ extension OfflineStore {
                 Self.beginHistory(epoch: response.epoch, isLaterEpoch: isLaterEpoch, in: &state)
             } else if let epoch = response.epoch {
                 // The store's epoch, or the first one the server reports (a new store, an update
-                // of the server): an earlier epoch refused before is no longer current.
+                // of the server).
                 state.serverEpoch = epoch
-                state.epochRefusal = nil
             }
             for change in response.quarantined {
                 Self.quarantine(change, in: &state, report: &report)
@@ -216,10 +214,9 @@ extension OfflineStore {
         // applied, this newer version replaces it.
         //
         // A change made on an earlier server history waits for its push too: the server's
-        // conflict answer says what it holds now. The store believes a new history on two
-        // answers of one sync, or an earlier epoch after eight syncs in a row, and a replica
-        // that sticks to the device passes both; its version would make the resolver weigh the
-        // edit against a stale copy, also the device's own older write.
+        // conflict answer says what it holds now. The store believes a later epoch on two
+        // answers of one sync, which a source that answers both requests passes; its version
+        // would make the resolver weigh the edit against a copy the server may no longer hold.
         if pending.isInDoubt || entry.history != state.history {
             if let deferred = entry.deferredRemote, deferred.revision == change.revision || isOlder(change, than: deferred, in: state) {
                 return

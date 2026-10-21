@@ -201,8 +201,6 @@ struct StoreFile<Record: SyncableRecord>: Codable, Sendable {
     var history: UInt64? = nil
     /// Server changes set aside; `nil` when there are none.
     var quarantine: [QuarantinedChange]? = nil
-    /// An earlier epoch the last syncs refused; `nil` when there is none.
-    var epochRefusal: EpochRefusal? = nil
     /// Epochs the store left for a later one, oldest first; `nil` when there are none.
     var retiredEpochs: [String]? = nil
 }

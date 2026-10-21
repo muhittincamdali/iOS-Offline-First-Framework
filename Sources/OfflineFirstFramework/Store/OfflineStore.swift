@@ -28,8 +28,6 @@ public actor OfflineStore<Record: SyncableRecord> {
         var history: UInt64
         /// Server changes set aside, oldest first.
         var quarantine: [QuarantinedChange] = []
-        /// An earlier epoch than ``serverEpoch`` that the last syncs in a row refused.
-        var epochRefusal: EpochRefusal? = nil
         /// Epochs the store left for a later one, oldest first; a page that names one is
         /// refused. ``OfflineStore/resetChangeToken()`` keeps them.
         var retiredEpochs: [String] = []
@@ -233,18 +231,18 @@ public actor OfflineStore<Record: SyncableRecord> {
     /// beginning; a pull that is on its way starts over. Records and pending changes stay, and
     /// the list of ``quarantinedChanges()`` is cleared, since those changes come again.
     ///
-    /// What the store knows about the server's epochs stays: another ``PullResponse/epoch`` than
+    /// What the store knows about the server's epochs stays: a later ``PullResponse/epoch`` than
     /// the store's is believed, as always, once two requests of one sync report it, the pull
-    /// from the beginning and the pull after its token, and an epoch the store left for a later
-    /// one is never taken again. A stale replica or a shared cache that answers both requests
-    /// after the reset, as one easily does since the pull from the beginning asks every device
-    /// for the same URL, therefore cannot roll the store back.
+    /// from the beginning and the pull after its token, and an earlier one, also an epoch the
+    /// store left for a later one, is never taken. A stale replica or a shared cache that answers
+    /// both requests after the reset, as one easily does since the pull from the beginning asks
+    /// every device for the same URL, therefore cannot roll the store back.
     ///
     /// Use it when the server can no longer continue after the token, for example when it
     /// answers every pull with an error for it, or after an app update that can read records
-    /// the store set aside. It does not bring the store back to an epoch it left: a store that
-    /// followed another deployment behind the same URL returns to the first one only once that
-    /// server reports a new epoch.
+    /// the store set aside. It does not bring the store back to an earlier epoch: a store that
+    /// followed another deployment behind the same URL with a later epoch returns to the first
+    /// server only once that server reports an epoch later still.
     public func resetChangeToken() throws {
         try update { state in
             state.token = nil
@@ -309,7 +307,7 @@ public actor OfflineStore<Record: SyncableRecord> {
                              nextSequence: state.nextSequence, entries: entries, serverIdentity: state.serverIdentity,
                              serverEpoch: state.serverEpoch, history: state.history,
                              quarantine: state.quarantine.isEmpty ? nil : state.quarantine,
-                             epochRefusal: state.epochRefusal, retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs)
+                             retiredEpochs: state.retiredEpochs.isEmpty ? nil : state.retiredEpochs)
         let data = try configuration.encryption.seal(StoreFileCoder.encode(file), name: name)
         guard let fileKey else {
             try storage.write(data, to: fileName)
